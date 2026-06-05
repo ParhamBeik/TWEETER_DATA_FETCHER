@@ -1,0 +1,449 @@
+{
+  "api_cookies": {
+    "guest_id": "v1%3A177711975217751018",
+    "__cuid": "371bef68d36541d08b0f1992cf805185",
+    "g_state": "{\"i_l\":0,\"i_ll\":1777148016989,\"i_e\":{\"enable_itp_optimization\":0},\"i_et\":1777147970292}",
+    "kdt": "lN34hDtC2uXY0wtApwoiRPvF4D4QrZZnl3qEquR0",
+    "auth_token": "df51ac6bd02c2cc631982c57c7f175cb650e18a4",
+    "ct0": "1bbc00f49ff258c217c809e5e1db70be507b05c51065fe5c280cd9f731c01cfc95d4c271995ab46486cfd175d958b0e59b6ae36b419cc2a603b52111dcd6468ee6d12cbe9a11180319729ddf912e198c",
+    "twid": "u%3D1076002579962871808",
+    "d_prefs": "MToxLGNvbnNlbnRfdmVyc2lvbjoyLHRleHRfdmVyc2lvbjoxMDAw",
+    "guest_id_ads": "v1%3A177711975217751018",
+    "guest_id_marketing": "v1%3A177711975217751018",
+    "personalization_id": "\"v1_nRj8IpZT3VVqxpbeudDDBA==\"",
+    "lang": "en",
+    "__cf_bm": "9sXNBRw1reVH40n19oO0t5XhKN9CYIKOrUlCmLtzHAI-1779087175.0339284-1.0.1.1-n24ZcGAHNoo001N3G2nObjrYBy0B5pAYh2_0c.nZCcPSMjYX6japquP3YXS3s0CXwEYoLzfQkGgFPhEwqFk1aRgUlDjQzoJWpYr6V3ayMDYGLl0c0C6LwwiU6m7lau4_"
+  },
+  "api_auth": {
+    "bearer_token": "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+  },
+  "api_headers": {
+    "x-client-transaction-id": "GvjOohhIiBopR6GpbeuFlX4vbltX0okyahdGosTmLdfhBb3JLu+sIaaSL8Poqr6p+LzC2x/CjVW/NLwqR25cevYFoAlgGQ"
+  },
+  "api_config": {
+    "user_by_screen_name_query_id": "sLVLhk0bGj3MVFEKTdax1w",
+    "user_tweets_query_id": "pQHADmT91zIY83UbK0x4Lw",
+    "user_tweets_and_replies_query_id": "D5eKzDa5ZoJuC1TCeAXbWA",
+    "tweet_detail_query_id": "",
+    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
+    "replies_warmup_seconds": 4,
+    "replies_max_retries": 4,
+    "rate_limit_safety_margin": 0.9,
+    "retry_5xx_attempts": 3,
+    "retry_5xx_base_delay": 2
+  },
+  "rate_limits": {
+    "UserByScreenName": {
+      "limit": 150,
+      "window_seconds": 900
+    },
+    "UserTweets": {
+      "limit": 50,
+      "window_seconds": 900
+    },
+    "UserTweetsAndReplies": {
+      "limit": 500,
+      "window_seconds": 900
+    },
+    "TweetDetail": {
+      "limit": 150,
+      "window_seconds": 900
+    },
+    "SearchTimeline": {
+      "limit": 50,
+      "window_seconds": 900
+    }
+  },
+  "anti_bot_simulation": {
+    "enabled": true,
+    "browse_warmup_enabled": true,
+    "warmup_pages": 2,
+    "delays_seconds": {
+      "before_request_min": 0.2,
+      "before_request_max": 1.2,
+      "between_requests_min": 0.5,
+      "between_requests_max": 2.5,
+      "between_pages_min": 2,
+      "between_pages_max": 6,
+      "replies_retry_min": 1,
+      "replies_retry_max": 3,
+      "between_accounts_min": 3,
+      "between_accounts_max": 8,
+      "between_cycles_min": 0,
+      "between_cycles_max": 60
+    }
+  },
+  "viral_config": {
+    "window_days": 7,
+    "threshold_percentile": 95,
+    "recheck_hours": 24,
+    "intervals_minutes": [
+      5,
+      30,
+      120,
+      600
+    ],
+    "api_budget_mode": "balanced",
+    "max_detail_refreshes_per_run": 30,
+    "history_score_weight": 0.3,
+    "delta_score_weight": 0.7,
+    "composite_score_cutoff": 1.0,
+    "delta_percentile_cutoff": 0.8
+  },
+  "account_config": {
+    "weights_auto": true,
+    "weight_scale_factor": 1000
+  },
+  "viral_detection": {
+    "composite_score_cutoff": 1.0,
+    "threshold_percentile": 95,
+    "snapshot_delta_threshold": {
+      "likes": 5,
+      "retweets": 2,
+      "replies": 2,
+      "views": 100,
+      "quotes": 1,
+      "bookmarks": 3
+    },
+    "min_time_between_snapshots_minutes": 5
+  },
+  "tier_configuration": {
+    "priority_1": [
+      {
+        "username": "realDonaldTrump",
+        "display_name": "Donald J. Trump"
+      },
+      {
+        "username": "SecScottBessent",
+        "display_name": "Scott Bessent"
+      },
+      {
+        "username": "USTreasury",
+        "display_name": "US Treasury"
+      },
+      {
+        "username": "JDVance",
+        "display_name": "JD Vance"
+      },
+      {
+        "username": "TankerTrackers",
+        "display_name": "TankerTrackers"
+      },
+      {
+        "username": "chigrl",
+        "display_name": "Tracy Shuchart"
+      },
+      {
+        "username": "KobeissiLetter",
+        "display_name": "The Kobeissi Letter"
+      },
+      {
+        "username": "AAAnews",
+        "display_name": "AAAnews"
+      },
+      {
+        "username": "EIAgov",
+        "display_name": "EIAgov"
+      }
+    ],
+    "priority_2": [
+      {
+        "username": "araghchi",
+        "display_name": "Seyed Abbas Araghchi"
+      },
+      {
+        "username": "drpezeshkian",
+        "display_name": "Masoud Pezeshkian"
+      },
+      {
+        "username": "MKhamenei_ir",
+        "display_name": "Mojtaba Khamenei"
+      },
+      {
+        "username": "SteveWitkoff",
+        "display_name": "Steve Witkoff"
+      },
+      {
+        "username": "SecRubio",
+        "display_name": "Marco Rubio"
+      },
+      {
+        "username": "LynAldenContact",
+        "display_name": "Lyn Alden"
+      },
+      {
+        "username": "LukeGromen",
+        "display_name": "Luke Gromen"
+      },
+      {
+        "username": "PeterSchiff",
+        "display_name": "Peter Schiff"
+      },
+      {
+        "username": "JimRickards",
+        "display_name": "Jim Rickards"
+      },
+      {
+        "username": "business",
+        "display_name": "Bloomberg"
+      },
+      {
+        "username": "Reuters",
+        "display_name": "Reuters"
+      },
+      {
+        "username": "elonmusk",
+        "display_name": "Elon Musk"
+      },
+      {
+        "username": "Lagarde",
+        "display_name": "Christine Lagarde"
+      }
+    ],
+    "priority_3": [
+      {
+        "username": "IRIMFA_SPOX",
+        "display_name": "Esmaeil Baqaei"
+      },
+      {
+        "username": "IRIMFA_EN",
+        "display_name": "Iran Foreign Ministry"
+      },
+      {
+        "username": "Hemmati_ir",
+        "display_name": "Abdolnaser Hemmati"
+      },
+      {
+        "username": "netanyahu",
+        "display_name": "Benjamin Netanyahu"
+      },
+      {
+        "username": "Israel_katz",
+        "display_name": "Israel Katz"
+      },
+      {
+        "username": "UANI",
+        "display_name": "UANI"
+      },
+      {
+        "username": "farnazfassihi",
+        "display_name": "Farnaz Fassihi"
+      },
+      {
+        "username": "mdubowitz",
+        "display_name": "Mark Dubowitz"
+      },
+      {
+        "username": "rich_goldberg",
+        "display_name": "Richard Goldberg"
+      },
+      {
+        "username": "SGhasseminejad",
+        "display_name": "Saeed Ghasseminejad"
+      }
+    ],
+    "priority_4": [
+      {
+        "username": "J_Zarif",
+        "display_name": "J Zarif"
+      }
+    ],
+    "priority_5": [
+      {
+        "username": "IDF",
+        "display_name": "Israel Defense Forces"
+      },
+      {
+        "username": "IDFFarsi",
+        "display_name": "IDF Farsi"
+      },
+      {
+        "username": "AvichayAdraee",
+        "display_name": "Avichay Adraee"
+      },
+      {
+        "username": "DAVIDHALBRIGHT1",
+        "display_name": "David Albright"
+      },
+      {
+        "username": "TheGoodISIS",
+        "display_name": "Inst for Science"
+      },
+      {
+        "username": "geoconfirmed",
+        "display_name": "GeoConfirmed"
+      },
+      {
+        "username": "ronenbergman",
+        "display_name": "Ronen Bergman"
+      },
+      {
+        "username": "AmosHarel",
+        "display_name": "Amos Harel"
+      },
+      {
+        "username": "ksadjadpour",
+        "display_name": "Karim Sadjadpour"
+      },
+      {
+        "username": "vali_nasr",
+        "display_name": "Vali Nasr"
+      },
+      {
+        "username": "AliVaez",
+        "display_name": "Ali Vaez"
+      }
+    ],
+    "priority_6": [
+      {
+        "username": "SEPeaceMissions",
+        "display_name": "SE Peace Missions"
+      },
+      {
+        "username": "PressSec",
+        "display_name": "Karoline Leavitt"
+      },
+      {
+        "username": "gidonsaar",
+        "display_name": "Gideon Saar"
+      },
+      {
+        "username": "Shayan86",
+        "display_name": "Shayan Sardarizadeh"
+      },
+      {
+        "username": "bellingcat",
+        "display_name": "Bellingcat"
+      },
+      {
+        "username": "LauraSecor",
+        "display_name": "Laura Secor"
+      },
+      {
+        "username": "MaloneySuzanne",
+        "display_name": "Suzanne Maloney"
+      },
+      {
+        "username": "IranIntl",
+        "display_name": "Iran International"
+      }
+    ],
+    "priority_7": [
+      {
+        "username": "BBCVerify",
+        "display_name": "BBC Verify"
+      },
+      {
+        "username": "bentallblu",
+        "display_name": "bentallblu"
+      },
+      {
+        "username": "HollyDagres",
+        "display_name": "Holly Dagres"
+      },
+      {
+        "username": "PahlaviReza",
+        "display_name": "Reza Pahlavi"
+      },
+      {
+        "username": "WGC_News",
+        "display_name": "WGC News"
+      },
+      {
+        "username": "SantiagoAuFund",
+        "display_name": "Santiago Capital"
+      },
+      {
+        "username": "paulkrugman",
+        "display_name": "Paul Krugman"
+      },
+      {
+        "username": "RobinBrooksIIF",
+        "display_name": "Robin Brooks"
+      },
+      {
+        "username": "elerianm",
+        "display_name": "Mohamed El-Erian"
+      },
+      {
+        "username": "NickTimiraos",
+        "display_name": "Nick Timiraos"
+      },
+      {
+        "username": "federalreserve",
+        "display_name": "Federal Reserve"
+      },
+      {
+        "username": "KitcoNewsNOW",
+        "display_name": "Kitco News"
+      },
+      {
+        "username": "GoldTelegraph_",
+        "display_name": "Gold Telegraph"
+      },
+      {
+        "username": "flightradar24",
+        "display_name": "Flightradar24"
+      },
+      {
+        "username": "RayDalio",
+        "display_name": "Ray Dalio"
+      },
+      {
+        "username": "PolymarketIntel",
+        "display_name": "Polymarket Intel"
+      }
+    ]
+  },
+  "priority_policies": {
+    "1": {
+      "poll_interval_seconds": 120,
+      "live_window_hours": 48,
+      "historical_window_days": 7,
+      "live_max_pages": 3,
+      "historical_max_pages": 20
+    },
+    "2": {
+      "poll_interval_seconds": 240,
+      "live_window_hours": 36,
+      "historical_window_days": 5,
+      "live_max_pages": 2,
+      "historical_max_pages": 16
+    },
+    "3": {
+      "poll_interval_seconds": 360,
+      "live_window_hours": 30,
+      "historical_window_days": 4,
+      "live_max_pages": 2,
+      "historical_max_pages": 14
+    },
+    "4": {
+      "poll_interval_seconds": 540,
+      "live_window_hours": 24,
+      "historical_window_days": 3,
+      "live_max_pages": 2,
+      "historical_max_pages": 12
+    },
+    "5": {
+      "poll_interval_seconds": 780,
+      "live_window_hours": 20,
+      "historical_window_days": 2,
+      "live_max_pages": 1,
+      "historical_max_pages": 10
+    },
+    "6": {
+      "poll_interval_seconds": 1020,
+      "live_window_hours": 16,
+      "historical_window_days": 1,
+      "live_max_pages": 1,
+      "historical_max_pages": 8
+    },
+    "7": {
+      "poll_interval_seconds": 1440,
+      "live_window_hours": 12,
+      "historical_window_days": 1,
+      "live_max_pages": 1,
+      "historical_max_pages": 6
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Iran_War_Brent_Gold_Inflation_Hormuz",
+    "enabled": true,
+    "product": "Top",
+    "preserve_exact_query": true,
+    "raw_query": "(Iran OR War OR Brent OR Gold OR Inflation OR Hormuz) lang:en min_replies:100 min_faves:1000 min_retweets:50 since:2026-05-23",
+    "polling_priority": 2,
+    "rolling_hours": 24,
+    "include_keywords": [
+      "Iran",
+      "War",
+      "Brent",
+      "Gold",
+      "Inflation",
+      "Hormuz"
+    ],
+    "exact_phrases": [],
+    "exclude_keywords": [],
+    "from_accounts": [],
+    "to_accounts": [],
+    "mentions": [],
+    "lang": "en",
+    "min_replies": 100,
+    "min_faves": 1000,
+    "min_retweets": 50,
+    "since_days": 7,
+    "count": 30
+  }
+]

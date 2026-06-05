@@ -1,0 +1,155 @@
+{
+    "data": {
+        "user": {
+            "result": {
+                "__typename": "User",
+                "affiliates_highlighted_label": {},
+                "avatar": {
+                    "image_url": "https://pbs.twimg.com/profile_images/1132579647374417921/9ifIGXEQ_normal.png"
+                },
+                "business_account": {},
+                "core": {
+                    "created_at": "Wed Sep 12 11:09:12 +0000 2018",
+                    "name": "Whale Alert",
+                    "screen_name": "whale_alert"
+                },
+                "creator_subscriptions_count": 0,
+                "dm_permissions": {
+                    "can_dm": true
+                },
+                "follow_request_sent": false,
+                "grok_translated_bio_with_availability": {
+                    "is_available": false
+                },
+                "has_graduated_access": true,
+                "has_hidden_subscriptions_on_profile": true,
+                "highlights_info": {
+                    "can_highlight_tweets": true,
+                    "highlighted_tweets": "81"
+                },
+                "id": "VXNlcjoxMDM5ODMzMjk3NzUxMzAyMTQ0",
+                "is_blue_verified": true,
+                "is_profile_translatable": false,
+                "legacy": {
+                    "default_profile": false,
+                    "default_profile_image": false,
+                    "description": "Live reporting on large and interesting #blockchain transactions as they happen. Create your own alerts for over 100 coins on https://t.co/wQEfstUfLm",
+                    "entities": {
+                        "description": {
+                            "urls": [
+                                {
+                                    "display_url": "whale-alert.io/alerts.html",
+                                    "expanded_url": "https://whale-alert.io/alerts.html",
+                                    "indices": [
+                                        126,
+                                        149
+                                    ],
+                                    "url": "https://t.co/wQEfstUfLm"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "urls": [
+                                {
+                                    "display_url": "whale-alert.io",
+                                    "expanded_url": "https://whale-alert.io",
+                                    "indices": [
+                                        0,
+                                        23
+                                    ],
+                                    "url": "https://t.co/UcJHiCznfE"
+                                }
+                            ]
+                        }
+                    },
+                    "fast_followers_count": 0,
+                    "favourites_count": 82,
+                    "follow_request_sent": false,
+                    "followers_count": 2867108,
+                    "friends_count": 17,
+                    "has_custom_timelines": false,
+                    "is_translator": false,
+                    "listed_count": 14399,
+                    "media_count": 21,
+                    "needs_phone_verification": false,
+                    "normal_followers_count": 2867108,
+                    "notifications": false,
+                    "possibly_sensitive": false,
+                    "profile_banner_url": "https://pbs.twimg.com/profile_banners/1039833297751302144/1537173904",
+                    "profile_interstitial_type": "",
+                    "statuses_count": 98436,
+                    "time_zone": "",
+                    "translator_type": "none",
+                    "url": "https://t.co/UcJHiCznfE",
+                    "utc_offset": 0,
+                    "want_retweets": false,
+                    "withheld_description": "",
+                    "withheld_scope": ""
+                },
+                "legacy_extended_profile": {},
+                "location": {
+                    "location": "Worldwide"
+                },
+                "media_permissions": {
+                    "can_media_tag": true
+                },
+                "parody_commentary_fan_label": "None",
+                "premium_gifting_eligible": false,
+                "privacy": {
+                    "protected": false
+                },
+                "professional": {
+                    "category": [
+                        {
+                            "icon_name": "IconBriefcaseStroke",
+                            "id": 1094,
+                            "name": "Blockchain"
+                        }
+                    ],
+                    "professional_type": "Business",
+                    "rest_id": "1471503736946102272"
+                },
+                "profile_bio": {
+                    "description": "Live reporting on large and interesting #blockchain transactions as they happen. Create your own alerts for over 100 coins on https://t.co/wQEfstUfLm"
+                },
+                "profile_description_language": "en",
+                "profile_image_shape": "Circle",
+                "profile_sort_enabled": true,
+                "relationship_perspectives": {
+                    "blocked_by": false,
+                    "blocking": false,
+                    "followed_by": false,
+                    "following": false,
+                    "muting": false
+                },
+                "rest_id": "1039833297751302144",
+                "super_follow_eligible": true,
+                "super_followed_by": false,
+                "super_following": false,
+                "user_seed_tweet_count": 0,
+                "verification": {
+                    "verified": false
+                },
+                "verification_info": {
+                    "is_identity_verified": false,
+                    "reason": {
+                        "description": {
+                            "entities": [
+                                {
+                                    "from_index": 25,
+                                    "ref": {
+                                        "url": "https://help.twitter.com/managing-your-account/about-twitter-verified-accounts",
+                                        "url_type": "ExternalUrl"
+                                    },
+                                    "to_index": 35
+                                }
+                            ],
+                            "text": "This account is Premium. Learn more"
+                        },
+                        "verified_since_msec": "1682244538527"
+                    }
+                }
+            }
+        }
+    }
+}

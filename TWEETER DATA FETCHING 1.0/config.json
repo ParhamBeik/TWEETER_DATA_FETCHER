@@ -1,0 +1,73 @@
+{
+  "api_cookies": {
+    "guest_id": "v1%3A177711975217751018",
+    "__cuid": "371bef68d36541d08b0f1992cf805185",
+    "g_state": "{\"i_l\":0,\"i_ll\":1777148016989,\"i_e\":{\"enable_itp_optimization\":0},\"i_et\":1777147970292}",
+    "kdt": "lN34hDtC2uXY0wtApwoiRPvF4D4QrZZnl3qEquR0",
+    "auth_token": "df51ac6bd02c2cc631982c57c7f175cb650e18a4",
+    "ct0": "1bbc00f49ff258c217c809e5e1db70be507b05c51065fe5c280cd9f731c01cfc95d4c271995ab46486cfd175d958b0e59b6ae36b419cc2a603b52111dcd6468ee6d12cbe9a11180319729ddf912e198c",
+    "twid": "u%3D1076002579962871808",
+    "d_prefs": "MToxLGNvbnNlbnRfdmVyc2lvbjoyLHRleHRfdmVyc2lvbjoxMDAw",
+    "guest_id_ads": "v1%3A177711975217751018",
+    "guest_id_marketing": "v1%3A177711975217751018",
+    "personalization_id": "\"v1_nRj8IpZT3VVqxpbeudDDBA==\"",
+    "lang": "en",
+    "__cf_bm": "e8ZQGywPGDe0pt9lzUZuceBEoxWGW17JSwhH_MfbHY8-1778398608.4027984-1.0.1.1-rmx4UceEhOn89bO8.7KCQTDNx1Ma3wgBunXgi6UXdVmuY5VqMQpty90aZuP1qrk9.8uEJwHn7IwU95JrfvkcrVLqrFqQp3z97aCsgr_8Jynxf.UXwLwgynxLYS79KCGl"
+  },
+  "api_auth": {
+    "bearer_token": "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+  },
+  "api_headers": {
+    "x-client-transaction-id": "Z5LW13y5+ps/Uciw/RJPTIXvJyhzpjV0wZBBgOeWohjwEMG2A0pgaN8s11s5Zq8R02R7y2Iv4XAluvl04DPn8bDWVCapZA"
+  },
+  "api_config": {
+    "user_by_screen_name_query_id": "sLVLhk0bGj3MVFEKTdax1w",
+    "user_tweets_query_id": "pQHADmT91zIY83UbK0x4Lw",
+    "user_tweets_and_replies_query_id": "6eh3huj6fJnA3Naupj4w0Q",
+    "tweet_detail_query_id": "",
+    "replies_warmup_seconds": 4,
+    "replies_max_retries": 4,
+    "rate_limit_safety_margin": 0.9,
+    "retry_5xx_attempts": 3,
+    "retry_5xx_base_delay": 2
+  },
+  "rate_limits": {
+    "UserByScreenName": {
+      "limit": 150,
+      "window_seconds": 900
+    },
+    "UserTweets": {
+      "limit": 50,
+      "window_seconds": 900
+    },
+    "UserTweetsAndReplies": {
+      "limit": 500,
+      "window_seconds": 900
+    },
+    "TweetDetail": {
+      "limit": 150,
+      "window_seconds": 900
+    }
+  },
+  "viral_config": {
+    "window_days": 7,
+    "threshold_percentile": 95,
+    "recheck_hours": 24,
+    "intervals_minutes": [
+      5,
+      30,
+      120,
+      600
+    ],
+    "api_budget_mode": "balanced",
+    "max_detail_refreshes_per_run": 30,
+    "history_score_weight": 0.3,
+    "delta_score_weight": 0.7,
+    "composite_score_cutoff": 1.0,
+    "delta_percentile_cutoff": 0.8
+  },
+  "account_config": {
+    "weights_auto": true,
+    "weight_scale_factor": 1000
+  }
+}
