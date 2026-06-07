@@ -219,7 +219,7 @@ def get_priority_policy(
 
 
 def ordered_accounts(account_map: Dict[str, Dict]) -> List[str]:
-    """Return usernames sorted by priority then username."""
+    """Return usernames by priority while preserving configured order within each tier."""
     rows = list(account_map.values())
-    rows.sort(key=lambda row: (int(row.get("priority", 7)), row.get("username", "").lower()))
+    rows.sort(key=lambda row: int(row.get("priority", 7)))
     return [row["username"] for row in rows if row.get("username")]

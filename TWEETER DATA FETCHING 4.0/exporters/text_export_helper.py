@@ -8,8 +8,7 @@ payloads and does not change transport behavior.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 ALLOWED_ORIGINAL_LANGS = {"en", "fa"}
@@ -125,55 +124,3 @@ def choose_export_text(
         }
 
     return {"text": original, "note": None, "used_translation": False}
-
-
-def export_tweets_to_txt(tweet_list: List[Dict[str, Any]], output_filepath: str) -> str:
-    """
-    Export tweet objects into readable TXT format.
-
-    Expected tweet format: full GraphQL tweet objects (with `legacy`) or
-    simplified tweet dicts containing `text`/`timestamp` metrics.
-    """
-    output_path = Path(output_filepath)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    lines: List[str] = []
-    separator = "-" * 40
-
-    for index, tweet in enumerate(tweet_list or [], start=1):
-        legacy = tweet.get("legacy", {}) if isinstance(tweet, dict) else {}
-        legacy = legacy if isinstance(legacy, dict) else {}
-
-        created_at = (
-            legacy.get("created_at")
-            or tweet.get("timestamp")
-            or "UNKNOWN"
-        )
-        text = (
-            legacy.get("full_text")
-            or legacy.get("text")
-            or tweet.get("text")
-            or ""
-        )
-        retweets = legacy.get("retweet_count", tweet.get("retweets", 0))
-        likes = legacy.get("favorite_count", tweet.get("likes", 0))
-        replies = legacy.get("reply_count", tweet.get("replies", 0))
-        is_reply = bool(legacy.get("in_reply_to_status_id_str", tweet.get("in_reply_to_status_id")))
-
-        lines.append(f"Tweet #{index}")
-        lines.append(f"Date/Time: {created_at}")
-        lines.append(f"Is Reply: {'Yes' if is_reply else 'No'}")
-        lines.append(f"Retweets: {retweets}")
-        lines.append(f"Likes: {likes}")
-        lines.append(f"Replies: {replies}")
-        lines.append("Text:")
-        lines.append(str(text).strip())
-        lines.append(separator)
-
-    with output_path.open("w", encoding="utf-8") as f:
-        if lines:
-            f.write("\n".join(lines) + "\n")
-        else:
-            f.write("No tweets to export.\n")
-
-    return str(output_path)

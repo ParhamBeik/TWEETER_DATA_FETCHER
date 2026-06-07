@@ -173,7 +173,9 @@ class APIManager:
             read=5,
             status=5,
             backoff_factor=2,
-            status_forcelist=[429, 500, 502, 503, 504],
+            # Keep 429 visible to fetcher code so it can persist rate-limit
+            # headers, sleep until reset, and retry the exact same cursor/page.
+            status_forcelist=[500, 502, 503, 504],
             allowed_methods=frozenset({"GET", "HEAD", "OPTIONS"}),
             raise_on_status=False,
         )
@@ -273,6 +275,53 @@ class APIManager:
         headers["x-twitter-active-user"] = ctx.active_user
         if extra_headers:
             headers.update({k: str(v) for k, v in extra_headers.items() if v})
+        if endpoint == "UserTweetsAndReplies":
+            headers = self._apply_replies_request_profile(headers, username)
+        return headers
+
+    def _apply_replies_request_profile(self, headers: Dict, username: Optional[str]) -> Dict:
+        """Match the standalone UserTweetsAndReplies diagnostic request shape."""
+        cookies = self.config.get("api_cookies", {})
+        bearer = self.config.get("api_auth", {}).get("bearer_token", "")
+        csrf_token = cookies.get("ct0", "")
+        configured_headers = self.config.get("api_headers", {})
+        tx_id = configured_headers.get("x-client-transaction-id") or headers.get("x-client-transaction-id")
+        referer = f"https://x.com/{username}/with_replies" if username else "https://x.com/"
+
+        cookie_bits = []
+        for key in ["auth_token", "ct0", "lang"]:
+            value = cookies.get(key)
+            if value:
+                cookie_bits.append(f"{key}={value}")
+
+        headers.update({
+            "accept": "*/*",
+            "accept-encoding": "gzip, deflate, br, zstd",
+            "accept-language": "en-GB,en;q=0.9,es-ES;q=0.8,es;q=0.7,en-US;q=0.6",
+            "authorization": f"Bearer {bearer}",
+            "content-type": "application/json",
+            "cookie": "; ".join(cookie_bits),
+            "dnt": "1",
+            "priority": "u=1, i",
+            "referer": referer,
+            "sec-ch-ua": '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"macOS"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "user-agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/148.0.0.0 Safari/537.36"
+            ),
+            "x-csrf-token": csrf_token,
+            "x-twitter-active-user": "yes",
+            "x-twitter-auth-type": "OAuth2Session",
+            "x-twitter-client-language": "en",
+        })
+        if tx_id:
+            headers["x-client-transaction-id"] = str(tx_id)
         return headers
 
     def _human_delay(self, stage: str = "between_requests"):
@@ -290,6 +339,15 @@ class APIManager:
         if stage == "before_request":
             min_d = float(delay_map.get("before_request_min", 0.2))
             max_d = float(delay_map.get("before_request_max", 1.2))
+        elif stage == "between_pages":
+            min_d = float(delay_map.get("between_pages_min", 2))
+            max_d = float(delay_map.get("between_pages_max", 6))
+        elif stage == "between_accounts":
+            min_d = float(delay_map.get("between_accounts_min", 3))
+            max_d = float(delay_map.get("between_accounts_max", 8))
+        elif stage == "replies_retry":
+            min_d = float(delay_map.get("replies_retry_min", 1))
+            max_d = float(delay_map.get("replies_retry_max", 3))
         else:
             min_d = float(delay_map.get("between_requests_min", 0.5))
             max_d = float(delay_map.get("between_requests_max", 2.5))
@@ -297,6 +355,38 @@ class APIManager:
         if max_d < min_d:
             max_d = min_d
         time.sleep(random.uniform(min_d, max_d))
+
+    def human_delay(self, stage: str = "between_requests"):
+        """Public wrapper for configured anti-bot pacing."""
+        self._human_delay(stage)
+
+    def jitter_sleep(self, min_seconds: float, max_seconds: float, reason: str = "") -> float:
+        """Sleep for a bounded random duration and return the delay used."""
+        min_seconds = max(0.0, float(min_seconds))
+        max_seconds = max(min_seconds, float(max_seconds))
+        delay = random.uniform(min_seconds, max_seconds)
+        if reason:
+            print(f"⏳ {reason}; sleeping {delay:.1f}s")
+        time.sleep(delay)
+        return delay
+
+    def retry_policy(self) -> Dict[str, Union[int, float]]:
+        """Return configured status-aware retry settings with safe defaults."""
+        configured = self.simulation_config.get("error_retry_policy", {})
+        policy = configured if isinstance(configured, dict) else {}
+        return {
+            "client_error_attempts": int(policy.get("client_error_attempts", 3)),
+            "client_error_min_seconds": float(policy.get("client_error_min_seconds", 10)),
+            "client_error_max_seconds": float(policy.get("client_error_max_seconds", 20)),
+            "server_error_attempts": int(policy.get("server_error_attempts", 3)),
+            "server_error_base_seconds": float(policy.get("server_error_base_seconds", 5)),
+            "server_error_max_seconds": float(policy.get("server_error_max_seconds", 60)),
+            "request_error_attempts": int(policy.get("request_error_attempts", 3)),
+            "request_error_base_seconds": float(policy.get("request_error_base_seconds", 5)),
+            "request_error_max_seconds": float(policy.get("request_error_max_seconds", 60)),
+            "rate_limit_safety_buffer_seconds": int(policy.get("rate_limit_safety_buffer_seconds", 5)),
+            "max_rate_limit_sleep_seconds": int(policy.get("max_rate_limit_sleep_seconds", 900)),
+        }
 
     def warmup_navigation_context(
         self,
@@ -310,15 +400,19 @@ class APIManager:
         if not self.simulation_config.get("browse_warmup_enabled", True):
             return
 
-        if not username:
-            return
-        warmup_url = (
-            f"https://x.com/{username}/with_replies"
-            if endpoint == "UserTweetsAndReplies"
-            else f"https://x.com/{username}"
-        )
+        ctx = self._coerce_context(endpoint or "UserTweets", context, username)
+        warmup_routes = list(ctx.warmup_routes)
+        if not warmup_routes and username:
+            warmup_routes = [
+                f"https://x.com/{username}/with_replies"
+                if endpoint == "UserTweetsAndReplies"
+                else f"https://x.com/{username}"
+            ]
+        warmup_pages = int(self.simulation_config.get("warmup_pages", len(warmup_routes) or 1))
         try:
-            self._get(warmup_url)
+            for warmup_url in warmup_routes[:warmup_pages]:
+                self._get(warmup_url)
+                self._human_delay("between_requests")
         except requests.exceptions.RequestException:
             return
 
@@ -463,6 +557,50 @@ class APIManager:
         # Rate limited
         seconds_until_reset = limit_data["reset"] - now
         return False, seconds_until_reset
+
+    def wait_for_rate_limit(self, endpoint: str, safety_buffer_seconds: Optional[int] = None) -> int:
+        """Sleep until a persisted exhausted endpoint bucket resets."""
+        if safety_buffer_seconds is None:
+            safety_buffer_seconds = int(self.retry_policy().get("rate_limit_safety_buffer_seconds", 5))
+        if endpoint not in self.rate_limits:
+            return 0
+        limit_data = self.rate_limits[endpoint]
+        now = int(time.time())
+        remaining = int(limit_data.get("remaining", 1) or 0)
+        reset = int(limit_data.get("reset", 0) or 0)
+        if remaining > 0 or reset <= now:
+            return 0
+        sleep_for = max(0, reset - now + int(safety_buffer_seconds))
+        if sleep_for:
+            print(f"⏳ {endpoint} rate bucket exhausted; sleeping {sleep_for}s until reset.")
+            time.sleep(sleep_for)
+        return sleep_for
+
+    def seconds_until_reset(self, endpoint: str, safety_buffer_seconds: Optional[int] = None) -> int:
+        """Return seconds until the persisted endpoint reset time."""
+        if safety_buffer_seconds is None:
+            safety_buffer_seconds = int(self.retry_policy().get("rate_limit_safety_buffer_seconds", 5))
+        limit_data = self.rate_limits.get(endpoint, {})
+        now = int(time.time())
+        reset = int(limit_data.get("reset", 0) or 0)
+        return max(0, reset - now + int(safety_buffer_seconds))
+
+    def rate_limit_sleep_seconds(self, endpoint: str, response_headers: Optional[dict] = None) -> int:
+        """Calculate bounded sleep for 429 from persisted state and response headers."""
+        policy = self.retry_policy()
+        wait = self.seconds_until_reset(
+            endpoint,
+            safety_buffer_seconds=int(policy.get("rate_limit_safety_buffer_seconds", 5)),
+        )
+        headers = response_headers or {}
+        retry_after = headers.get("retry-after") if hasattr(headers, "get") else None
+        if retry_after:
+            try:
+                wait = max(wait, int(float(retry_after)))
+            except (TypeError, ValueError):
+                pass
+        max_wait = int(policy.get("max_rate_limit_sleep_seconds", 900))
+        return max(0, min(wait, max_wait))
     
     def update_rate_limit(self, endpoint: str, response_headers: dict):
         """Update rate limit state from response headers"""
@@ -511,6 +649,8 @@ class APIManager:
         last_exception: Optional[Exception] = None
         for attempt in range(max_retries):
             try:
+                self.wait_for_rate_limit(endpoint)
+                self._human_delay("before_request")
                 self.request_count += 1
                 request_headers = self._build_request_headers(
                     endpoint,

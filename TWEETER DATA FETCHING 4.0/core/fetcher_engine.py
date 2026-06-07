@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from core.api_manager import APIManager
 from data_pipeline.storage_manager import StorageManager
@@ -134,7 +134,16 @@ class FetcherEngine:
     def _compact_json(payload: Dict[str, Any]) -> str:
         return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
-    def _timeline_features(self) -> Dict[str, Any]:
+    def _endpoint_payload_config(self, endpoint: str) -> Dict[str, Any]:
+        payloads = self.config.get("graphql_endpoint_payloads", {})
+        endpoint_payload = payloads.get(endpoint, {})
+        return endpoint_payload if isinstance(endpoint_payload, dict) else {}
+
+    def _timeline_features(self, endpoint: Optional[str] = None) -> Dict[str, Any]:
+        if endpoint:
+            configured = self._endpoint_payload_config(endpoint).get("features")
+            if isinstance(configured, dict):
+                return dict(configured)
         return {
             "rweb_video_screen_enabled": False,
             "rweb_cashtags_enabled": True,
@@ -176,6 +185,42 @@ class FetcherEngine:
             "responsive_web_grok_community_note_auto_translation_is_enabled": True,
             "responsive_web_enhance_cards_enabled": False,
         }
+
+    def _timeline_field_toggles(self, endpoint: str) -> Dict[str, Any]:
+        configured = self._endpoint_payload_config(endpoint).get("fieldToggles")
+        if isinstance(configured, dict):
+            return dict(configured)
+        return {"withArticlePlainText": False}
+
+    def _timeline_variables(self, endpoint: str, user_id: str, cursor: Optional[str]) -> Dict[str, Any]:
+        variables_config = self._endpoint_payload_config(endpoint).get("variables")
+        if isinstance(variables_config, dict):
+            template_key = "pagination" if cursor else "initial"
+            template = variables_config.get(template_key)
+            if isinstance(template, dict):
+                variables = dict(template)
+                variables["userId"] = user_id
+                if cursor:
+                    variables["cursor"] = cursor
+                else:
+                    variables.pop("cursor", None)
+                return variables
+
+        variables: Dict[str, Any] = {
+            "userId": user_id,
+            "count": 20,
+            "includePromotedContent": True,
+        }
+        if endpoint == "UserTweetsAndReplies":
+            variables["withCommunity"] = True
+            variables["withVoice"] = True
+        else:
+            variables["withQuickPromoteEligibilityTweetFields"] = True
+            variables["withVoice"] = True
+
+        if cursor:
+            variables["cursor"] = cursor
+        return variables
 
     def _extract_bottom_cursor(self, payload: Dict[str, Any]) -> Optional[str]:
         instructions = (
@@ -308,9 +353,13 @@ class FetcherEngine:
         }
         if field_toggles is not None:
             query_params["fieldToggles"] = self._compact_json(field_toggles)
-        return f"{base_url}?{urlencode(query_params)}"
+        return f"{base_url}?{urlencode(query_params, quote_via=quote)}"
 
     def _get_user_id(self, username: str) -> str:
+        cached_user_id = self.storage_manager.get_user_id(username)
+        if cached_user_id:
+            return cached_user_id
+
         query_id = self.api_manager.get_query_id("UserByScreenName")
         if not query_id:
             raise RuntimeError("Missing query ID for UserByScreenName")
@@ -351,30 +400,137 @@ class FetcherEngine:
         )
         if not user_id:
             raise RuntimeError(f"Could not resolve user id for @{username}")
+        self.storage_manager.set_user_id(username, str(user_id))
         return str(user_id)
 
-    def _fetch_endpoint_pages(
+    def _fetch_endpoint_result(
         self,
         *,
         account: str,
         user_id: str,
         endpoint: str,
         max_pages: int,
-    ) -> List[Dict[str, Any]]:
+        batch_dir: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        started_at = datetime.utcnow().isoformat() + "Z"
+        attempts = 0
+        error_samples: List[Dict[str, Any]] = []
+        last_http_status: Optional[int] = None
+
+        def make_result(
+            *,
+            status: str,
+            outcome: str,
+            reason: str,
+            pages: List[Dict[str, Any]],
+            last_cursor: Optional[str],
+            raw_batch: Path,
+        ) -> Dict[str, Any]:
+            return {
+                "account": account,
+                "endpoint": endpoint,
+                "status": status,
+                "outcome": outcome,
+                "reason": reason,
+                "pages": pages,
+                "pages_fetched": len(pages),
+                "raw_batch_path": str(raw_batch),
+                "last_cursor": last_cursor,
+                "last_http_status": last_http_status,
+                "attempts": attempts,
+                "error_samples": error_samples[-5:],
+                "started_at": started_at,
+                "finished_at": datetime.utcnow().isoformat() + "Z",
+            }
+
+        def record_http_error(response, cursor_value: Optional[str], attempt_number: int) -> None:
+            nonlocal last_http_status
+            last_http_status = int(response.status_code)
+            sample = {
+                "status_code": int(response.status_code),
+                "cursor": cursor_value,
+                "attempt": attempt_number,
+                "response_text": str(response.text or "")[:500],
+            }
+            error_samples.append(sample)
+
+        def classify_http_failure(status_code: int, has_pages: bool, cursor_value: Optional[str]) -> Tuple[str, str, str]:
+            if status_code == 404 and cursor_value and has_pages:
+                return "partial", "partial_cursor_404", "Cursor returned 404 after successful pages"
+            if status_code == 404:
+                return "failed", "failed_initial_404", "Initial page returned 404"
+            if status_code in {401, 403}:
+                if has_pages:
+                    return "partial", "partial_http_error", f"HTTP {status_code} after successful pages"
+                return "failed", "failed_initial_auth", f"Initial request returned HTTP {status_code}"
+            if status_code == 429:
+                if has_pages:
+                    return "partial", "partial_rate_limited", "Rate limit persisted after successful pages"
+                return "failed", "failed_initial_rate_limit", "Initial request stayed rate-limited"
+            if 500 <= status_code < 600:
+                if has_pages:
+                    return "partial", "partial_http_error", f"HTTP {status_code} after successful pages"
+                return "failed", "failed_initial_http_error", f"Initial request returned HTTP {status_code}"
+            if has_pages:
+                return "partial", "partial_http_error", f"HTTP {status_code} after successful pages"
+            return "failed", "failed_initial_http_error", f"Initial request returned HTTP {status_code}"
+
+        def finish_with_state(
+            *,
+            status: str,
+            outcome: str,
+            reason: str,
+            pages: List[Dict[str, Any]],
+            cursor_value: Optional[str],
+            raw_batch: Path,
+        ) -> Dict[str, Any]:
+            state_status = "completed" if status == "completed" else status
+            state_cursor = "__END__" if status == "completed" else (cursor_value if cursor_value else "__START__")
+            self.storage_manager.update_endpoint_state(
+                account,
+                endpoint,
+                last_cursor=state_cursor,
+                status=state_status,
+                meta={
+                    "outcome": outcome,
+                    "reason": reason,
+                    "last_http_status": last_http_status,
+                    "pages_fetched": len(pages),
+                    "raw_batch_path": str(raw_batch),
+                    "finished_at": datetime.utcnow().isoformat() + "Z",
+                },
+            )
+            return make_result(
+                status=status,
+                outcome=outcome,
+                reason=reason,
+                pages=pages,
+                last_cursor=state_cursor,
+                raw_batch=raw_batch,
+            )
+
         query_id = self.api_manager.get_query_id(endpoint)
         if not query_id:
             raise RuntimeError(f"Missing query ID for endpoint: {endpoint}")
 
-        features = self._timeline_features()
-        field_toggles = {"withArticlePlainText": False}
+        features = self._timeline_features(endpoint)
+        field_toggles = self._timeline_field_toggles(endpoint)
         existing_state = self.storage_manager.get_endpoint_state(account, endpoint)
         status_value = str(existing_state.get("status", "pending"))
         resume_cursor = existing_state.get("last_cursor")
+        raw_batch_path = existing_state.get("raw_batch_path")
+        if batch_dir is None:
+            if raw_batch_path and Path(str(raw_batch_path)).exists():
+                batch_dir = Path(str(raw_batch_path))
+            else:
+                batch_dir = self.storage_manager.create_raw_batch_dir(endpoint, account)
+
+        existing_pages = self.storage_manager.load_raw_pages_from_batch(batch_dir)
         cursor: Optional[str] = (
             str(resume_cursor)
             if (
                 resume_cursor
-                and status_value in {"paused", "failed"}
+                and status_value in {"running", "paused", "failed"}
                 and str(resume_cursor) not in {"__START__", "__END__"}
             )
             else None
@@ -383,6 +539,18 @@ class FetcherEngine:
             self.logger.warning(
                 f"Resuming @{account} {endpoint} from saved cursor: {cursor}"
             )
+        if status_value == "completed" and existing_pages:
+            self.logger.info(f"Skipping @{account} {endpoint}; completed batch exists at {batch_dir}")
+            return make_result(
+                status="completed",
+                outcome=str(existing_state.get("outcome") or existing_state.get("reason") or "skipped_existing_completed"),
+                reason="Completed raw batch already exists",
+                pages=existing_pages,
+                last_cursor=str(existing_state.get("last_cursor") or "__END__"),
+                raw_batch=batch_dir,
+            )
+
+        self.api_manager.warmup_navigation_context(username=account, endpoint=endpoint)
 
         # Mark active run state at loop start.
         self.storage_manager.update_endpoint_state(
@@ -390,26 +558,16 @@ class FetcherEngine:
             endpoint,
             last_cursor=cursor if cursor else None,
             status="running",
+            meta={"raw_batch_path": str(batch_dir)},
         )
 
-        page = 1
-        all_items: List[Dict[str, Any]] = []
+        page = len(existing_pages) + 1
+        all_items: List[Dict[str, Any]] = list(existing_pages)
+
+        policy = self.api_manager.retry_policy()
 
         while page <= max_pages:
-            variables: Dict[str, Any] = {
-                "userId": user_id,
-                "count": 20,
-                "includePromotedContent": True,
-            }
-            if endpoint == "UserTweetsAndReplies":
-                variables["withCommunity"] = True
-                variables["withVoice"] = True
-            else:
-                variables["withQuickPromoteEligibilityTweetFields"] = True
-                variables["withVoice"] = True
-
-            if cursor:
-                variables["cursor"] = cursor
+            variables = self._timeline_variables(endpoint, user_id, cursor)
 
             request_url = self._build_graphql_url(
                 endpoint=endpoint,
@@ -432,19 +590,59 @@ class FetcherEngine:
                 }
 
             response = None
-            last_exception: Optional[Exception] = None
             page_request_succeeded = False
+            max_attempts = max(
+                int(policy.get("client_error_attempts", self.max_cursor_error_retries)),
+                int(policy.get("server_error_attempts", self.max_cursor_error_retries)),
+                int(policy.get("request_error_attempts", self.max_cursor_error_retries)),
+            )
 
-            for attempt in range(self.max_cursor_error_retries):
+            for attempt in range(max_attempts):
+                attempts += 1
                 try:
                     response = self.api_manager.perform_get(
                         endpoint=endpoint,
                         url=request_url,
+                        max_retries=1,
                         username=account,
                         headers=request_headers,
                     )
+                    last_http_status = int(response.status_code)
 
-                    if response.status_code in {400, 401, 403, 404, 429}:
+                    if response.status_code == 429:
+                        record_http_error(response, cursor, attempt + 1)
+                        self._log_4xx_details(
+                            account=account,
+                            endpoint=endpoint,
+                            response=response,
+                            request_url=request_url,
+                            request_headers=dict(response.request.headers),
+                            variables=variables,
+                            cursor=cursor,
+                            title="RATE LIMITED (SLEEPING AND RETRYING)",
+                        )
+                        wait = self.api_manager.rate_limit_sleep_seconds(endpoint, response.headers)
+                        if wait <= 0:
+                            wait = int(policy.get("rate_limit_safety_buffer_seconds", 5))
+                        if attempt >= max_attempts - 1:
+                            status, outcome, reason = classify_http_failure(429, bool(all_items), cursor)
+                            return finish_with_state(
+                                status=status,
+                                outcome=outcome,
+                                reason=reason,
+                                pages=all_items,
+                                cursor_value=cursor,
+                                raw_batch=batch_dir,
+                            )
+                        self.logger.warning(
+                            f"@{account} {endpoint} hit HTTP 429; retrying same page/cursor after {wait}s"
+                        )
+                        time.sleep(wait)
+                        continue
+
+                    if response.status_code in {400, 401, 403, 404}:
+                        record_http_error(response, cursor, attempt + 1)
+                        client_attempts = int(policy.get("client_error_attempts", self.max_cursor_error_retries))
                         self._log_4xx_details(
                             account=account,
                             endpoint=endpoint,
@@ -455,88 +653,136 @@ class FetcherEngine:
                             cursor=cursor,
                             title=(
                                 "CURSOR ERROR (RETRYING)"
-                                if attempt < self.max_cursor_error_retries - 1
+                                if attempt < client_attempts - 1
                                 else "CURSOR ERROR (MAX RETRIES REACHED)"
                             ),
                         )
-                        if attempt < self.max_cursor_error_retries - 1:
-                            wait = self.backoff_schedule_seconds[min(attempt, len(self.backoff_schedule_seconds) - 1)]
-                            self.logger.warning(
-                                f"@{account} {endpoint} got HTTP {response.status_code}; retry in {wait}s "
-                                f"(attempt {attempt + 1}/{self.max_cursor_error_retries})"
+                        if attempt < client_attempts - 1:
+                            wait = self.api_manager.jitter_sleep(
+                                float(policy.get("client_error_min_seconds", 10)),
+                                float(policy.get("client_error_max_seconds", 20)),
+                                reason=f"@{account} {endpoint} HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
                             )
-                            time.sleep(wait)
+                            self.logger.warning(
+                                f"@{account} {endpoint} got HTTP {response.status_code}; retried after {wait:.1f}s "
+                                f"(attempt {attempt + 1}/{client_attempts})"
+                            )
                             continue
 
-                        # Max retries reached -> pause endpoint and continue outer workflow.
-                        self.storage_manager.update_endpoint_state(
-                            account,
-                            endpoint,
-                            last_cursor=cursor if cursor else "__START__",
-                            status="paused",
-                            meta={
-                                "last_http_status": int(response.status_code),
-                                "last_error_at": datetime.utcnow().isoformat() + "Z",
-                            },
+                        status, outcome, reason = classify_http_failure(
+                            int(response.status_code), bool(all_items), cursor
                         )
                         self.logger.warning(
-                            f"Pausing @{account} {endpoint} after repeated HTTP {response.status_code}; "
-                            "moving to next endpoint/account."
+                            f"@{account} {endpoint} classified as {outcome}; moving to next account/endpoint."
                         )
-                        return all_items
+                        return finish_with_state(
+                            status=status,
+                            outcome=outcome,
+                            reason=reason,
+                            pages=all_items,
+                            cursor_value=cursor,
+                            raw_batch=batch_dir,
+                        )
+
+                    if 500 <= response.status_code < 600:
+                        record_http_error(response, cursor, attempt + 1)
+                        server_attempts = int(policy.get("server_error_attempts", self.max_cursor_error_retries))
+                        if attempt < server_attempts - 1:
+                            base = float(policy.get("server_error_base_seconds", 5))
+                            max_sleep = float(policy.get("server_error_max_seconds", 60))
+                            wait = min(max_sleep, base * (2 ** attempt))
+                            self.api_manager.jitter_sleep(wait, wait + base, reason=f"@{account} {endpoint} HTTP {response.status_code}")
+                            continue
+                        status, outcome, reason = classify_http_failure(int(response.status_code), bool(all_items), cursor)
+                        return finish_with_state(
+                            status=status,
+                            outcome=outcome,
+                            reason=reason,
+                            pages=all_items,
+                            cursor_value=cursor,
+                            raw_batch=batch_dir,
+                        )
 
                     response.raise_for_status()
                     page_request_succeeded = True
                     break
                 except Exception as exc:
-                    last_exception = exc
-                    if attempt < self.max_cursor_error_retries - 1:
-                        wait = self.backoff_schedule_seconds[min(attempt, len(self.backoff_schedule_seconds) - 1)]
+                    error_samples.append({
+                        "cursor": cursor,
+                        "attempt": attempt + 1,
+                        "exception": str(exc)[:500],
+                    })
+                    request_attempts = int(policy.get("request_error_attempts", self.max_cursor_error_retries))
+                    if attempt < request_attempts - 1:
+                        base = float(policy.get("request_error_base_seconds", 5))
+                        max_sleep = float(policy.get("request_error_max_seconds", 60))
+                        wait = min(max_sleep, base * (2 ** attempt))
                         self.logger.warning(
-                            f"@{account} {endpoint} request error: {exc}; retry in {wait}s "
-                            f"(attempt {attempt + 1}/{self.max_cursor_error_retries})"
+                            f"@{account} {endpoint} request error: {exc}; retrying "
+                            f"(attempt {attempt + 1}/{request_attempts})"
                         )
-                        time.sleep(wait)
+                        self.api_manager.jitter_sleep(wait, wait + base, reason=f"@{account} {endpoint} request error")
                         continue
 
-                    self.storage_manager.update_endpoint_state(
-                        account,
-                        endpoint,
-                        last_cursor=cursor if cursor else "__START__",
-                        status="failed",
-                        meta={
-                            "last_error": str(exc),
-                            "last_error_at": datetime.utcnow().isoformat() + "Z",
-                        },
-                    )
+                    status = "partial" if all_items else "failed"
+                    outcome = "partial_request_error" if all_items else "failed_initial_request_error"
                     self.logger.warning(
-                        f"Marking @{account} {endpoint} as failed after max retries; moving on."
+                        f"@{account} {endpoint} classified as {outcome}; moving on."
                     )
-                    return all_items
+                    return finish_with_state(
+                        status=status,
+                        outcome=outcome,
+                        reason=str(exc)[:500],
+                        pages=all_items,
+                        cursor_value=cursor,
+                        raw_batch=batch_dir,
+                    )
 
             if not page_request_succeeded:
-                # Defensive fallback, should be unreachable due to returns above.
-                self.storage_manager.update_endpoint_state(
-                    account,
-                    endpoint,
-                    last_cursor=cursor if cursor else "__START__",
-                    status="failed",
-                    meta={"last_error": str(last_exception) if last_exception else "unknown"},
+                status = "partial" if all_items else "failed"
+                outcome = "partial_unknown_error" if all_items else "failed_initial_unknown_error"
+                return finish_with_state(
+                    status=status,
+                    outcome=outcome,
+                    reason="Request loop ended without a successful response",
+                    pages=all_items,
+                    cursor_value=cursor,
+                    raw_batch=batch_dir,
                 )
-                return all_items
 
             if response is None:
-                self.storage_manager.update_endpoint_state(
-                    account,
-                    endpoint,
-                    last_cursor=cursor if cursor else "__START__",
-                    status="failed",
+                status = "partial" if all_items else "failed"
+                outcome = "partial_empty_response" if all_items else "failed_initial_empty_response"
+                return finish_with_state(
+                    status=status,
+                    outcome=outcome,
+                    reason="No response object returned",
+                    pages=all_items,
+                    cursor_value=cursor,
+                    raw_batch=batch_dir,
                 )
-                return all_items
 
-            payload = response.json()
+            try:
+                payload = response.json()
+            except Exception as exc:
+                error_samples.append({
+                    "cursor": cursor,
+                    "page": page,
+                    "exception": f"JSON parse error: {str(exc)[:500]}",
+                })
+                status = "partial" if all_items else "failed"
+                outcome = "partial_parse_error" if all_items else "failed_initial_parse_error"
+                return finish_with_state(
+                    status=status,
+                    outcome=outcome,
+                    reason=f"Could not parse JSON response: {str(exc)[:500]}",
+                    pages=all_items,
+                    cursor_value=cursor,
+                    raw_batch=batch_dir,
+                )
 
             all_items.append(payload)
+            self.storage_manager.save_raw_page(batch_dir, page, payload)
             next_cursor = self._extract_bottom_cursor(payload)
 
             self.storage_manager.update_endpoint_state(
@@ -547,6 +793,7 @@ class FetcherEngine:
                 meta={
                     "last_page_fetched_at": datetime.utcnow().isoformat() + "Z",
                     "last_page_number": page,
+                    "raw_batch_path": str(batch_dir),
                 },
             )
 
@@ -557,30 +804,56 @@ class FetcherEngine:
                 )
                 cursor = next_cursor
                 page += 1
+                self.api_manager.human_delay("between_pages")
                 continue
 
             self.logger.info(
                 f"Account: @{account} | Endpoint: {endpoint} | End of pagination reached"
             )
-            self.storage_manager.update_endpoint_state(
-                account,
-                endpoint,
-                last_cursor="__END__",
+            return finish_with_state(
                 status="completed",
-                meta={"completed_at": datetime.utcnow().isoformat() + "Z"},
+                outcome="success_true_end",
+                reason="End of pagination reached without cursor",
+                pages=all_items,
+                cursor_value="__END__",
+                raw_batch=batch_dir,
             )
-            break
 
         if page > max_pages:
-            self.storage_manager.update_endpoint_state(
-                account,
-                endpoint,
-                last_cursor=cursor if cursor else "__END__",
+            return finish_with_state(
                 status="completed",
-                meta={"completed_at": datetime.utcnow().isoformat() + "Z", "reason": "max_pages_reached"},
+                outcome="success_max_pages",
+                reason="Configured max_pages reached",
+                pages=all_items,
+                cursor_value=cursor if cursor else "__END__",
+                raw_batch=batch_dir,
             )
 
-        return all_items
+        return finish_with_state(
+            status="completed",
+            outcome="success_true_end",
+            reason="Endpoint fetch completed",
+            pages=all_items,
+            cursor_value="__END__",
+            raw_batch=batch_dir,
+        )
+
+    def _fetch_endpoint_pages(
+        self,
+        *,
+        account: str,
+        user_id: str,
+        endpoint: str,
+        max_pages: int,
+        batch_dir: Optional[Path] = None,
+    ) -> List[Dict[str, Any]]:
+        return self._fetch_endpoint_result(
+            account=account,
+            user_id=user_id,
+            endpoint=endpoint,
+            max_pages=max_pages,
+            batch_dir=batch_dir,
+        ).get("pages", [])
 
     def _persist_endpoint_output(self, account: str, endpoint: str, tweets: List[Dict[str, Any]]):
         endpoint_map = {
