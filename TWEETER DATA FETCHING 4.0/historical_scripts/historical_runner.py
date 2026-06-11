@@ -229,15 +229,15 @@ def _print_report_summary(report: Dict[str, Any], json_path: Path, txt_path: Pat
 
 
 def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
-    project_root = Path(__file__).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
     engine = FetcherEngine(config_path="config/config.json")
-    storage = StorageManager(project_root=project_root, subsystem="historical")
+    storage = StorageManager(project_root=project_root, subsystem="historical_live")
     processor = TweetSetProcessor()
     evaluator = RollingWindowEvaluator()
     migration_report = storage.migrate_legacy_historical_data(verify=True)
     print(f"[V4] Historical storage migration: {migration_report}")
 
-    accounts = selected_accounts or ordered_accounts(engine.account_map)
+    accounts = ordered_accounts(engine.account_map) if selected_accounts is None else selected_accounts
     if not accounts:
         print("[V4] No accounts found in tier configuration.")
         return
