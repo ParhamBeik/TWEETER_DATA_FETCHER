@@ -1,20 +1,266 @@
 📁 TWEETER_DATA_FETCHER/
 ├── 📁 TWEETER DATA FETCHING 1.0/
-│   ├── 📁 MARKDOWN FILES/ [Data/Docs]
-│   ├── 📁 REFRENCES FILES/ [Data/Docs]
-│   ├── 📁 TWEETS/ [Data/Docs]
-│   ├── 📁 VIRAL TWEETS/ [Data/Docs]
+│   ├── 📁 MARKDOWN FILES/
+│   ├── 📁 REFRENCES FILES/
+│   ├── 📁 TWEETS/
+│   │   ├── 📁 ELONMUSK/
+│   │   ├── 📁 PAULG/
+│   │   ├── 📁 TIM_COOK/
+│   │   └── 📁 WHALE_ALERT/
+│   ├── 📁 VIRAL TWEETS/
+│   │   ├── 📁 120 Minutes/
+│   │   │   ├── 📁 PAULG/
+│   │   │   └── 📁 WHALE_ALERT/
+│   │   ├── 📁 30 Minutes/
+│   │   │   ├── 📁 PAULG/
+│   │   │   └── 📁 WHALE_ALERT/
+│   │   ├── 📁 5 Minutes/
+│   │   │   ├── 📁 PAULG/
+│   │   │   └── 📁 WHALE_ALERT/
+│   │   └── 📁 600 Minutes/
+│   │       ├── 📁 PAULG/
+│   │       └── 📁 WHALE_ALERT/
 │   ├── 📄 config.json
 │   ├── 📄 fetch_historical_tweets.py
 │   ├── 📄 monitor_live_tweets.py
 │   └── 📄 setup_api_cookies.py
 ├── 📁 TWEETER DATA FETCHING 2.0/
-│   ├── 📁 MARKDOWN FILES/ [Data/Docs]
-│   ├── 📁 REFRENCES FILES/ [Data/Docs]
-│   ├── 📁 TWEETS/ [Data/Docs]
-│   ├── 📁 VIRAL TWEETS/ [Data/Docs]
-│   ├── 📁 data/ [Data/Docs]
-│   ├── 📁 logs/ [Data/Docs]
+│   ├── 📁 MARKDOWN FILES/
+│   ├── 📁 REFRENCES FILES/
+│   ├── 📁 TWEETS/
+│   │   ├── 📁 ALIVAEZ/
+│   │   ├── 📁 ARAGHCHI/
+│   │   ├── 📁 AVICHAYADRAEE/
+│   │   ├── 📁 BELLINGCAT/
+│   │   ├── 📁 BUSINESS/
+│   │   ├── 📁 CHIGRL/
+│   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   ├── 📁 DRPEZESHKIAN/
+│   │   ├── 📁 ELERIANM/
+│   │   ├── 📁 ELONMUSK/
+│   │   ├── 📁 FARNAZFASSIHI/
+│   │   ├── 📁 FEDERALRESERVE/
+│   │   ├── 📁 FLIGHTRADAR24/
+│   │   ├── 📁 GEOCONFIRMED/
+│   │   ├── 📁 GIDONSAAR/
+│   │   ├── 📁 GOLDTELEGRAPH_/
+│   │   ├── 📁 HEMMATI_IR/
+│   │   ├── 📁 IDF/
+│   │   ├── 📁 IDFFARSI/
+│   │   ├── 📁 IRANINTL/
+│   │   ├── 📁 IRIMFA_EN/
+│   │   ├── 📁 IRIMFA_SPOX/
+│   │   ├── 📁 ISRAEL_KATZ/
+│   │   ├── 📁 JDVANCE/
+│   │   ├── 📁 JIMRICKARDS/
+│   │   ├── 📁 J_ZARIF/
+│   │   ├── 📁 KITCONEWSNOW/
+│   │   ├── 📁 KOBEISSILETTER/
+│   │   ├── 📁 KSADJADPOUR/
+│   │   ├── 📁 LAGARDE/
+│   │   ├── 📁 LAURASECOR/
+│   │   ├── 📁 LUKEGROMEN/
+│   │   ├── 📁 LYNALDENCONTACT/
+│   │   ├── 📁 MALONEYSUZANNE/
+│   │   ├── 📁 MDUBOWITZ/
+│   │   ├── 📁 MKHAMENEI_IR/
+│   │   ├── 📁 NETANYAHU/
+│   │   ├── 📁 NICKTIMIRAOS/
+│   │   ├── 📁 PAHLAVIREZA/
+│   │   ├── 📁 PAULKRUGMAN/
+│   │   ├── 📁 PETERSCHIFF/
+│   │   ├── 📁 POLYMARKETINTEL/
+│   │   ├── 📁 PRESSSEC/
+│   │   ├── 📁 RAYDALIO/
+│   │   ├── 📁 REALDONALDTRUMP/
+│   │   ├── 📁 REUTERS/
+│   │   ├── 📁 RICH_GOLDBERG/
+│   │   ├── 📁 RONENBERGMAN/
+│   │   ├── 📁 SANTIAGOAUFUND/
+│   │   ├── 📁 SECRUBIO/
+│   │   ├── 📁 SECSCOTTBESSENT/
+│   │   ├── 📁 SEPEACEMISSIONS/
+│   │   ├── 📁 SGHASSEMINEJAD/
+│   │   ├── 📁 SHAYAN86/
+│   │   ├── 📁 STEVEWITKOFF/
+│   │   ├── 📁 TANKERTRACKERS/
+│   │   ├── 📁 THEGOODISIS/
+│   │   ├── 📁 UANI/
+│   │   ├── 📁 USTREASURY/
+│   │   ├── 📁 VALI_NASR/
+│   │   └── 📁 WGC_NEWS/
+│   ├── 📁 VIRAL TWEETS/
+│   │   ├── 📁 120 Minutes/
+│   │   │   ├── 📁 ALIVAEZ/
+│   │   │   └── 📁 MDUBOWITZ/
+│   │   ├── 📁 30 Minutes/
+│   │   │   ├── 📁 ALIVAEZ/
+│   │   │   └── 📁 MDUBOWITZ/
+│   │   ├── 📁 5 Minutes/
+│   │   │   ├── 📁 ALIVAEZ/
+│   │   │   └── 📁 MDUBOWITZ/
+│   │   └── 📁 600 Minutes/
+│   │       ├── 📁 ALIVAEZ/
+│   │       └── 📁 MDUBOWITZ/
+│   ├── 📁 data/
+│   │   ├── 📁 ENDPOINT_DIFFS/
+│   │   │   ├── 📁 BUSINESS/
+│   │   │   ├── 📁 CHIGRL/
+│   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   ├── 📁 EIAGOV/
+│   │   │   ├── 📁 ELONMUSK/
+│   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   ├── 📁 GEOCONFIRMED/
+│   │   │   ├── 📁 IDF/
+│   │   │   ├── 📁 IDFFARSI/
+│   │   │   ├── 📁 IRANINTL/
+│   │   │   ├── 📁 JDVANCE/
+│   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   ├── 📁 KSADJADPOUR/
+│   │   │   ├── 📁 LAGARDE/
+│   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   ├── 📁 MALONEYSUZANNE/
+│   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   ├── 📁 PAULG/
+│   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   ├── 📁 REUTERS/
+│   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   ├── 📁 RONENBERGMAN/
+│   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   ├── 📁 SHAYAN86/
+│   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   ├── 📁 THEGOODISIS/
+│   │   │   ├── 📁 USTREASURY/
+│   │   │   └── 📁 VALI_NASR/
+│   │   ├── 📁 MERGED_TIMELINES/
+│   │   │   ├── 📁 ALIVAEZ/
+│   │   │   ├── 📁 AVICHAYADRAEE/
+│   │   │   ├── 📁 BUSINESS/
+│   │   │   ├── 📁 CHIGRL/
+│   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   ├── 📁 DRPEZESHKIAN/
+│   │   │   ├── 📁 EIAGOV/
+│   │   │   ├── 📁 ELERIANM/
+│   │   │   ├── 📁 ELONMUSK/
+│   │   │   ├── 📁 FARNAZFASSIHI/
+│   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   ├── 📁 GEOCONFIRMED/
+│   │   │   ├── 📁 GOLDTELEGRAPH_/
+│   │   │   ├── 📁 IRIMFA_EN/
+│   │   │   ├── 📁 IRIMFA_SPOX/
+│   │   │   ├── 📁 ISRAEL_KATZ/
+│   │   │   ├── 📁 JDVANCE/
+│   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   ├── 📁 NETANYAHU/
+│   │   │   ├── 📁 PAULG/
+│   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   ├── 📁 POLYMARKETINTEL/
+│   │   │   ├── 📁 REUTERS/
+│   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   ├── 📁 SECSCOTTBESSENT/
+│   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   ├── 📁 SHAYAN86/
+│   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   ├── 📁 THEGOODISIS/
+│   │   │   ├── 📁 UANI/
+│   │   │   ├── 📁 USTREASURY/
+│   │   │   └── 📁 WHALE_ALERT/
+│   │   ├── 📁 SNAPSHOTS/
+│   │   ├── 📁 STATE/
+│   │   ├── 📁 USER_TWEETS/
+│   │   │   ├── 📁 ALIVAEZ/
+│   │   │   ├── 📁 ARAGHCHI/
+│   │   │   ├── 📁 AVICHAYADRAEE/
+│   │   │   ├── 📁 BUSINESS/
+│   │   │   ├── 📁 CHIGRL/
+│   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   ├── 📁 DRPEZESHKIAN/
+│   │   │   ├── 📁 EIAGOV/
+│   │   │   ├── 📁 ELERIANM/
+│   │   │   ├── 📁 ELONMUSK/
+│   │   │   ├── 📁 FARNAZFASSIHI/
+│   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   ├── 📁 GOLDTELEGRAPH_/
+│   │   │   ├── 📁 IRIMFA_EN/
+│   │   │   ├── 📁 IRIMFA_SPOX/
+│   │   │   ├── 📁 ISRAEL_KATZ/
+│   │   │   ├── 📁 JDVANCE/
+│   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   ├── 📁 NETANYAHU/
+│   │   │   ├── 📁 PAULG/
+│   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   ├── 📁 POLYMARKETINTEL/
+│   │   │   ├── 📁 REUTERS/
+│   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   ├── 📁 SECRUBIO/
+│   │   │   ├── 📁 SECSCOTTBESSENT/
+│   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   ├── 📁 SHAYAN86/
+│   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   ├── 📁 UANI/
+│   │   │   └── 📁 USTREASURY/
+│   │   ├── 📁 USER_TWEETS_AND_REPLIES/
+│   │   │   ├── 📁 ALIVAEZ/
+│   │   │   ├── 📁 AVICHAYADRAEE/
+│   │   │   ├── 📁 BUSINESS/
+│   │   │   ├── 📁 CHIGRL/
+│   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   ├── 📁 DRPEZESHKIAN/
+│   │   │   ├── 📁 EIAGOV/
+│   │   │   ├── 📁 ELERIANM/
+│   │   │   ├── 📁 ELONMUSK/
+│   │   │   ├── 📁 FARNAZFASSIHI/
+│   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   ├── 📁 GEOCONFIRMED/
+│   │   │   ├── 📁 GOLDTELEGRAPH_/
+│   │   │   ├── 📁 IDF/
+│   │   │   ├── 📁 IDFFARSI/
+│   │   │   ├── 📁 IRANINTL/
+│   │   │   ├── 📁 IRIMFA_EN/
+│   │   │   ├── 📁 IRIMFA_SPOX/
+│   │   │   ├── 📁 ISRAEL_KATZ/
+│   │   │   ├── 📁 JDVANCE/
+│   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   ├── 📁 KSADJADPOUR/
+│   │   │   ├── 📁 LAGARDE/
+│   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   ├── 📁 MALONEYSUZANNE/
+│   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   ├── 📁 NETANYAHU/
+│   │   │   ├── 📁 PAULG/
+│   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   ├── 📁 POLYMARKETINTEL/
+│   │   │   ├── 📁 REUTERS/
+│   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   ├── 📁 RONENBERGMAN/
+│   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   ├── 📁 SECSCOTTBESSENT/
+│   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   ├── 📁 SHAYAN86/
+│   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   ├── 📁 THEGOODISIS/
+│   │   │   ├── 📁 UANI/
+│   │   │   ├── 📁 USTREASURY/
+│   │   │   └── 📁 VALI_NASR/
+│   │   └── 📁 VIRAL/
+│   │       ├── 📁 candidates/
+│   │       └── 📁 confirmed/
+│   ├── 📁 logs/
 │   ├── 📄 api_manager.py
 │   ├── 📄 config.json
 │   ├── 📄 fetch_historical_tweets_hybrid.py
@@ -25,10 +271,32 @@
 │   └── 📄 viral_detector.py
 ├── 📁 TWEETER DATA FETCHING 3.0/
 │   ├── 📁 ADVANCED SEARCH/
-│   │   ├── 📁 MARKDOWN_FILES/ [Data/Docs]
-│   │   ├── 📁 REFERENCE_FILES/ [Data/Docs]
-│   │   ├── 📁 data/ [Data/Docs]
-│   │   ├── 📁 logs/ [Data/Docs]
+│   │   ├── 📁 MARKDOWN_FILES/
+│   │   │   ├── 📁 DEBUG/
+│   │   │   ├── 📁 GUIDES/
+│   │   │   └── 📁 REPORTS/
+│   │   ├── 📁 REFERENCE_FILES/
+│   │   ├── 📁 data/
+│   │   │   ├── 📁 SEARCH_TIMELINE/
+│   │   │   │   ├── 📁 Iran_War/
+│   │   │   │   │   └── 📁 Top/
+│   │   │   │   │       ├── 📁 DEBUGGING/
+│   │   │   │   │       └── 📁 JSON_FILES/
+│   │   │   │   └── 📁 Iran_War_Brent_Gold_Inflation_Hormuz/
+│   │   │   │       └── 📁 Top/
+│   │   │   │           ├── 📁 DEBUGGING/
+│   │   │   │           └── 📁 JSON_FILES/
+│   │   │   └── 📁 STATE/
+│   │   ├── 📁 logs/
+│   │   │   └── 📁 Iran_War_Brent_Gold_Inflation_Hormuz/
+│   │   │       ├── 📁 20260530_114226/
+│   │   │       │   └── 📁 requests/
+│   │   │       ├── 📁 20260530_114254/
+│   │   │       │   └── 📁 requests/
+│   │   │       ├── 📁 20260530_114305/
+│   │   │       │   └── 📁 requests/
+│   │   │       └── 📁 20260530_115113/
+│   │   │           └── 📁 requests/
 │   │   ├── 📄 api_manager.py
 │   │   ├── 📄 config.json
 │   │   ├── 📄 debug_logger.py
@@ -42,10 +310,189 @@
 │   │   ├── 📄 text_export_helper.py
 │   │   └── 📄 tier_config.py
 │   ├── 📁 HISTORICAL DATA/
-│   │   ├── 📁 MARKDOWN_FILES/ [Data/Docs]
-│   │   ├── 📁 REFERENCE_FILES/ [Data/Docs]
-│   │   ├── 📁 data/ [Data/Docs]
-│   │   ├── 📁 logs/ [Data/Docs]
+│   │   ├── 📁 MARKDOWN_FILES/
+│   │   │   ├── 📁 DEBUG/
+│   │   │   ├── 📁 GUIDES/
+│   │   │   └── 📁 REPORTS/
+│   │   ├── 📁 REFERENCE_FILES/
+│   │   ├── 📁 data/
+│   │   │   ├── 📁 ENDPOINT_DIFFS/
+│   │   │   │   ├── 📁 BUSINESS/
+│   │   │   │   ├── 📁 CHIGRL/
+│   │   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   │   ├── 📁 EIAGOV/
+│   │   │   │   ├── 📁 ELONMUSK/
+│   │   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   │   ├── 📁 GEOCONFIRMED/
+│   │   │   │   ├── 📁 GIDONSAAR/
+│   │   │   │   ├── 📁 IDF/
+│   │   │   │   ├── 📁 IDFFARSI/
+│   │   │   │   ├── 📁 IRANINTL/
+│   │   │   │   ├── 📁 JDVANCE/
+│   │   │   │   ├── 📁 J_ZARIF/
+│   │   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   │   ├── 📁 KSADJADPOUR/
+│   │   │   │   ├── 📁 LAGARDE/
+│   │   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   │   ├── 📁 MALONEYSUZANNE/
+│   │   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   │   ├── 📁 NICKTIMIRAOS/
+│   │   │   │   ├── 📁 PAULG/
+│   │   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   │   ├── 📁 REUTERS/
+│   │   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   │   ├── 📁 RONENBERGMAN/
+│   │   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   │   ├── 📁 SHAYAN86/
+│   │   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   │   ├── 📁 THEGOODISIS/
+│   │   │   │   ├── 📁 USTREASURY/
+│   │   │   │   └── 📁 VALI_NASR/
+│   │   │   ├── 📁 MERGED_TIMELINES/
+│   │   │   │   ├── 📁 ALIVAEZ/
+│   │   │   │   ├── 📁 ARAGHCHI/
+│   │   │   │   ├── 📁 AVICHAYADRAEE/
+│   │   │   │   ├── 📁 BUSINESS/
+│   │   │   │   ├── 📁 CHIGRL/
+│   │   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   │   ├── 📁 DRPEZESHKIAN/
+│   │   │   │   ├── 📁 EIAGOV/
+│   │   │   │   ├── 📁 ELERIANM/
+│   │   │   │   ├── 📁 ELONMUSK/
+│   │   │   │   ├── 📁 FARNAZFASSIHI/
+│   │   │   │   ├── 📁 FEDERALRESERVE/
+│   │   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   │   ├── 📁 GEOCONFIRMED/
+│   │   │   │   ├── 📁 GOLDTELEGRAPH_/
+│   │   │   │   ├── 📁 IDF/
+│   │   │   │   ├── 📁 IDFFARSI/
+│   │   │   │   ├── 📁 IRIMFA_EN/
+│   │   │   │   ├── 📁 IRIMFA_SPOX/
+│   │   │   │   ├── 📁 ISRAEL_KATZ/
+│   │   │   │   ├── 📁 JDVANCE/
+│   │   │   │   ├── 📁 KITCONEWSNOW/
+│   │   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   │   ├── 📁 LAGARDE/
+│   │   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   │   ├── 📁 NETANYAHU/
+│   │   │   │   ├── 📁 PAULG/
+│   │   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   │   ├── 📁 POLYMARKETINTEL/
+│   │   │   │   ├── 📁 RAYDALIO/
+│   │   │   │   ├── 📁 REUTERS/
+│   │   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   │   ├── 📁 SECSCOTTBESSENT/
+│   │   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   │   ├── 📁 SHAYAN86/
+│   │   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   │   ├── 📁 THEGOODISIS/
+│   │   │   │   ├── 📁 UANI/
+│   │   │   │   ├── 📁 USTREASURY/
+│   │   │   │   └── 📁 WHALE_ALERT/
+│   │   │   ├── 📁 STATE/
+│   │   │   ├── 📁 USER_TWEETS/
+│   │   │   │   ├── 📁 ALIVAEZ/
+│   │   │   │   ├── 📁 ARAGHCHI/
+│   │   │   │   ├── 📁 AVICHAYADRAEE/
+│   │   │   │   ├── 📁 BUSINESS/
+│   │   │   │   ├── 📁 CHIGRL/
+│   │   │   │   ├── 📁 DAVIDHALBRIGHT1/
+│   │   │   │   ├── 📁 DRPEZESHKIAN/
+│   │   │   │   ├── 📁 EIAGOV/
+│   │   │   │   ├── 📁 ELERIANM/
+│   │   │   │   ├── 📁 ELONMUSK/
+│   │   │   │   ├── 📁 FARNAZFASSIHI/
+│   │   │   │   ├── 📁 FEDERALRESERVE/
+│   │   │   │   ├── 📁 FLIGHTRADAR24/
+│   │   │   │   ├── 📁 GOLDTELEGRAPH_/
+│   │   │   │   ├── 📁 IDF/
+│   │   │   │   ├── 📁 IDFFARSI/
+│   │   │   │   ├── 📁 IRIMFA_EN/
+│   │   │   │   ├── 📁 IRIMFA_SPOX/
+│   │   │   │   ├── 📁 ISRAEL_KATZ/
+│   │   │   │   ├── 📁 JDVANCE/
+│   │   │   │   ├── 📁 KITCONEWSNOW/
+│   │   │   │   ├── 📁 KOBEISSILETTER/
+│   │   │   │   ├── 📁 LAGARDE/
+│   │   │   │   ├── 📁 LUKEGROMEN/
+│   │   │   │   ├── 📁 LYNALDENCONTACT/
+│   │   │   │   ├── 📁 MDUBOWITZ/
+│   │   │   │   ├── 📁 MKHAMENEI_IR/
+│   │   │   │   ├── 📁 NETANYAHU/
+│   │   │   │   ├── 📁 PAULG/
+│   │   │   │   ├── 📁 PETERSCHIFF/
+│   │   │   │   ├── 📁 POLYMARKETINTEL/
+│   │   │   │   ├── 📁 RAYDALIO/
+│   │   │   │   ├── 📁 REUTERS/
+│   │   │   │   ├── 📁 RICH_GOLDBERG/
+│   │   │   │   ├── 📁 SANTIAGOAUFUND/
+│   │   │   │   ├── 📁 SECRUBIO/
+│   │   │   │   ├── 📁 SECSCOTTBESSENT/
+│   │   │   │   ├── 📁 SGHASSEMINEJAD/
+│   │   │   │   ├── 📁 SHAYAN86/
+│   │   │   │   ├── 📁 TANKERTRACKERS/
+│   │   │   │   ├── 📁 UANI/
+│   │   │   │   └── 📁 USTREASURY/
+│   │   │   └── 📁 USER_TWEETS_AND_REPLIES/
+│   │   │       ├── 📁 ALIVAEZ/
+│   │   │       ├── 📁 ARAGHCHI/
+│   │   │       ├── 📁 AVICHAYADRAEE/
+│   │   │       ├── 📁 BUSINESS/
+│   │   │       ├── 📁 CHIGRL/
+│   │   │       ├── 📁 DAVIDHALBRIGHT1/
+│   │   │       ├── 📁 DRPEZESHKIAN/
+│   │   │       ├── 📁 EIAGOV/
+│   │   │       ├── 📁 ELERIANM/
+│   │   │       ├── 📁 ELONMUSK/
+│   │   │       ├── 📁 FARNAZFASSIHI/
+│   │   │       ├── 📁 FEDERALRESERVE/
+│   │   │       ├── 📁 FLIGHTRADAR24/
+│   │   │       ├── 📁 GEOCONFIRMED/
+│   │   │       ├── 📁 GIDONSAAR/
+│   │   │       ├── 📁 GOLDTELEGRAPH_/
+│   │   │       ├── 📁 IDF/
+│   │   │       ├── 📁 IDFFARSI/
+│   │   │       ├── 📁 IRANINTL/
+│   │   │       ├── 📁 IRIMFA_EN/
+│   │   │       ├── 📁 IRIMFA_SPOX/
+│   │   │       ├── 📁 ISRAEL_KATZ/
+│   │   │       ├── 📁 JDVANCE/
+│   │   │       ├── 📁 J_ZARIF/
+│   │   │       ├── 📁 KITCONEWSNOW/
+│   │   │       ├── 📁 KOBEISSILETTER/
+│   │   │       ├── 📁 KSADJADPOUR/
+│   │   │       ├── 📁 LAGARDE/
+│   │   │       ├── 📁 LUKEGROMEN/
+│   │   │       ├── 📁 LYNALDENCONTACT/
+│   │   │       ├── 📁 MALONEYSUZANNE/
+│   │   │       ├── 📁 MDUBOWITZ/
+│   │   │       ├── 📁 MKHAMENEI_IR/
+│   │   │       ├── 📁 NETANYAHU/
+│   │   │       ├── 📁 NICKTIMIRAOS/
+│   │   │       ├── 📁 PAULG/
+│   │   │       ├── 📁 PETERSCHIFF/
+│   │   │       ├── 📁 POLYMARKETINTEL/
+│   │   │       ├── 📁 RAYDALIO/
+│   │   │       ├── 📁 REUTERS/
+│   │   │       ├── 📁 RICH_GOLDBERG/
+│   │   │       ├── 📁 RONENBERGMAN/
+│   │   │       ├── 📁 SANTIAGOAUFUND/
+│   │   │       ├── 📁 SECSCOTTBESSENT/
+│   │   │       ├── 📁 SGHASSEMINEJAD/
+│   │   │       ├── 📁 SHAYAN86/
+│   │   │       ├── 📁 TANKERTRACKERS/
+│   │   │       ├── 📁 THEGOODISIS/
+│   │   │       ├── 📁 UANI/
+│   │   │       ├── 📁 USTREASURY/
+│   │   │       └── 📁 VALI_NASR/
+│   │   ├── 📁 logs/
 │   │   ├── 📄 api_manager.py
 │   │   ├── 📄 config.json
 │   │   ├── 📄 fetch_historical_tweets_hybrid.py
@@ -53,50 +500,81 @@
 │   │   ├── 📄 storage_manager.py
 │   │   ├── 📄 text_export_helper.py
 │   │   └── 📄 tier_config.py
-│   └── 📁 LIVE DATA/
-│       ├── 📁 MARKDOWN_FILES/ [Data/Docs]
-│       ├── 📁 REFERENCE_FILES/ [Data/Docs]
-│       ├── 📁 data/ [Data/Docs]
-│       ├── 📁 logs/ [Data/Docs]
-│       ├── 📄 api_manager.py
-│       ├── 📄 config.json
-│       ├── 📄 fetch_historical_tweets_hybrid.py
-│       ├── 📄 monitor_live_tweets_hybrid.py
-│       ├── 📄 setup_api_cookies.py
-│       ├── 📄 storage_manager.py
-│       ├── 📄 text_export_helper.py
-│       ├── 📄 tier_config.py
-│       └── 📄 viral_detector.py
-├── 📁 TWEETER DATA FETCHING 4.0/
-│   ├── 📁 auth/
-│   │   ├── 📄 __init__.py
-│   │   ├── 📄 session_updater.py
-│   │   └── 📄 setup_api_cookies.py
-│   ├── 📁 config/
-│   │   ├── 📄 __init__.py
-│   │   ├── 📄 config.json
-│   │   ├── 📄 search_config.json
-│   │   └── 📄 tier_config.py
-│   ├── 📁 core/
-│   │   ├── 📄 __init__.py
+│   ├── 📁 LIVE DATA/
+│   │   ├── 📁 MARKDOWN_FILES/
+│   │   │   ├── 📁 DEBUG/
+│   │   │   ├── 📁 GUIDES/
+│   │   │   └── 📁 REPORTS/
+│   │   ├── 📁 REFERENCE_FILES/
+│   │   ├── 📁 data/
+│   │   │   ├── 📁 ENDPOINT_DIFFS/
+│   │   │   ├── 📁 MERGED_TIMELINES/
+│   │   │   ├── 📁 SNAPSHOTS/
+│   │   │   ├── 📁 STATE/
+│   │   │   ├── 📁 USER_TWEETS/
+│   │   │   ├── 📁 USER_TWEETS_AND_REPLIES/
+│   │   │   └── 📁 VIRAL/
+│   │   │       ├── 📁 candidates/
+│   │   │       └── 📁 confirmed/
+│   │   ├── 📁 logs/
 │   │   ├── 📄 api_manager.py
-│   │   ├── 📄 fetcher_engine.py
-│   │   ├── 📄 set_operations.py
-│   │   └── 📄 windowing.py
-│   ├── 📁 data/ [Data/Docs]
-│   ├── 📁 data_pipeline/
-│   │   ├── 📄 __init__.py
-│   │   └── 📄 storage_manager.py
-│   ├── 📁 exporters/
-│   │   ├── 📄 __init__.py
-│   │   └── 📄 text_export_helper.py
-│   ├── 📁 logs/ [Data/Docs]
-│   ├── 📁 tools/
-│   │   ├── 📄 check_replies_parity.py
-│   │   └── 📄 diagnose_replies_only.py
-│   ├── 📄 live_monitor.py
-│   ├── 📄 live_storage.py
-│   ├── 📄 main_orchestrator.py
-│   ├── 📄 search_monitor.py
-│   └── 📄 viral_detector.py
-└── 📄 project_structure.py
+│   │   ├── 📄 config.json
+│   │   ├── 📄 fetch_historical_tweets_hybrid.py
+│   │   ├── 📄 monitor_live_tweets_hybrid.py
+│   │   ├── 📄 setup_api_cookies.py
+│   │   ├── 📄 storage_manager.py
+│   │   ├── 📄 text_export_helper.py
+│   │   ├── 📄 tier_config.py
+│   │   └── 📄 viral_detector.py
+│   └── 📄 project_structure.py
+└── 📁 TWEETER DATA FETCHING 4.0/
+    ├── 📁 data/
+    │   ├── 📁 historical_live/
+    │   │   ├── 📁 logs/
+    │   │   ├── 📁 processed/
+    │   │   │   ├── 📁 1_user_tweets/
+    │   │   │   ├── 📁 2_user_tweets_and_replies/
+    │   │   │   ├── 📁 3_intersection/
+    │   │   │   ├── 📁 4_union/
+    │   │   │   └── 📁 5_replies_only/
+    │   │   ├── 📁 raw/
+    │   │   │   ├── 📁 UserTweets/
+    │   │   │   └── 📁 UserTweetsAndReplies/
+    │   │   ├── 📁 reports/
+    │   │   └── 📁 state/
+    │   └── 📁 search/
+    │       ├── 📁 raw/
+    │       └── 📁 state/
+    ├── 📁 historical_scripts/
+    │   └── 📄 historical_runner.py
+    ├── 📁 live_scripts/
+    │   ├── 📄 live_runner.py
+    │   ├── 📄 live_storage.py
+    │   └── 📄 viral_detector.py
+    ├── 📁 search_scripts/
+    │   └── 📄 search_runner.py
+    └── 📁 shared/
+        ├── 📁 auth/
+        │   ├── 📄 __init__.py
+        │   ├── 📄 session_updater.py
+        │   └── 📄 setup_api_cookies.py
+        ├── 📁 config/
+        │   ├── 📄 __init__.py
+        │   ├── 📄 config.json
+        │   ├── 📄 search_config.json
+        │   └── 📄 tier_config.py
+        ├── 📁 core/
+        │   ├── 📄 __init__.py
+        │   ├── 📄 api_manager.py
+        │   ├── 📄 fetcher_engine.py
+        │   ├── 📄 set_operations.py
+        │   └── 📄 windowing.py
+        ├── 📁 data_pipeline/
+        │   ├── 📄 __init__.py
+        │   └── 📄 storage_manager.py
+        ├── 📁 exporters/
+        │   ├── 📄 __init__.py
+        │   └── 📄 text_export_helper.py
+        └── 📁 tools/
+            ├── 📄 check_replies_parity.py
+            └── 📄 diagnose_replies_only.py

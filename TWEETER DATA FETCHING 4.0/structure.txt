@@ -1,0 +1,51 @@
+📁 TWEETER DATA FETCHING 4.0/
+├── 📁 data/
+│   ├── 📁 historical_live/
+│   │   ├── 📁 logs/
+│   │   ├── 📁 processed/
+│   │   │   ├── 📁 1_user_tweets/
+│   │   │   ├── 📁 2_user_tweets_and_replies/
+│   │   │   ├── 📁 3_intersection/
+│   │   │   ├── 📁 4_union/
+│   │   │   └── 📁 5_replies_only/
+│   │   ├── 📁 raw/
+│   │   │   ├── 📁 UserTweets/
+│   │   │   └── 📁 UserTweetsAndReplies/
+│   │   ├── 📁 reports/
+│   │   └── 📁 state/
+│   └── 📁 search/
+│       ├── 📁 raw/
+│       └── 📁 state/
+├── 📁 historical_scripts/
+│   └── 📄 historical_runner.py
+├── 📁 live_scripts/
+│   ├── 📄 live_runner.py
+│   ├── 📄 live_storage.py
+│   └── 📄 viral_detector.py
+├── 📁 search_scripts/
+│   └── 📄 search_runner.py
+└── 📁 shared/
+    ├── 📁 auth/
+    │   ├── 📄 __init__.py
+    │   ├── 📄 session_updater.py
+    │   └── 📄 setup_api_cookies.py
+    ├── 📁 config/
+    │   ├── 📄 __init__.py
+    │   ├── 📄 config.json
+    │   ├── 📄 search_config.json
+    │   └── 📄 tier_config.py
+    ├── 📁 core/
+    │   ├── 📄 __init__.py
+    │   ├── 📄 api_manager.py
+    │   ├── 📄 fetcher_engine.py
+    │   ├── 📄 set_operations.py
+    │   └── 📄 windowing.py
+    ├── 📁 data_pipeline/
+    │   ├── 📄 __init__.py
+    │   └── 📄 storage_manager.py
+    ├── 📁 exporters/
+    │   ├── 📄 __init__.py
+    │   └── 📄 text_export_helper.py
+    └── 📁 tools/
+        ├── 📄 check_replies_parity.py
+        └── 📄 diagnose_replies_only.py

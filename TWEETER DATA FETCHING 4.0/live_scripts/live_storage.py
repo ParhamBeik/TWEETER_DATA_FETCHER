@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from data_pipeline.storage_manager import StorageManager, extract_metrics
+from shared.data_pipeline.storage_manager import StorageManager, extract_metrics
 
 
 class LiveStorageManager:
@@ -19,8 +19,8 @@ class LiveStorageManager:
 
     def __init__(self, project_root: Optional[Path] = None, timezone: str = "Asia/Tehran"):
         self.project_root = project_root or Path(__file__).resolve().parent
-        self.storage = StorageManager(base_dir=self.project_root, timezone=timezone, subsystem="live")
-        self.data_root = self.project_root / "data" / "live"
+        self.storage = StorageManager(base_dir=self.project_root, timezone=timezone, subsystem="historical_live")
+        self.data_root = self.project_root / "data" / "historical_live"
         self.raw_root = self.data_root / "raw"
         self.processed_root = self.data_root / "processed"
         self.reports_root = self.data_root / "reports"

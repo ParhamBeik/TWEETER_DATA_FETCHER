@@ -11,14 +11,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from live_storage import LiveStorageManager
+from orchestrators.live_storage import LiveStorageManager
 
 
 class ViralDetector:
     """Detect viral candidates from engagement velocity and acceleration."""
 
     def __init__(self, config_path: str = "config/config.json", storage: Optional[LiveStorageManager] = None):
-        self.project_root = Path(__file__).resolve().parent
+        self.project_root = Path(__file__).resolve().parent.parent
         cfg_path = Path(config_path)
         if not cfg_path.is_absolute():
             cfg_path = self.project_root / cfg_path

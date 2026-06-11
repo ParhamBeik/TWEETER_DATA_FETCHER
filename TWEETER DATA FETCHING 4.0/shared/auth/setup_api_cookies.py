@@ -36,7 +36,7 @@ ENDPOINT_KEY_MAP = {
 }
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILE = PROJECT_ROOT / "config" / "config.json"
 
 
