@@ -20,9 +20,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
-from core.api_manager import APIManager
-from data_pipeline.storage_manager import StorageManager
-from config.tier_config import get_priority_policy, load_tier_config, ordered_accounts
+from shared.core.api_manager import APIManager
+from shared.core.windowing import RollingWindowEvaluator
+from shared.data_pipeline.storage_manager import StorageManager
+from shared.config.tier_config import get_priority_policy, load_tier_config, ordered_accounts
 
 try:
     import pytz
@@ -114,17 +115,25 @@ class EngineLogger:
 class FetcherEngine:
     """Phase 2 sequential fetcher with strict failure visibility."""
 
-    def __init__(self, config_path: str = "config/config.json"):
+    def __init__(self, config_path: str = "config/config.json", subsystem: str = "historical"):
         self.project_root = Path(__file__).resolve().parent.parent
+        self.subsystem = str(subsystem or "historical").strip().lower()
         self.logger = EngineLogger()
-        self.api_manager = APIManager(config_path=config_path, state_dir=self.project_root / "data" / "state")
-        self.storage_manager = StorageManager(base_dir=self.project_root, timezone=TIMEZONE)
+        self.api_manager = APIManager(config_path=config_path, state_dir=self.project_root / "data" / self.subsystem / "state")
+        self.storage_manager = StorageManager(base_dir=self.project_root, timezone=TIMEZONE, subsystem=self.subsystem)
+        self.window_evaluator = RollingWindowEvaluator()
 
         self.config = self.api_manager.config
         self.tz = pytz.timezone(TIMEZONE)
         self.account_map, self.priority_policies = load_tier_config(self.config)
         self.max_cursor_error_retries = int(
             self.config.get("api_config", {}).get("cursor_error_max_retries", 3)
+        )
+        self.first_request_warmup_seconds = int(
+            self.config.get("api_config", {}).get("first_request_warmup_seconds", 15)
+        )
+        self.pagination_safety_cap_pages = int(
+            self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50)
         )
         self.backoff_schedule_seconds = [15, 30, 60]
 
@@ -409,13 +418,16 @@ class FetcherEngine:
         account: str,
         user_id: str,
         endpoint: str,
-        max_pages: int,
+        max_pages: Optional[int] = None,
+        window_days: Optional[int] = None,
         batch_dir: Optional[Path] = None,
+        force_refetch: bool = False,
     ) -> Dict[str, Any]:
         started_at = datetime.utcnow().isoformat() + "Z"
         attempts = 0
         error_samples: List[Dict[str, Any]] = []
         last_http_status: Optional[int] = None
+        latest_window_coverage: Optional[Dict[str, Any]] = None
 
         def make_result(
             *,
@@ -441,6 +453,7 @@ class FetcherEngine:
                 "error_samples": error_samples[-5:],
                 "started_at": started_at,
                 "finished_at": datetime.utcnow().isoformat() + "Z",
+                "window_coverage": latest_window_coverage,
             }
 
         def record_http_error(response, cursor_value: Optional[str], attempt_number: int) -> None:
@@ -512,6 +525,7 @@ class FetcherEngine:
         query_id = self.api_manager.get_query_id(endpoint)
         if not query_id:
             raise RuntimeError(f"Missing query ID for endpoint: {endpoint}")
+        safety_cap = max(1, int(max_pages or self.pagination_safety_cap_pages))
 
         features = self._timeline_features(endpoint)
         field_toggles = self._timeline_field_toggles(endpoint)
@@ -519,14 +533,19 @@ class FetcherEngine:
         status_value = str(existing_state.get("status", "pending"))
         resume_cursor = existing_state.get("last_cursor")
         raw_batch_path = existing_state.get("raw_batch_path")
-        if batch_dir is None:
+        if force_refetch:
+            batch_dir = self.storage_manager.create_raw_batch_dir(endpoint, account)
+            existing_pages = []
+            cursor = None
+            status_value = "pending"
+        elif batch_dir is None:
             if raw_batch_path and Path(str(raw_batch_path)).exists():
                 batch_dir = Path(str(raw_batch_path))
             else:
                 batch_dir = self.storage_manager.create_raw_batch_dir(endpoint, account)
 
-        existing_pages = self.storage_manager.load_raw_pages_from_batch(batch_dir)
-        cursor: Optional[str] = (
+        existing_pages = [] if force_refetch else self.storage_manager.load_raw_pages_from_batch(batch_dir)
+        cursor: Optional[str] = None if force_refetch else (
             str(resume_cursor)
             if (
                 resume_cursor
@@ -539,18 +558,26 @@ class FetcherEngine:
             self.logger.warning(
                 f"Resuming @{account} {endpoint} from saved cursor: {cursor}"
             )
-        if status_value == "completed" and existing_pages:
-            self.logger.info(f"Skipping @{account} {endpoint}; completed batch exists at {batch_dir}")
-            return make_result(
-                status="completed",
-                outcome=str(existing_state.get("outcome") or existing_state.get("reason") or "skipped_existing_completed"),
-                reason="Completed raw batch already exists",
-                pages=existing_pages,
-                last_cursor=str(existing_state.get("last_cursor") or "__END__"),
-                raw_batch=batch_dir,
-            )
+        if status_value == "completed" and existing_pages and window_days:
+            coverage = self.window_evaluator.evaluate_raw_pages(existing_pages, account, endpoint, window_days)
+            if coverage.complete:
+                self.logger.info(f"Skipping @{account} {endpoint}; rolling window already complete at {batch_dir}")
+                return make_result(
+                    status="completed",
+                    outcome="skipped_existing_window_complete",
+                    reason=f"Existing raw batch covers rolling window: {coverage.reason}",
+                    pages=existing_pages,
+                    last_cursor=str(existing_state.get("last_cursor") or "__END__"),
+                    raw_batch=batch_dir,
+                )
 
         self.api_manager.warmup_navigation_context(username=account, endpoint=endpoint)
+        if self.first_request_warmup_seconds > 0 and not existing_pages:
+            self.logger.info(
+                f"Mandatory first-request warm-up for @{account} {endpoint}: "
+                f"{self.first_request_warmup_seconds}s"
+            )
+            time.sleep(self.first_request_warmup_seconds)
 
         # Mark active run state at loop start.
         self.storage_manager.update_endpoint_state(
@@ -566,7 +593,7 @@ class FetcherEngine:
 
         policy = self.api_manager.retry_policy()
 
-        while page <= max_pages:
+        while page <= safety_cap:
             variables = self._timeline_variables(endpoint, user_id, cursor)
 
             request_url = self._build_graphql_url(
@@ -784,6 +811,12 @@ class FetcherEngine:
             all_items.append(payload)
             self.storage_manager.save_raw_page(batch_dir, page, payload)
             next_cursor = self._extract_bottom_cursor(payload)
+            coverage = (
+                self.window_evaluator.evaluate_raw_pages(all_items, account, endpoint, window_days)
+                if window_days
+                else None
+            )
+            latest_window_coverage = coverage.__dict__ if coverage else None
 
             self.storage_manager.update_endpoint_state(
                 account,
@@ -794,8 +827,23 @@ class FetcherEngine:
                     "last_page_fetched_at": datetime.utcnow().isoformat() + "Z",
                     "last_page_number": page,
                     "raw_batch_path": str(batch_dir),
+                    "window_coverage": latest_window_coverage,
                 },
             )
+
+            if coverage and coverage.complete:
+                self.logger.info(
+                    f"@{account} {endpoint} rolling window complete: "
+                    f"oldest={coverage.oldest_date} targets={coverage.target_dates}"
+                )
+                return finish_with_state(
+                    status="completed",
+                    outcome="success_window_complete",
+                    reason=f"Rolling window complete: {coverage.reason}",
+                    pages=all_items,
+                    cursor_value=next_cursor if next_cursor else "__END__",
+                    raw_batch=batch_dir,
+                )
 
             self.logger.pagination(account=account, endpoint=endpoint, page=page, cursor=next_cursor)
             if next_cursor:
@@ -819,11 +867,11 @@ class FetcherEngine:
                 raw_batch=batch_dir,
             )
 
-        if page > max_pages:
+        if page > safety_cap:
             return finish_with_state(
-                status="completed",
-                outcome="success_max_pages",
-                reason="Configured max_pages reached",
+                status="partial",
+                outcome="partial_safety_cap_reached",
+                reason="Emergency safety page cap reached before rolling window completed",
                 pages=all_items,
                 cursor_value=cursor if cursor else "__END__",
                 raw_batch=batch_dir,
@@ -844,7 +892,8 @@ class FetcherEngine:
         account: str,
         user_id: str,
         endpoint: str,
-        max_pages: int,
+        max_pages: Optional[int] = None,
+        window_days: Optional[int] = None,
         batch_dir: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         return self._fetch_endpoint_result(
@@ -852,6 +901,7 @@ class FetcherEngine:
             user_id=user_id,
             endpoint=endpoint,
             max_pages=max_pages,
+            window_days=window_days,
             batch_dir=batch_dir,
         ).get("pages", [])
 
@@ -896,11 +946,11 @@ class FetcherEngine:
         for idx, username in enumerate(accounts, start=1):
             self.storage_manager.ensure_account_state(username)
             policy = get_priority_policy(username, self.account_map, self.priority_policies)
-            max_pages = int(policy.get("historical_max_pages", DEFAULT_HISTORICAL_MAX_PAGES))
+            window_days = int(policy.get("historical_window_days", 1))
 
             self.logger.banner(
                 f"ACCOUNT {idx}/{len(accounts)}",
-                f"@{username}\npriority={policy.get('priority')}\nmax_pages={max_pages}",
+                f"@{username}\npriority={policy.get('priority')}\nwindow_days={window_days}",
             )
 
             self.logger.info(f"Warm-up session flow for @{username}")
@@ -914,7 +964,8 @@ class FetcherEngine:
                 account=username,
                 user_id=user_id,
                 endpoint="UserTweets",
-                max_pages=max_pages,
+                max_pages=self.pagination_safety_cap_pages,
+                window_days=window_days,
             )
             self._persist_endpoint_output(username, "UserTweets", tweets_only)
             self.logger.success(f"@{username} UserTweets complete: {len(tweets_only)} item(s)")
@@ -924,7 +975,8 @@ class FetcherEngine:
                 account=username,
                 user_id=user_id,
                 endpoint="UserTweetsAndReplies",
-                max_pages=max_pages,
+                max_pages=self.pagination_safety_cap_pages,
+                window_days=window_days,
             )
             self._persist_endpoint_output(username, "UserTweetsAndReplies", tweets_and_replies)
             self.logger.success(

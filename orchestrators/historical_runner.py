@@ -7,10 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config.tier_config import get_priority_policy, ordered_accounts
-from core.fetcher_engine import DEFAULT_HISTORICAL_MAX_PAGES, FetcherEngine
-from core.set_operations import TweetSetProcessor
-from data_pipeline.storage_manager import StorageManager
+from shared.config.tier_config import get_priority_policy, ordered_accounts
+from shared.core.fetcher_engine import FetcherEngine
+from shared.core.set_operations import TweetSetProcessor
+from shared.core.windowing import RollingWindowEvaluator
+from shared.data_pipeline.storage_manager import StorageManager
 
 
 ENDPOINTS = ("UserTweetsAndReplies", "UserTweets")
@@ -20,7 +21,7 @@ def _endpoint_pages(storage: StorageManager, username: str, endpoint: str) -> Li
     state = storage.get_endpoint_state(username, endpoint)
     raw_batch_path = state.get("raw_batch_path")
     if not raw_batch_path:
-        return []
+        return storage.load_all_raw_pages(endpoint, username, include_legacy=True)
     return storage.load_raw_pages_from_batch(raw_batch_path)
 
 
@@ -33,9 +34,22 @@ def _endpoint_raw_batch_path(storage: StorageManager, username: str, endpoint: s
     return path if path.exists() and path.is_dir() else None
 
 
-def _max_pages_for(engine: FetcherEngine, username: str) -> int:
+def _historical_window_days_for(engine: FetcherEngine, username: str) -> int:
     policy = get_priority_policy(username, engine.account_map, engine.priority_policies)
-    return int(policy.get("historical_max_pages", DEFAULT_HISTORICAL_MAX_PAGES))
+    return int(policy.get("historical_window_days", 1))
+
+
+def _endpoint_window_coverage(
+    *,
+    evaluator: RollingWindowEvaluator,
+    storage: StorageManager,
+    username: str,
+    endpoint: str,
+    window_days: int,
+) -> Tuple[bool, Dict[str, Any], List[Dict[str, Any]]]:
+    raw_pages = storage.load_all_raw_pages(endpoint, username, include_legacy=True)
+    coverage = evaluator.evaluate_raw_pages(raw_pages, username, endpoint, window_days)
+    return coverage.complete, coverage.__dict__, raw_pages
 
 
 def _verify_raw_pages(
@@ -167,6 +181,7 @@ def _safe_endpoint_report(result: Dict[str, Any]) -> Dict[str, Any]:
         "error_samples": result.get("error_samples", []),
         "started_at": result.get("started_at"),
         "finished_at": result.get("finished_at"),
+        "window_coverage": result.get("window_coverage"),
     }
 
 
@@ -216,8 +231,11 @@ def _print_report_summary(report: Dict[str, Any], json_path: Path, txt_path: Pat
 def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
     project_root = Path(__file__).resolve().parent
     engine = FetcherEngine(config_path="config/config.json")
-    storage = StorageManager(project_root=project_root)
+    storage = StorageManager(project_root=project_root, subsystem="historical")
     processor = TweetSetProcessor()
+    evaluator = RollingWindowEvaluator()
+    migration_report = storage.migrate_legacy_historical_data(verify=True)
+    print(f"[V4] Historical storage migration: {migration_report}")
 
     accounts = selected_accounts or ordered_accounts(engine.account_map)
     if not accounts:
@@ -232,6 +250,10 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
         "config": {
             "endpoint_order": ["UserTweetsAndReplies", "UserTweets"],
             "accounts_requested": len(accounts),
+            "completion_rule": "tehran_jalali_rolling_window",
+            "pagination_safety_cap_pages": engine.pagination_safety_cap_pages,
+            "first_request_warmup_seconds": engine.first_request_warmup_seconds,
+            "historical_storage_migration": migration_report,
         },
         "summary": {},
         "accounts": {},
@@ -277,13 +299,41 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
 
     print("[V4] Phase 2/4: fetching UserTweetsAndReplies for all accounts")
     for idx, username in enumerate(active_accounts):
-        max_pages = _max_pages_for(engine, username)
-        result = engine._fetch_endpoint_result(
-            account=username,
-            user_id=user_ids[username],
+        window_days = _historical_window_days_for(engine, username)
+        window_complete, window_coverage, existing_pages = _endpoint_window_coverage(
+            evaluator=evaluator,
+            storage=storage,
+            username=username,
             endpoint="UserTweetsAndReplies",
-            max_pages=max_pages,
+            window_days=window_days,
         )
+        if window_complete:
+            result = {
+                "account": username,
+                "endpoint": "UserTweetsAndReplies",
+                "status": "completed",
+                "outcome": "skipped_window_complete",
+                "reason": "Existing data satisfies rolling window",
+                "pages": existing_pages,
+                "pages_fetched": len(existing_pages),
+                "raw_batch_path": str(_endpoint_raw_batch_path(storage, username, "UserTweetsAndReplies") or ""),
+                "last_cursor": "__WINDOW_COMPLETE__",
+                "last_http_status": None,
+                "attempts": 0,
+                "error_samples": [],
+                "started_at": datetime.utcnow().isoformat() + "Z",
+                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "window_coverage": window_coverage,
+            }
+        else:
+            result = engine._fetch_endpoint_result(
+                account=username,
+                user_id=user_ids[username],
+                endpoint="UserTweetsAndReplies",
+                max_pages=engine.pagination_safety_cap_pages,
+                window_days=window_days,
+                force_refetch=True,
+            )
         fetched_pages[username]["UserTweetsAndReplies"] = result.get("pages", [])
         endpoint_verified = _save_endpoint_processed_txt(
             storage=storage,
@@ -303,6 +353,7 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
                 "run_id": run_id,
                 "outcome": result.get("outcome"),
                 "pages_fetched": result.get("pages_fetched", 0),
+                "window_coverage": result.get("window_coverage") or window_coverage,
             },
         )
         if idx < len(active_accounts) - 1:
@@ -310,13 +361,41 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
 
     print("[V4] Phase 3/4: fetching UserTweets for all accounts")
     for idx, username in enumerate(active_accounts):
-        max_pages = _max_pages_for(engine, username)
-        result = engine._fetch_endpoint_result(
-            account=username,
-            user_id=user_ids[username],
+        window_days = _historical_window_days_for(engine, username)
+        window_complete, window_coverage, existing_pages = _endpoint_window_coverage(
+            evaluator=evaluator,
+            storage=storage,
+            username=username,
             endpoint="UserTweets",
-            max_pages=max_pages,
+            window_days=window_days,
         )
+        if window_complete:
+            result = {
+                "account": username,
+                "endpoint": "UserTweets",
+                "status": "completed",
+                "outcome": "skipped_window_complete",
+                "reason": "Existing data satisfies rolling window",
+                "pages": existing_pages,
+                "pages_fetched": len(existing_pages),
+                "raw_batch_path": str(_endpoint_raw_batch_path(storage, username, "UserTweets") or ""),
+                "last_cursor": "__WINDOW_COMPLETE__",
+                "last_http_status": None,
+                "attempts": 0,
+                "error_samples": [],
+                "started_at": datetime.utcnow().isoformat() + "Z",
+                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "window_coverage": window_coverage,
+            }
+        else:
+            result = engine._fetch_endpoint_result(
+                account=username,
+                user_id=user_ids[username],
+                endpoint="UserTweets",
+                max_pages=engine.pagination_safety_cap_pages,
+                window_days=window_days,
+                force_refetch=True,
+            )
         fetched_pages[username]["UserTweets"] = result.get("pages", [])
         endpoint_verified = _save_endpoint_processed_txt(
             storage=storage,
@@ -336,6 +415,7 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
                 "run_id": run_id,
                 "outcome": result.get("outcome"),
                 "pages_fetched": result.get("pages_fetched", 0),
+                "window_coverage": result.get("window_coverage") or window_coverage,
             },
         )
         if idx < len(active_accounts) - 1:

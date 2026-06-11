@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import textwrap
 from collections.abc import Callable
 from datetime import datetime
@@ -113,17 +114,25 @@ class StorageManager:
         project_root: Optional[Path] = None,
         base_dir: Optional[Path] = None,
         timezone: str = "Asia/Tehran",
+        subsystem: str = "historical",
     ):
         # `base_dir`/`timezone` kept for backward compatibility with Phase-2 engine.
         self.project_root = project_root or base_dir or Path(__file__).resolve().parent.parent
         self.timezone = timezone
         self.tz = pytz.timezone(timezone) if pytz else None
-        self.data_root = self.project_root / "data"
-        self.raw_root = self.data_root / "raw_json"
+        self.subsystem = str(subsystem or "historical").strip().lower()
+        self.global_data_root = self.project_root / "data"
+        self.data_root = self.global_data_root / self.subsystem
+        self.raw_root = self.data_root / "raw"
         self.processed_root = self.data_root / "processed"
         self.state_dir = self.data_root / "state"
         self.reports_dir = self.data_root / "reports"
-        self.legacy_state_dir = self.data_root / "STATE"
+        self.legacy_data_root = self.global_data_root
+        self.legacy_raw_root = self.legacy_data_root / "raw_json"
+        self.legacy_processed_root = self.legacy_data_root / "processed"
+        self.legacy_reports_dir = self.legacy_data_root / "reports"
+        self.global_state_dir = self.global_data_root / "state"
+        self.legacy_state_dir = self.legacy_data_root / "STATE"
         self.sync_state_file = self.state_dir / "sync_state.json"
         self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
 
@@ -135,7 +144,7 @@ class StorageManager:
         self.intersection_dir = self.processed_root / "3_intersection"
         self.merged_dir = self.processed_root / "4_union"
         self.endpoint_diffs_dir = self.processed_root / "5_replies_only"
-        self.logs_dir = self.project_root / "logs"
+        self.logs_dir = self.data_root / "logs"
 
         self._ensure_base_dirs()
 
@@ -150,7 +159,6 @@ class StorageManager:
             self.endpoint_diffs_dir,
             self.state_dir,
             self.reports_dir,
-            self.legacy_state_dir,
             self.logs_dir,
         ]:
             path.mkdir(parents=True, exist_ok=True)
@@ -236,21 +244,20 @@ class StorageManager:
         return {}
 
     def load_sync_state(self) -> Dict[str, Any]:
-        """Load sync state from canonical path, fallback to legacy STATE path."""
+        """Load sync state from subsystem path, fallback to legacy paths."""
         data = self._read_json_file(self.sync_state_file)
         if data:
             return data
+        global_data = self._read_json_file(self.global_state_dir / "sync_state.json")
+        if global_data:
+            return global_data
         return self._read_json_file(self.legacy_sync_state_file)
 
     def save_sync_state(self, state: Dict[str, Any]) -> Path:
-        """Persist sync state to canonical + legacy path for compatibility."""
+        """Persist sync state to subsystem path only."""
         payload = state if isinstance(state, dict) else {}
         self.sync_state_file.parent.mkdir(parents=True, exist_ok=True)
         with self.sync_state_file.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-
-        self.legacy_sync_state_file.parent.mkdir(parents=True, exist_ok=True)
-        with self.legacy_sync_state_file.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         return self.sync_state_file
 
@@ -408,6 +415,66 @@ class StorageManager:
             except Exception:
                 continue
         return pages
+
+    def find_raw_batches(self, endpoint_name: str, username: str, include_legacy: bool = True) -> List[Path]:
+        """Find subsystem raw batches, optionally including legacy raw_json batches."""
+        roots = [self.raw_root / endpoint_name / self._normalize_username(username)]
+        if include_legacy:
+            roots.append(self.legacy_raw_root / endpoint_name / self._normalize_username(username))
+        batches: List[Path] = []
+        for root in roots:
+            if root.exists():
+                batches.extend(path for path in root.iterdir() if path.is_dir())
+        return sorted(batches)
+
+    def load_all_raw_pages(self, endpoint_name: str, username: str, include_legacy: bool = True) -> List[Dict[str, Any]]:
+        """Load all raw pages for an account/endpoint across known batches."""
+        pages: List[Dict[str, Any]] = []
+        for batch_dir in self.find_raw_batches(endpoint_name, username, include_legacy=include_legacy):
+            pages.extend(self.load_raw_pages_from_batch(batch_dir))
+        return pages
+
+    def migrate_legacy_historical_data(self, verify: bool = True) -> Dict[str, Any]:
+        """
+        Copy legacy v4 data into data/historical and leave legacy files untouched.
+        """
+        if self.subsystem != "historical":
+            return {"status": "skipped", "reason": "only_historical_storage_migrates_legacy"}
+
+        mappings = [
+            (self.legacy_raw_root, self.raw_root),
+            (self.legacy_processed_root, self.processed_root),
+            (self.legacy_reports_dir, self.reports_dir),
+            (self.global_state_dir / "sync_state.json", self.sync_state_file),
+            (self.global_state_dir / "endpoint_health.json", self.state_dir / "endpoint_health.json"),
+        ]
+        copied = 0
+        verified = 0
+        for source, target in mappings:
+            if not source.exists():
+                continue
+            if source.is_dir():
+                for item in source.rglob("*"):
+                    if not item.is_file():
+                        continue
+                    destination = target / item.relative_to(source)
+                    if destination.exists():
+                        if not verify or destination.stat().st_size == item.stat().st_size:
+                            verified += 1
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, destination)
+                    copied += 1
+                    if not verify or destination.stat().st_size == item.stat().st_size:
+                        verified += 1
+            else:
+                if not target.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+                    copied += 1
+                if not verify or target.stat().st_size == source.stat().st_size:
+                    verified += 1
+        return {"status": "ok", "copied": copied, "verified": verified}
 
     @staticmethod
     def _page_sort_key(name: str) -> int:

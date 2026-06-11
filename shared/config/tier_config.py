@@ -17,51 +17,37 @@ DEFAULT_PRIORITY_POLICIES: Dict[int, Dict] = {
         "poll_interval_seconds": 120,
         "live_window_hours": 48,
         "historical_window_days": 7,
-        "live_max_pages": 3,
-        "historical_max_pages": 20,
     },
     2: {
         "poll_interval_seconds": 240,
         "live_window_hours": 36,
         "historical_window_days": 5,
-        "live_max_pages": 2,
-        "historical_max_pages": 16,
     },
     3: {
         "poll_interval_seconds": 360,
         "live_window_hours": 30,
         "historical_window_days": 4,
-        "live_max_pages": 2,
-        "historical_max_pages": 14,
     },
     4: {
         "poll_interval_seconds": 540,
         "live_window_hours": 24,
         "historical_window_days": 3,
-        "live_max_pages": 2,
-        "historical_max_pages": 12,
     },
     5: {
         "poll_interval_seconds": 780,
         "live_window_hours": 20,
         "historical_window_days": 2,
-        "live_max_pages": 1,
-        "historical_max_pages": 10,
     },
     6: {
         "poll_interval_seconds": 1020,
         "live_window_hours": 16,
         "historical_window_days": 1,
-        "live_max_pages": 1,
-        "historical_max_pages": 8,
     },
     # Default/fallback priority for uncategorized accounts.
     7: {
         "poll_interval_seconds": 1440,
         "live_window_hours": 12,
         "historical_window_days": 1,
-        "live_max_pages": 1,
-        "historical_max_pages": 6,
     },
 }
 
@@ -180,8 +166,6 @@ def load_tier_config(config: Dict) -> Tuple[Dict[str, Dict], Dict[int, Dict]]:
             "poll_interval_seconds": int(override.get("poll_interval_seconds", defaults["poll_interval_seconds"])),
             "live_window_hours": int(override.get("live_window_hours", defaults["live_window_hours"])),
             "historical_window_days": int(override.get("historical_window_days", defaults["historical_window_days"])),
-            "live_max_pages": int(override.get("live_max_pages", defaults["live_max_pages"])),
-            "historical_max_pages": int(override.get("historical_max_pages", defaults["historical_max_pages"])),
         }
 
     account_map: Dict[str, Dict] = {}

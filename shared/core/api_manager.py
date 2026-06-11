@@ -92,6 +92,8 @@ class APIManager:
         # State directory for persistent tracking
         self.state_dir = state_dir or (project_root / "data" / "state")
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.shared_state_dir = project_root / "data" / "state"
+        self.shared_state_dir.mkdir(parents=True, exist_ok=True)
         
         # Session setup
         self.session = requests.Session()
@@ -463,11 +465,14 @@ class APIManager:
     
     def _load_rate_limits(self) -> Dict[str, Dict]:
         """Load rate limit state from disk or initialize"""
-        state_file = self.state_dir / "rate_limits.json"
+        state_file = self.shared_state_dir / "rate_limits.json"
+        loaded: Dict[str, Dict] = {}
         if state_file.exists():
             try:
                 with open(state_file) as f:
-                    return json.load(f)
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    loaded = data
             except:
                 pass
         
@@ -476,16 +481,19 @@ class APIManager:
         config_limits = self.config.get("rate_limits", {})
         for endpoint, default in self.DEFAULT_LIMITS.items():
             config_data = config_limits.get(endpoint, default)
+            existing = loaded.get(endpoint, {}) if isinstance(loaded.get(endpoint), dict) else {}
+            limit = config_data.get("limit", default["limit"])
+            window_seconds = config_data.get("window_seconds", default["window_seconds"])
             limits[endpoint] = {
-                "remaining": config_data.get("limit", default["limit"]),
-                "reset": int(time.time()) + config_data.get("window_seconds", default["window_seconds"]),
-                "limit": config_data.get("limit", default["limit"]),
+                "remaining": existing.get("remaining", limit),
+                "reset": existing.get("reset", int(time.time()) + window_seconds),
+                "limit": existing.get("limit", limit),
             }
         return limits
     
     def _save_rate_limits(self):
         """Persist rate limit state to disk"""
-        state_file = self.state_dir / "rate_limits.json"
+        state_file = self.shared_state_dir / "rate_limits.json"
         with open(state_file, 'w') as f:
             json.dump(self.rate_limits, f, indent=2)
     

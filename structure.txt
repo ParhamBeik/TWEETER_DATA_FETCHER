@@ -1,0 +1,102 @@
+📁 TWEETER_DATA_FETCHER/
+├── 📁 TWEETER DATA FETCHING 1.0/
+│   ├── 📁 MARKDOWN FILES/ [Data/Docs]
+│   ├── 📁 REFRENCES FILES/ [Data/Docs]
+│   ├── 📁 TWEETS/ [Data/Docs]
+│   ├── 📁 VIRAL TWEETS/ [Data/Docs]
+│   ├── 📄 config.json
+│   ├── 📄 fetch_historical_tweets.py
+│   ├── 📄 monitor_live_tweets.py
+│   └── 📄 setup_api_cookies.py
+├── 📁 TWEETER DATA FETCHING 2.0/
+│   ├── 📁 MARKDOWN FILES/ [Data/Docs]
+│   ├── 📁 REFRENCES FILES/ [Data/Docs]
+│   ├── 📁 TWEETS/ [Data/Docs]
+│   ├── 📁 VIRAL TWEETS/ [Data/Docs]
+│   ├── 📁 data/ [Data/Docs]
+│   ├── 📁 logs/ [Data/Docs]
+│   ├── 📄 api_manager.py
+│   ├── 📄 config.json
+│   ├── 📄 fetch_historical_tweets_hybrid.py
+│   ├── 📄 monitor_live_tweets_hybrid.py
+│   ├── 📄 setup_api_cookies.py
+│   ├── 📄 storage_manager.py
+│   ├── 📄 tier_config.py
+│   └── 📄 viral_detector.py
+├── 📁 TWEETER DATA FETCHING 3.0/
+│   ├── 📁 ADVANCED SEARCH/
+│   │   ├── 📁 MARKDOWN_FILES/ [Data/Docs]
+│   │   ├── 📁 REFERENCE_FILES/ [Data/Docs]
+│   │   ├── 📁 data/ [Data/Docs]
+│   │   ├── 📁 logs/ [Data/Docs]
+│   │   ├── 📄 api_manager.py
+│   │   ├── 📄 config.json
+│   │   ├── 📄 debug_logger.py
+│   │   ├── 📄 fetch_historical_tweets_hybrid.py
+│   │   ├── 📄 monitor_search_timeline.py
+│   │   ├── 📄 monitor_search_timeline_exact_replay.py
+│   │   ├── 📄 search_config.json
+│   │   ├── 📄 setup_api_cookies.py
+│   │   ├── 📄 storage_manager.py
+│   │   ├── 📄 test_logging_integration.py
+│   │   ├── 📄 text_export_helper.py
+│   │   └── 📄 tier_config.py
+│   ├── 📁 HISTORICAL DATA/
+│   │   ├── 📁 MARKDOWN_FILES/ [Data/Docs]
+│   │   ├── 📁 REFERENCE_FILES/ [Data/Docs]
+│   │   ├── 📁 data/ [Data/Docs]
+│   │   ├── 📁 logs/ [Data/Docs]
+│   │   ├── 📄 api_manager.py
+│   │   ├── 📄 config.json
+│   │   ├── 📄 fetch_historical_tweets_hybrid.py
+│   │   ├── 📄 setup_api_cookies.py
+│   │   ├── 📄 storage_manager.py
+│   │   ├── 📄 text_export_helper.py
+│   │   └── 📄 tier_config.py
+│   └── 📁 LIVE DATA/
+│       ├── 📁 MARKDOWN_FILES/ [Data/Docs]
+│       ├── 📁 REFERENCE_FILES/ [Data/Docs]
+│       ├── 📁 data/ [Data/Docs]
+│       ├── 📁 logs/ [Data/Docs]
+│       ├── 📄 api_manager.py
+│       ├── 📄 config.json
+│       ├── 📄 fetch_historical_tweets_hybrid.py
+│       ├── 📄 monitor_live_tweets_hybrid.py
+│       ├── 📄 setup_api_cookies.py
+│       ├── 📄 storage_manager.py
+│       ├── 📄 text_export_helper.py
+│       ├── 📄 tier_config.py
+│       └── 📄 viral_detector.py
+├── 📁 TWEETER DATA FETCHING 4.0/
+│   ├── 📁 auth/
+│   │   ├── 📄 __init__.py
+│   │   ├── 📄 session_updater.py
+│   │   └── 📄 setup_api_cookies.py
+│   ├── 📁 config/
+│   │   ├── 📄 __init__.py
+│   │   ├── 📄 config.json
+│   │   ├── 📄 search_config.json
+│   │   └── 📄 tier_config.py
+│   ├── 📁 core/
+│   │   ├── 📄 __init__.py
+│   │   ├── 📄 api_manager.py
+│   │   ├── 📄 fetcher_engine.py
+│   │   ├── 📄 set_operations.py
+│   │   └── 📄 windowing.py
+│   ├── 📁 data/ [Data/Docs]
+│   ├── 📁 data_pipeline/
+│   │   ├── 📄 __init__.py
+│   │   └── 📄 storage_manager.py
+│   ├── 📁 exporters/
+│   │   ├── 📄 __init__.py
+│   │   └── 📄 text_export_helper.py
+│   ├── 📁 logs/ [Data/Docs]
+│   ├── 📁 tools/
+│   │   ├── 📄 check_replies_parity.py
+│   │   └── 📄 diagnose_replies_only.py
+│   ├── 📄 live_monitor.py
+│   ├── 📄 live_storage.py
+│   ├── 📄 main_orchestrator.py
+│   ├── 📄 search_monitor.py
+│   └── 📄 viral_detector.py
+└── 📄 project_structure.py
