@@ -24,7 +24,7 @@ try:
 except ImportError:
     pytz = None
 
-from TWEETER_DATA_FETCHER.shared.exporters.text_export_helper import choose_export_text
+from shared.exporters.text_export_helper import choose_export_text
 
 
 def extract_metrics(tweet_obj: Dict[str, Any]) -> Dict[str, Any]:
