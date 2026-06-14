@@ -8,7 +8,9 @@ place so historical and live pipelines can share the same scheduling rules.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+import json
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 
 DEFAULT_PRIORITY_POLICIES: Dict[int, Dict] = {
@@ -207,3 +209,37 @@ def ordered_accounts(account_map: Dict[str, Dict]) -> List[str]:
     rows = list(account_map.values())
     rows.sort(key=lambda row: int(row.get("priority", 7)))
     return [row["username"] for row in rows if row.get("username")]
+
+
+class TierConfig:
+    """Compatibility wrapper for loading tier account and policy configuration."""
+
+    def __init__(self, config_path: Optional[str] = None, config: Optional[Dict] = None):
+        if config is None:
+            if config_path:
+                path = Path(config_path)
+                if not path.is_absolute():
+                    # اگر مسیری داده شد، آن را نسبت به ریشه پروژه (parents[2]) پیدا کن
+                    path = Path(__file__).resolve().parents[2] / path
+            else:
+                # اگر مسیری داده نشد، فایل config.json را در همان پوشه فعلی پیدا کن
+                path = Path(__file__).resolve().parent / "config.json"
+                
+            if path.exists():
+                with path.open("r", encoding="utf-8") as f:
+                    config = json.load(f)
+            else:
+                config = {}
+                
+        self.config = config
+        self.account_map, self.policy_map = load_tier_config(config)
+
+    @property
+    def accounts(self) -> List[str]:
+        return ordered_accounts(self.account_map)
+
+    def get_policy(self, username: str) -> Dict:
+        return get_priority_policy(username, self.account_map, self.policy_map)
+
+    def __repr__(self) -> str:
+        return f"TierConfig(accounts={len(self.account_map)}, policies={len(self.policy_map)})"

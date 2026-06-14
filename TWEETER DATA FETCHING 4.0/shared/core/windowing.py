@@ -126,8 +126,7 @@ class RollingWindowEvaluator:
             return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "no_items")
         if not crossed:
             return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "window_start_not_crossed")
-        # Empty days are acceptable only when the timeline has crossed the full
-        # range; missing dates are reported for visibility but not incomplete.
+        
         return WindowCoverage(True, targets, covered, missing, oldest, newest, True, item_count, "window_crossed")
 
     def evaluate_raw_pages(

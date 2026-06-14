@@ -116,17 +116,29 @@ class StorageManager:
         timezone: str = "Asia/Tehran",
         subsystem: str = "historical",
     ):
-        # `base_dir`/`timezone` kept for backward compatibility with Phase-2 engine.
-        self.project_root = project_root or base_dir or Path(__file__).resolve().parent.parent
+        # اصلاح سطح دسترسی به ریشه پروژه (parents[2])
+        self.project_root = project_root or base_dir or Path(__file__).resolve().parents[2]
         self.timezone = timezone
         self.tz = pytz.timezone(timezone) if pytz else None
-        self.subsystem = str(subsystem or "historical").strip().lower()
+        
+        # نگاشت دقیق به ساختار جدید فولدرها
+        raw_sub = str(subsystem or "historical").strip().lower()
+        if raw_sub in ["historical", "live"]:
+            self.subsystem = "historical_live"
+        else:
+            self.subsystem = raw_sub  # برای حالت "search"
+
         self.global_data_root = self.project_root / "data"
         self.data_root = self.global_data_root / self.subsystem
+        
+        # مسیرهای اصلی بر اساس ساختار جدید
         self.raw_root = self.data_root / "raw"
         self.processed_root = self.data_root / "processed"
         self.state_dir = self.data_root / "state"
         self.reports_dir = self.data_root / "reports"
+        self.logs_dir = self.data_root / "logs"
+
+        # حفظ مسیرهای قدیمی (Legacy) برای جلوگیری از خطای وابستگی‌های احتمالی
         self.legacy_data_root = self.global_data_root
         self.legacy_raw_root = self.legacy_data_root / "raw_json"
         self.legacy_processed_root = self.legacy_data_root / "processed"
@@ -136,7 +148,7 @@ class StorageManager:
         self.sync_state_file = self.state_dir / "sync_state.json"
         self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
 
-        # Compatibility aliases used by existing fetching code.
+        # نام‌گذاری دقیق پوشه‌های زیرمجموعه processed و raw
         self.raw_user_tweets_dir = self.raw_root / "UserTweets"
         self.raw_user_replies_dir = self.raw_root / "UserTweetsAndReplies"
         self.user_tweets_dir = self.processed_root / "1_user_tweets"
@@ -144,7 +156,6 @@ class StorageManager:
         self.intersection_dir = self.processed_root / "3_intersection"
         self.merged_dir = self.processed_root / "4_union"
         self.endpoint_diffs_dir = self.processed_root / "5_replies_only"
-        self.logs_dir = self.data_root / "logs"
 
         self._ensure_base_dirs()
 
@@ -438,7 +449,7 @@ class StorageManager:
         """
         Copy legacy v4 data into data/historical and leave legacy files untouched.
         """
-        if self.subsystem != "historical":
+        if self.subsystem != "historical_live":
             return {"status": "skipped", "reason": "only_historical_storage_migrates_legacy"}
 
         mappings = [

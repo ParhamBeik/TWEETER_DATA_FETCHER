@@ -77,8 +77,10 @@ class APIManager:
         "SearchTimeline": {"limit": 50, "window_seconds": 900},
     }
 
-    def __init__(self, config_path: str = "config/config.json", state_dir: Optional[Path] = None):
-        project_root = Path(__file__).resolve().parent.parent
+    # مسیر پیش‌فرض کانفیگ اصلاح شد
+    def __init__(self, config_path: str = "shared/config/config.json", state_dir: Optional[Path] = None):
+        # با فرض قرارگیری در shared/core/ یا shared/network/ استفاده از parents[2] صحیح است
+        project_root = Path(__file__).resolve().parents[2]
         path_obj = Path(config_path)
         if not path_obj.is_absolute():
             path_obj = project_root / path_obj
@@ -90,9 +92,9 @@ class APIManager:
         )
         
         # State directory for persistent tracking
-        self.state_dir = state_dir or (project_root / "data" / "state")
+        self.state_dir = state_dir or (project_root / "data" / "historical_live" / "state")
         self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.shared_state_dir = project_root / "data" / "state"
+        self.shared_state_dir = self.state_dir
         self.shared_state_dir.mkdir(parents=True, exist_ok=True)
         
         # Session setup
