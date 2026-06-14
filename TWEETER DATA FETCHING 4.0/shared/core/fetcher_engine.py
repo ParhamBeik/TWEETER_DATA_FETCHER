@@ -93,7 +93,7 @@ class EngineLogger:
             table = Table(title="Loaded API / Tier Configuration", show_lines=False)
             table.add_column("Key", style="cyan")
             table.add_column("Value", style="white")
-            table.add_row("Config File", "config/config.json")
+            table.add_row("Config File", "shared/config/config.json") # <--- اصلاح شد
             table.add_row("Accounts (tiered)", str(len(account_map)))
             table.add_row("Priority Policies", str(len(policies)))
             table.add_row("UserByScreenName QueryID", str(api_cfg.get("user_by_screen_name_query_id", ""))[:20] + "...")
@@ -102,7 +102,7 @@ class EngineLogger:
             table.add_row("Timeout (sec)", str(api_cfg.get("default_timeout_seconds", 20)))
             self.console.print(table)
         else:
-            self.info(f"Config File: config/config.json")
+            self.info(f"Config File: shared/config/config.json")
             self.info(f"Accounts (tiered): {len(account_map)}")
             self.info(f"Priority Policies: {len(policies)}")
             self.info(f"Timeout (sec): {api_cfg.get('default_timeout_seconds', 20)}")
@@ -115,8 +115,8 @@ class EngineLogger:
 class FetcherEngine:
     """Phase 2 sequential fetcher with strict failure visibility."""
 
-    def __init__(self, config_path: str = "config/config.json", subsystem: str = "historical"):
-        self.project_root = Path(__file__).resolve().parent.parent
+    def __init__(self, config_path: str = "shared/config/config.json", subsystem: str = "historical"):
+        self.project_root = Path(__file__).resolve().parents[2]
         self.subsystem = str(subsystem or "historical").strip().lower()
         self.logger = EngineLogger()
         self.api_manager = APIManager(config_path=config_path, state_dir=self.project_root / "data" / self.subsystem / "state")
@@ -936,7 +936,7 @@ class FetcherEngine:
             self.storage_manager.save_tweets_to_file(day_tweets, account, date_str, target_dir)
 
     def run(self, selected_accounts: Optional[List[str]] = None):
-        accounts = selected_accounts or ordered_accounts(self.account_map)
+        accounts = ordered_accounts(self.account_map) if selected_accounts is None else selected_accounts
         if not accounts:
             self.logger.warning("No accounts found in tier configuration.")
             return
@@ -989,7 +989,7 @@ class FetcherEngine:
 
 
 def main():
-    engine = FetcherEngine(config_path="config/config.json")
+    engine = FetcherEngine(config_path="shared/config/config.json")
     engine.run()
 
 

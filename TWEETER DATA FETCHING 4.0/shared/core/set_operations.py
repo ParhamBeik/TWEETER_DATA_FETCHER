@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from exporters.text_export_helper import extract_translation_meta
+from shared.exporters.text_export_helper import extract_translation_meta
 
 try:
     import jdatetime

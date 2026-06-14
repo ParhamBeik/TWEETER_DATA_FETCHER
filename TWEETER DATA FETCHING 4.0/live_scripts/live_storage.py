@@ -18,7 +18,8 @@ class LiveStorageManager:
     """Keep live state and outputs separate from historical sync state."""
 
     def __init__(self, project_root: Optional[Path] = None, timezone: str = "Asia/Tehran"):
-        self.project_root = project_root or Path(__file__).resolve().parent
+        # تغییر parent به parents[2] برای رسیدن به ریشه پروژه
+        self.project_root = project_root or Path(__file__).resolve().parents[1]
         self.storage = StorageManager(base_dir=self.project_root, timezone=timezone, subsystem="historical_live")
         self.data_root = self.project_root / "data" / "historical_live"
         self.raw_root = self.data_root / "raw"
