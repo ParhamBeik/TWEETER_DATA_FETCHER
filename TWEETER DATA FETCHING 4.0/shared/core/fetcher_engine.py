@@ -117,7 +117,8 @@ class FetcherEngine:
 
     def __init__(self, config_path: str = "shared/config/config.json", subsystem: str = "historical"):
         self.project_root = Path(__file__).resolve().parents[2]
-        self.subsystem = str(subsystem or "historical").strip().lower()
+        raw_subsystem = str(subsystem or "historical").strip().lower()
+        self.subsystem = "historical_live" if raw_subsystem in {"historical", "live"} else raw_subsystem
         self.logger = EngineLogger()
         self.api_manager = APIManager(config_path=config_path, state_dir=self.project_root / "data" / self.subsystem / "state")
         self.storage_manager = StorageManager(base_dir=self.project_root, timezone=TIMEZONE, subsystem=self.subsystem)
