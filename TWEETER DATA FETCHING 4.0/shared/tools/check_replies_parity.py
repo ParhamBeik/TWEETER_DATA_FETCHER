@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlparse
 
-ROOT = Path(__file__).resolve().parent.parent
-DIAGNOSTIC = ROOT.parent / "test_replies_endpoint.py"
-sys.path.insert(0, str(ROOT))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DIAGNOSTIC = PROJECT_ROOT / "test_replies_endpoint.py"
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def load_diagnostic():
@@ -34,10 +34,10 @@ def query_payload(url: str) -> Dict[str, Any]:
 
 
 def main() -> None:
-    from core.fetcher_engine import FetcherEngine
+    from shared.core.fetcher_engine import FetcherEngine
 
     diag = load_diagnostic()
-    engine = FetcherEngine(config_path="config/config.json")
+    engine = FetcherEngine(config_path="shared/config/config.json")
     query_id = engine.api_manager.get_query_id("UserTweetsAndReplies")
     variables = engine._timeline_variables("UserTweetsAndReplies", diag.USER_ID, None)
     features = engine._timeline_features("UserTweetsAndReplies")
