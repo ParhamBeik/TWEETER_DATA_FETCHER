@@ -10,17 +10,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from shared.config.tier_config import get_priority_policy, load_tier_config, ordered_accounts
 from shared.core.fetcher_engine import FetcherEngine
 from shared.core.set_operations import TweetSetProcessor
 from shared.core.windowing import parse_twitter_timestamp
-from orchestrators.live_storage import LiveStorageManager
-from orchestrators.viral_detector import ViralDetector
+from live_scripts.live_storage import LiveStorageManager
+from live_scripts.viral_detector import ViralDetector
 
 
 class LiveMonitor:
@@ -28,8 +33,8 @@ class LiveMonitor:
 
     ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")
 
-    def __init__(self, config_path: str = "config/config.json"):
-        self.project_root = Path(__file__).resolve().parent
+    def __init__(self, config_path: str = "shared/config/config.json"):
+        self.project_root = Path(__file__).resolve().parents[1]
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
@@ -416,7 +421,7 @@ class LiveMonitor:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run isolated v4 live monitoring.")
-    parser.add_argument("--config", default="config/config.json")
+    parser.add_argument("--config", default="shared/config/config.json")
     parser.add_argument("--account", action="append", dest="accounts", help="Limit to one account; can be repeated.")
     parser.add_argument("--once", action="store_true", help="Run one internal validation cycle instead of continuous mode.")
     parser.add_argument("--check-interval", type=int, default=60)

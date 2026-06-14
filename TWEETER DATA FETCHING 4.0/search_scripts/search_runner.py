@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -18,11 +19,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import quote, urlencode
 
-from config.tier_config import DEFAULT_PRIORITY_POLICIES
-from core.fetcher_engine import FetcherEngine
-from core.set_operations import TweetSetProcessor
-from core.windowing import parse_twitter_timestamp
-from data_pipeline.storage_manager import StorageManager
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from shared.config.tier_config import DEFAULT_PRIORITY_POLICIES
+from shared.core.fetcher_engine import FetcherEngine
+from shared.core.set_operations import TweetSetProcessor
+from shared.core.windowing import parse_twitter_timestamp
+from shared.data_pipeline.storage_manager import StorageManager
 
 
 VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
@@ -120,8 +125,8 @@ class SearchQueryBuilder:
 class SearchTimelineMonitor:
     """Continuous SearchTimeline monitor using v4 auth/rate-limit infrastructure."""
 
-    def __init__(self, config_path: str = "config/config.json", search_config_path: str = "config/search_config.json"):
-        self.project_root = Path(__file__).resolve().parent
+    def __init__(self, config_path: str = "shared/config/config.json", search_config_path: str = "shared/config/search_config.json"):
+        self.project_root = Path(__file__).resolve().parents[1]
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="search")
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
@@ -645,8 +650,8 @@ class SearchTimelineMonitor:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run isolated v4 SearchTimeline monitoring.")
-    parser.add_argument("--config", default="config/config.json")
-    parser.add_argument("--search-config", default="config/search_config.json")
+    parser.add_argument("--config", default="shared/config/config.json")
+    parser.add_argument("--search-config", default="shared/config/search_config.json")
     parser.add_argument("--only", action="append", help="Limit to search name/slug; can be repeated.")
     parser.add_argument("--once", action="store_true", help="Run one validation cycle instead of continuous mode.")
     parser.add_argument("--check-interval", type=int, default=60)

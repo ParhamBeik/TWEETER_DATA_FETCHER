@@ -3,9 +3,14 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.config.tier_config import get_priority_policy, ordered_accounts
 from shared.core.fetcher_engine import FetcherEngine
@@ -230,7 +235,7 @@ def _print_report_summary(report: Dict[str, Any], json_path: Path, txt_path: Pat
 
 def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
     project_root = Path(__file__).resolve().parent.parent
-    engine = FetcherEngine(config_path="config/config.json")
+    engine = FetcherEngine(config_path="shared/config/config.json")
     storage = StorageManager(project_root=project_root, subsystem="historical_live")
     processor = TweetSetProcessor()
     evaluator = RollingWindowEvaluator()

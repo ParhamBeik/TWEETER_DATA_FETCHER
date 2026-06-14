@@ -6,19 +6,24 @@ V4 live viral detection using isolated live snapshots.
 from __future__ import annotations
 
 import json
+import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from orchestrators.live_storage import LiveStorageManager
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from live_scripts.live_storage import LiveStorageManager
 
 
 class ViralDetector:
     """Detect viral candidates from engagement velocity and acceleration."""
 
-    def __init__(self, config_path: str = "config/config.json", storage: Optional[LiveStorageManager] = None):
-        self.project_root = Path(__file__).resolve().parent.parent
+    def __init__(self, config_path: str = "shared/config/config.json", storage: Optional[LiveStorageManager] = None):
+        self.project_root = PROJECT_ROOT
         cfg_path = Path(config_path)
         if not cfg_path.is_absolute():
             cfg_path = self.project_root / cfg_path
@@ -121,7 +126,7 @@ class ViralDetector:
             return self.account_baselines[key]
         values: Dict[str, List[float]] = defaultdict(list)
         for folder in ["1_user_tweets", "2_user_tweets_and_replies", "4_union"]:
-            path = self.project_root / "data" / "processed" / folder / key / f"{folder}.json"
+            path = self.project_root / "data" / "historical_live" / "processed" / folder / key / f"{folder}.json"
             if not path.exists():
                 continue
             try:
