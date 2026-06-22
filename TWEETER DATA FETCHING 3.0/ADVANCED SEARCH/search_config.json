@@ -4,7 +4,7 @@
     "enabled": true,
     "product": "Top",
     "preserve_exact_query": true,
-    "raw_query": "(Iran OR War OR Brent OR Gold OR Inflation OR Hormuz) lang:en min_replies:100 min_faves:1000 min_retweets:50 since:2026-05-23",
+    "raw_query": "(Iran OR War OR Brent OR Gold OR Inflation OR Hormuz) lang:en min_replies:100 min_faves:1000 min_retweets:50 since:2026-06-07",
     "polling_priority": 2,
     "rolling_hours": 24,
     "include_keywords": [
