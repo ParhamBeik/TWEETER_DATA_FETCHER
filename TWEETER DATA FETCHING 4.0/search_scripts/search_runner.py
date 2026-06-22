@@ -32,6 +32,48 @@ from shared.data_pipeline.storage_manager import StorageManager
 
 VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
 
+FROZEN_SEARCH_FEATURES: Dict[str, object] = {
+    "articles_preview_enabled": True,
+    "c9s_tweet_anatomy_moderator_badge_enabled": True,
+    "communities_web_enable_tweet_community_results_fetch": True,
+    "content_disclosure_ai_generated_indicator_enabled": True,
+    "content_disclosure_indicator_enabled": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+    "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+    "longform_notetweets_consumption_enabled": True,
+    "longform_notetweets_inline_media_enabled": False,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "post_ctas_fetch_enabled": True,
+    "premium_content_api_read_enabled": False,
+    "profile_label_improvements_pcf_label_in_post_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True,
+    "responsive_web_enhance_cards_enabled": False,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_grok_analysis_button_from_backend": True,
+    "responsive_web_grok_analyze_button_fetch_trends_enabled": False,
+    "responsive_web_grok_analyze_post_followups_enabled": True,
+    "responsive_web_grok_annotations_enabled": True,
+    "responsive_web_grok_community_note_auto_translation_is_enabled": True,
+    "responsive_web_grok_image_annotation_enabled": True,
+    "responsive_web_grok_imagine_annotation_enabled": True,
+    "responsive_web_grok_share_attachment_enabled": True,
+    "responsive_web_grok_show_grok_translated_post": True,
+    "responsive_web_jetfuel_frame": True,
+    "responsive_web_profile_redirect_enabled": False,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True,
+    "rweb_cashtags_composer_attachment_enabled": True,
+    "rweb_cashtags_enabled": True,
+    "rweb_conversational_replies_downvote_enabled": False,
+    "rweb_tipjar_consumption_enabled": False,
+    "rweb_video_screen_enabled": False,
+    "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "verified_phone_label_enabled": False,
+    "view_counts_everywhere_api_enabled": True,
+}
+
 
 class SearchQueryBuilder:
     """Build SearchTimeline rawQuery and browser URL from search definitions."""
@@ -130,7 +172,12 @@ class SearchTimelineMonitor:
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="search")
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
-        self.storage = StorageManager(base_dir=self.project_root, subsystem="search")
+        self.storage = StorageManager(
+            base_dir=self.project_root,
+            subsystem="search",
+            create_folders=False,
+            manage_sync_state=False,
+        )
         self.processor = TweetSetProcessor()
         self.search_defs = self._load_search_config(search_config_path)
         self.search_root = self.project_root / "data" / "search"
@@ -188,9 +235,13 @@ class SearchTimelineMonitor:
             "rolling_hours": int(search_def.get("rolling_hours", 24)),
         }
 
-    def _search_variables(self, search_def: Dict[str, Any], raw_query: str, product: str, cursor: Optional[str]) -> Dict[str, Any]:
-        count = max(1, min(int(search_def.get("count", 20)), 100))
-        variables = {
+    @staticmethod
+    def _compact_json(payload: Dict[str, Any]) -> str:
+        return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+
+    def _build_base_variables(self, search_def: Dict[str, Any], raw_query: str, product: str) -> Dict[str, Any]:
+        count = max(1, min(int(search_def.get("count", 20)), 20))
+        return {
             "rawQuery": raw_query,
             "count": count,
             "querySource": str(search_def.get("query_source", "typed_query")),
@@ -198,25 +249,12 @@ class SearchTimelineMonitor:
             "withGrokTranslatedBio": bool(search_def.get("with_grok_translated_bio", True)),
             "withQuickPromoteEligibilityTweetFields": bool(search_def.get("with_quick_promote_eligibility_tweet_fields", False)),
         }
-        if cursor:
-            variables["cursor"] = cursor
-        for key, value in (search_def.get("variable_overrides", {}) or {}).items():
-            variables[str(key)] = value
-        return variables
 
-    def _search_features(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
-        features = self.fetcher._timeline_features("SearchTimeline")
-        for source in [self.config.get("search_timeline_feature_overrides", {}), search_def.get("feature_overrides", {})]:
-            if isinstance(source, dict):
-                features.update({str(k): v for k, v in source.items()})
-        return features
-
-    def _field_toggles(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
-        toggles = self.fetcher._timeline_field_toggles("SearchTimeline")
-        overrides = search_def.get("field_toggle_overrides", {})
-        if isinstance(overrides, dict):
-            toggles.update({str(k): v for k, v in overrides.items()})
-        return toggles
+    def _build_frozen_headers(self, search_url: str) -> Dict[str, str]:
+        headers = dict(self.api_manager.session.headers)
+        headers["referer"] = search_url
+        headers["x-twitter-active-user"] = "yes"
+        return {str(key): str(value) for key, value in headers.items() if value is not None}
 
     def _extract_instructions(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         return (
@@ -398,26 +436,16 @@ class SearchTimelineMonitor:
 
     def _request_page(
         self,
-        search_def: Dict[str, Any],
-        raw_query: str,
-        product: str,
-        search_url: str,
+        graphql_url: str,
+        variables_template: Dict[str, Any],
+        features_json: str,
+        frozen_headers: Dict[str, str],
         cursor: Optional[str],
         retries: int,
         *,
         has_pages: bool = False,
     ) -> Dict[str, Any]:
         endpoint = "SearchTimeline"
-        query_id = self.api_manager.get_query_id(endpoint)
-        if not query_id:
-            raise RuntimeError("Missing api_config.search_timeline_query_id")
-        url = self.fetcher._build_graphql_url(
-            endpoint=endpoint,
-            query_id=query_id,
-            variables=self._search_variables(search_def, raw_query, product, cursor),
-            features=self._search_features(search_def),
-            field_toggles=self._field_toggles(search_def),
-        )
         retry_policy = self.api_manager.retry_policy()
         max_attempts = max(
             max(1, retries),
@@ -427,16 +455,24 @@ class SearchTimelineMonitor:
         )
         errors: List[Dict[str, Any]] = []
         attempts = 0
-        request_headers = {"referer": search_url, "x-twitter-active-user": "yes"}
         for attempt in range(max_attempts):
             attempts += 1
             try:
-                response = self.api_manager.perform_get(
-                    endpoint=endpoint,
-                    url=url,
-                    max_retries=1,
-                    headers=request_headers,
+                variables = dict(variables_template)
+                if cursor:
+                    variables["cursor"] = cursor
+                params = {
+                    "variables": self._compact_json(variables),
+                    "features": features_json,
+                }
+                response = self.api_manager.session.get(
+                    graphql_url,
+                    params=params,
+                    headers=frozen_headers,
+                    timeout=self.api_manager.default_timeout,
                 )
+                self.api_manager.last_status_by_endpoint[endpoint] = response.status_code
+                self.api_manager.update_rate_limit(endpoint, response.headers)
                 if response.status_code == 200:
                     try:
                         payload = response.json()
@@ -558,16 +594,23 @@ class SearchTimelineMonitor:
         exhausted_reason = "unknown"
         rolling_hours = int(policy["rolling_hours"])
         window_start = datetime.utcnow() - timedelta(hours=max(1, rolling_hours))
+        query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
+        if not query_id:
+            raise RuntimeError("Missing api_config.search_timeline_query_id")
+        graphql_url = f"https://x.com/i/api/graphql/{query_id}/SearchTimeline"
+        variables_template = self._build_base_variables(search_def, raw_query, product)
+        features_json = self._compact_json(dict(FROZEN_SEARCH_FEATURES))
 
         self.api_manager.warmup_url(search_url, timeout=int(self.config.get("api_config", {}).get("search_warmup_seconds", 30)))
         if self.fetcher.first_request_warmup_seconds > 0:
             time.sleep(self.fetcher.first_request_warmup_seconds)
+        frozen_headers = self._build_frozen_headers(search_url)
         for page in range(1, int(policy["pagination_safety_cap_pages"]) + 1):
             payload = self._request_page(
-                search_def,
-                raw_query,
-                product,
-                search_url,
+                graphql_url,
+                variables_template,
+                features_json,
+                frozen_headers,
                 cursor,
                 int(policy["max_retries"]),
                 has_pages=bool(tweets),
@@ -581,7 +624,8 @@ class SearchTimelineMonitor:
             payload.pop("_attempts", None)
             payload.pop("_error_samples", None)
             payload.pop("_status", None)
-            self.storage.save_raw_page(batch_dir, page, payload)
+            jalali_batch = self.storage._jalali_batch_name()
+            self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
             tweets.extend(page_result["tweets"])
             if page == 1:
