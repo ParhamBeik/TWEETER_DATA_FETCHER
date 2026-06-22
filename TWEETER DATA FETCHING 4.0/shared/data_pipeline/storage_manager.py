@@ -115,6 +115,8 @@ class StorageManager:
         base_dir: Optional[Path] = None,
         timezone: str = "Asia/Tehran",
         subsystem: str = "historical",
+        create_folders: bool = True,
+        manage_sync_state: bool = True,
     ):
         # اصلاح سطح دسترسی به ریشه پروژه (parents[2])
         self.project_root = project_root or base_dir or Path(__file__).resolve().parents[2]
@@ -145,8 +147,11 @@ class StorageManager:
         self.legacy_reports_dir = self.legacy_data_root / "reports"
         self.global_state_dir = self.global_data_root / "state"
         self.legacy_state_dir = self.legacy_data_root / "STATE"
-        self.sync_state_file = self.state_dir / "sync_state.json"
-        self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
+        self.sync_state_file: Optional[Path] = None
+        self.legacy_sync_state_file: Optional[Path] = None
+        if manage_sync_state:
+            self.sync_state_file = self.state_dir / "sync_state.json"
+            self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
 
         # نام‌گذاری دقیق پوشه‌های زیرمجموعه processed و raw
         self.raw_user_tweets_dir = self.raw_root / "UserTweets"
@@ -157,7 +162,8 @@ class StorageManager:
         self.merged_dir = self.processed_root / "4_union"
         self.endpoint_diffs_dir = self.processed_root / "5_replies_only"
 
-        self._ensure_base_dirs()
+        if manage_sync_state or create_folders:
+            self._ensure_base_dirs()
 
     def _ensure_base_dirs(self) -> None:
         for path in [
@@ -408,6 +414,26 @@ class StorageManager:
     def save_raw_page(self, batch_dir: Path, page_number: int, payload: Dict[str, Any]) -> Path:
         batch_dir.mkdir(parents=True, exist_ok=True)
         output_file = batch_dir / f"page_{int(page_number)}.json"
+        with output_file.open("w", encoding="utf-8") as f:
+            json.dump(payload if isinstance(payload, dict) else {}, f, ensure_ascii=False, indent=2)
+        return output_file
+
+    def save_search_result_page(
+        self,
+        search_slug: str,
+        product: str,
+        jalali_batch: str,
+        page_index: int,
+        payload: Dict[str, Any],
+    ) -> Path:
+        """Save a single SearchTimeline page to data/search/raw/{slug}/{product}/{batch}/page_{i}.json.
+
+        This method is dedicated to the search subsystem and must not reference
+        SET_FOLDER_MAP or any historical/live folder logic.
+        """
+        target = self.raw_root / search_slug / product.lower() / jalali_batch
+        target.mkdir(parents=True, exist_ok=True)
+        output_file = target / f"page_{page_index}.json"
         with output_file.open("w", encoding="utf-8") as f:
             json.dump(payload if isinstance(payload, dict) else {}, f, ensure_ascii=False, indent=2)
         return output_file
