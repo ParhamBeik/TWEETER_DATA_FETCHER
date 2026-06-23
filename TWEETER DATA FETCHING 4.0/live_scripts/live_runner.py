@@ -16,6 +16,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except Exception:
+    Console = None
+    Panel = None
+    Table = None
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -28,6 +38,87 @@ from live_scripts.live_storage import LiveStorageManager
 from live_scripts.viral_detector import ViralDetector
 
 
+V4_PREFIX = "[V4]"
+
+
+class LiveConsole:
+    """Rich-first console output for LiveMonitor, with plain-text fallback."""
+
+    def __init__(self) -> None:
+        self.rich_enabled = Console is not None
+        self.console = Console() if self.rich_enabled else None
+
+    def banner(self, title: str) -> None:
+        if self.rich_enabled and Panel is not None:
+            self.console.print(Panel.fit(title, title="V4 Live Monitor", border_style="magenta"))
+        else:
+            sep = "=" * 70
+            print(f"{V4_PREFIX} {title}")
+            print(sep)
+
+    def info(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
+        else:
+            print(f"{V4_PREFIX} {message}")
+
+    def success(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
+        else:
+            print(f"{V4_PREFIX} \u2713 {message}")
+
+    def warning(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
+        else:
+            print(f"{V4_PREFIX} \u26a0 {message}")
+
+    def error(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
+        else:
+            print(f"{V4_PREFIX} \u2717 {message}")
+
+    def account_summary(self, username: str, account_report: Dict[str, Any]) -> None:
+        """Print a summary for a single account after a cycle."""
+        status = account_report.get("status", "unknown")
+        sets = account_report.get("sets", {})
+        new_tweets = account_report.get("new_tweets", {})
+        endpoints = account_report.get("endpoints", {})
+
+        print()
+        if self.rich_enabled and Table is not None:
+            table = Table(title=f"Account: @{username} [{status.upper()}]", show_lines=False)
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="white")
+            table.add_row("Status", status)
+            table.add_row("Priority", str(account_report.get("priority", "")))
+            table.add_row("Tweets (union)", str(sets.get("4_union", 0)))
+            table.add_row("Tweets (intersection)", str(sets.get("3_intersection", 0)))
+            table.add_row("Tweets (new this cycle)", str(new_tweets.get("new", 0)))
+            table.add_row("Duplicates", str(new_tweets.get("duplicates", 0)))
+            table.add_row("Viral Reports", str(new_tweets.get("viral_reports", 0)))
+            for ep, ep_data in endpoints.items():
+                pages = ep_data.get("pages_fetched", 0)
+                http_status = ep_data.get("last_http_status", "N/A")
+                reason = ep_data.get("outcome", "")
+                table.add_row(f"Endpoint: {ep}", f"pages={pages} status={http_status}")
+            self.console.print(table)
+        else:
+            print(f"{V4_PREFIX} @{username} [{status.upper()}]")
+            print(f"{V4_PREFIX}   Priority: {account_report.get('priority', '')}")
+            print(f"{V4_PREFIX}   Tweets (union): {sets.get('4_union', 0)}")
+            print(f"{V4_PREFIX}   Tweets (intersection): {sets.get('3_intersection', 0)}")
+            print(f"{V4_PREFIX}   New this cycle: {new_tweets.get('new', 0)}")
+            print(f"{V4_PREFIX}   Duplicates: {new_tweets.get('duplicates', 0)}")
+            print(f"{V4_PREFIX}   Viral Reports: {new_tweets.get('viral_reports', 0)}")
+            for ep, ep_data in endpoints.items():
+                pages = ep_data.get("pages_fetched", 0)
+                http_status = ep_data.get("last_http_status", "N/A")
+                print(f"{V4_PREFIX}   Endpoint {ep}: pages={pages} status={http_status}")
+
+
 class LiveMonitor:
     """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
 
@@ -36,6 +127,7 @@ class LiveMonitor:
     def __init__(self, config_path: str = "shared/config/config.json"):
         self.project_root = Path(__file__).resolve().parents[1]
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
+        self.console = LiveConsole()
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
         self.account_map, self.priority_policies = load_tier_config(self.config)
@@ -333,11 +425,17 @@ class LiveMonitor:
             if analysis:
                 self.live_storage.save_viral_report(analysis)
                 viral_reports += 1
+        if new_count > 0:
+            self.console.success(f"New tweets for @{username}: {new_count}")
+        if viral_reports > 0:
+            self.console.info(f"Viral reports for @{username}: {viral_reports}")
         return {"new": new_count, "duplicates": duplicate_count, "viral_reports": viral_reports}
 
     def monitor_account(self, username: str) -> Dict[str, Any]:
         policy = get_priority_policy(username, self.account_map, self.priority_policies)
         live_window_hours = int(policy.get("live_window_hours", 24))
+        prio = policy.get("priority", "")
+        self.console.info(f"Starting @{username} (priority={prio}, window={live_window_hours}h)")
         result: Dict[str, Any] = {
             "account": username,
             "priority": policy.get("priority"),
@@ -347,6 +445,7 @@ class LiveMonitor:
         try:
             user_id = self._get_live_user_id(username)
         except Exception as exc:
+            self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
             result["status"] = "failed"
             result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
             self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
@@ -382,6 +481,7 @@ class LiveMonitor:
 
     def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
         selected = only_accounts or self.accounts
+        self.console.banner(f"Cycle started: {len(selected)} account(s)")
         report = {
             "started_at": datetime.utcnow().isoformat() + "Z",
             "accounts": {},
@@ -391,6 +491,7 @@ class LiveMonitor:
             if not self.should_fetch_account(username):
                 report["summary"]["skipped"] += 1
                 continue
+            self.console.info(f"Processing @{username}...")
             account_report = self.monitor_account(username)
             report["accounts"][username] = account_report
             report["summary"]["checked"] += 1
@@ -398,13 +499,21 @@ class LiveMonitor:
                 report["summary"]["failed"] += 1
             self.api_manager.human_delay("between_accounts")
         report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+
+        # Print summary after cycle
+        self.console.banner(f"Cycle complete: {report['summary']}")
+        for username in selected:
+            if username in report.get("accounts", {}):
+                self.console.account_summary(username, report["accounts"][username])
+        if not report.get("accounts"):
+            self.console.warning("No accounts were processed in this cycle")
+
         return report
 
     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:
-        print("Starting v4 live monitor. Press Ctrl+C to stop.")
+        self.console.banner("Starting v4 live monitor. Press Ctrl+C to stop.")
         while True:
             report = self.run_cycle(only_accounts=only_accounts)
-            print(f"Live cycle complete: {report['summary']}")
             sim = self.config.get("anti_bot_simulation", {})
             if sim.get("enabled", True):
                 delays = sim.get("delays_seconds", {})
@@ -432,7 +541,7 @@ def main() -> None:
     args = parse_args()
     monitor = LiveMonitor(config_path=args.config)
     if args.once:
-        print(monitor.run_cycle(only_accounts=args.accounts))
+        report = monitor.run_cycle(only_accounts=args.accounts)
     else:
         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
 
