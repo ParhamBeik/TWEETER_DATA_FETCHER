@@ -19,6 +19,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import quote, urlencode
 
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except Exception:
+    Console = None
+    Panel = None
+    Table = None
+
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -73,6 +84,85 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = {
     "verified_phone_label_enabled": False,
     "view_counts_everywhere_api_enabled": True,
 }
+
+
+V4_PREFIX = "[V4]"
+
+
+class SearchConsole:
+    """Rich-first console output for SearchTimelineMonitor, with plain-text fallback."""
+
+    def __init__(self) -> None:
+        self.rich_enabled = Console is not None
+        self.console = Console() if self.rich_enabled else None
+
+    def banner(self, title: str) -> None:
+        if self.rich_enabled and Panel is not None:
+            self.console.print(Panel.fit(title, title="V4 Search Monitor", border_style="magenta"))
+        else:
+            sep = "=" * 70
+            print(f"{V4_PREFIX} {title}")
+            print(sep)
+
+    def info(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
+        else:
+            print(f"{V4_PREFIX} {message}")
+
+    def success(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
+        else:
+            print(f"{V4_PREFIX} \u2713 {message}")
+
+    def warning(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
+        else:
+            print(f"{V4_PREFIX} \u26a0 {message}")
+
+    def error(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
+        else:
+            print(f"{V4_PREFIX} \u2717 {message}")
+
+    def summary(self, report: Dict[str, Any]) -> None:
+        """Print a search report summary."""
+        print()
+        if self.rich_enabled and Table is not None:
+            table = Table(
+                title=f"Search Report: {report.get('search', 'Unknown')}",
+                show_lines=False,
+            )
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="white")
+            table.add_row("Slug", report.get("slug", ""))
+            table.add_row("Product", report.get("product", ""))
+            table.add_row("Raw Query", report.get("raw_query", ""))
+            table.add_row(
+                "Tweets Found",
+                str(report.get("counts", {}).get("tweets", 0)),
+            )
+            meta = report.get("metadata", {})
+            table.add_row("Pages Saved", f"{meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
+            table.add_row("Exhausted Reason", str(meta.get("exhausted_reason", "")))
+            table.add_row("Attempts", str(meta.get("attempts", 0)))
+            last_status = meta.get("last_http_status")
+            table.add_row("Last HTTP Status", str(last_status) if last_status else "N/A")
+            self.console.print(table)
+        else:
+            print(f"{V4_PREFIX} Report for: {report.get('search', 'Unknown')}")
+            print(f"{V4_PREFIX}   Slug: {report.get('slug', '')}")
+            print(f"{V4_PREFIX}   Product: {report.get('product', '')}")
+            print(f"{V4_PREFIX}   Tweets Found: {report.get('counts', {}).get('tweets', 0)}")
+            meta = report.get("metadata", {})
+            print(f"{V4_PREFIX}   Pages Saved: {meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
+            print(f"{V4_PREFIX}   Exhausted Reason: {meta.get('exhausted_reason', 'unknown')}")
+        outputs = report.get("outputs", {})
+        if outputs:
+            print(f"{V4_PREFIX}   Outputs: {', '.join(outputs.values())}")
 
 
 class SearchQueryBuilder:
@@ -187,6 +277,7 @@ class SearchTimelineMonitor:
         self.reports_root = self.search_root / "reports"
         self.state_file = self.search_root / "state" / "search_state.json"
         self.search_state = self._load_json(self.state_file, {})
+        self.console = SearchConsole()
         for path in [self.raw_root, self.processed_root, self.debug_root, self.reports_root, self.state_file.parent]:
             path.mkdir(parents=True, exist_ok=True)
 
@@ -565,7 +656,11 @@ class SearchTimelineMonitor:
     def _state_key(self, search_def: Dict[str, Any], product: str) -> str:
         return f"{SearchQueryBuilder.slug(search_def)}::{product.lower()}"
 
-    def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int) -> bool:
+    def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int, force_run: bool = False) -> bool:
+        # اگر در حالت force_run هستیم، تایمرها کاملا نادیده گرفته می‌شوند
+        if force_run:
+            return True
+            
         state = self.search_state.get(self._state_key(search_def, product), {})
         last = state.get("last_checked_at") if isinstance(state, dict) else None
         if not last:
@@ -583,6 +678,8 @@ class SearchTimelineMonitor:
         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
         policy = self._policy_for_search(search_def)
         batch_dir = self._raw_batch_dir(slug, product)
+        self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
+        self.console.info(f"  Query: {raw_query}")
         seen_ids: Set[str] = set()
         cursor: Optional[str] = None
         cursor_history: Set[str] = set()
@@ -625,6 +722,8 @@ class SearchTimelineMonitor:
             payload.pop("_error_samples", None)
             payload.pop("_status", None)
             jalali_batch = self.storage._jalali_batch_name()
+            if page <= 3:
+                self.console.info(f"  Page {page} fetched")
             self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
             tweets.extend(page_result["tweets"])
@@ -664,12 +763,34 @@ class SearchTimelineMonitor:
         }
         outputs = self._save_exports(slug, product, raw_query, tweets, debug, metadata)
         report = {"search": search_def.get("name", slug), "slug": slug, "product": product, "raw_query": raw_query, "metadata": metadata, "counts": {"tweets": len(tweets)}, "outputs": outputs}
-        self.search_state[self._state_key(search_def, product)] = {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": exhausted_reason, "last_counts": report["counts"]}
+        
+        # ------------- تغییرات جدید سیستم State -------------
+        state_key = self._state_key(search_def, product)
+        current_state = self.search_state.get(state_key, {})
+        
+        # تشخیص اینکه آیا چرخه واقعاً موفق بوده یا به خاطر ارور متوقف شده (مثل 401، 403، 404)
+        is_success = last_http_status in (200, None)
+        
+        new_state = {
+            "last_status": exhausted_reason if is_success else f"error_http_{last_http_status}",
+            "last_counts": report["counts"]
+        }
+        
+        if is_success:
+            # در صورت موفقیت کامل، زمان آپدیت می‌شود تا سیستم طبق Policy به خواب برود
+            new_state["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
+        else:
+            # در صورت بروز خطا، زمان قبلی حفظ می‌شود تا در رانِ بعدی فوراً مجدداً تلاش کند
+            new_state["last_checked_at"] = current_state.get("last_checked_at")
+            
+        self.search_state[state_key] = new_state
         self._save_json(self.state_file, self.search_state)
+        # --------------------------------------------------
+
         self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._jalali_batch_name()}.json", report)
         return report
 
-    def run_cycle(self, only_names: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    def run_cycle(self, only_names: Optional[Set[str]] = None, force_run: bool = False) -> List[Dict[str, Any]]:
         reports = []
         for search_def in self.search_defs:
             if not search_def.get("enabled", True):
@@ -679,16 +800,29 @@ class SearchTimelineMonitor:
                 continue
             product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
             policy = self._policy_for_search(search_def)
-            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"])):
+            
+            # پارامتر force_run اینجا به تابع چک‌کننده پاس داده می‌شود
+            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"]), force_run=force_run):
                 continue
+                
             reports.append(self.monitor_search(search_def))
         return reports
 
+    def _print_cycle_summary(self, reports: List[Dict[str, Any]], only_names: Optional[Set[str]]) -> None:
+        """Print a summary after a search cycle completes."""
+        self.console.banner(f"Cycle complete: {len(reports)} search(es) fetched")
+        for report in reports:
+            self.console.summary(report)
+        if not reports:
+            self.console.warning("No searches were fetched in this cycle")
+        if only_names:
+            self.console.info(f"Note: --only filter active: {', '.join(only_names)}")
+
     def run_continuous(self, only_names: Optional[Set[str]] = None, check_interval: int = 60) -> None:
-        print("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
+        self.console.banner("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
         while True:
             reports = self.run_cycle(only_names=only_names)
-            print(f"Search cycle complete: {len(reports)} search(es) fetched")
+            self._print_cycle_summary(reports, only_names)
             time.sleep(max(1, check_interval))
 
 
@@ -707,7 +841,8 @@ def main() -> None:
     monitor = SearchTimelineMonitor(config_path=args.config, search_config_path=args.search_config)
     only = set(args.only or []) or None
     if args.once:
-        print(monitor.run_cycle(only_names=only))
+        reports = monitor.run_cycle(only_names=only)
+        monitor._print_cycle_summary(reports, only)
     else:
         monitor.run_continuous(only_names=only, check_interval=args.check_interval)
 

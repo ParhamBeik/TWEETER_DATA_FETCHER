@@ -27,7 +27,7 @@
     "cursor_error_max_retries": 3,
     "default_timeout_seconds": 20,
     "tweet_detail_query_id": "",
-    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
+    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
     "search_warmup_seconds": 2,
     "first_request_warmup_seconds": 15,
     "pagination_safety_cap_pages": 50

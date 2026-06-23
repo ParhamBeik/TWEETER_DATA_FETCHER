@@ -1,4 +1,5 @@
 This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where content has been formatted for parsing in markdown style.
 
 # File Summary
 
@@ -30,7 +31,10 @@ The content is organized as follows:
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
+- Content has been formatted for parsing in markdown style
 - Files are sorted by Git change count (files with more changes are at the bottom)
+- Git diffs from the worktree and staged changes are included
+- Git logs (50 commits) are included to show development patterns
 
 # Directory Structure
 ```
@@ -68,13 +72,14 @@ shared/
     check_replies_parity.py
     diagnose_replies_only.py
 .gitignore
+AGENTS.md
 structure.txt
 ```
 
 # Files
 
 ## File: historical_scripts/historical_runner.py
-```python
+````python
 #!/usr/bin/env python3
 """Canonical v4 replies-first fetch and processing pipeline."""
 
@@ -534,10 +539,10 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
 
 if __name__ == "__main__":
     run_v4()
-```
+````
 
 ## File: live_scripts/live_runner.py
-```python
+````python
 #!/usr/bin/env python3
 """
 V4 isolated live monitoring subsystem.
@@ -556,6 +561,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except Exception:
+    Console = None
+    Panel = None
+    Table = None
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -568,6 +583,87 @@ from live_scripts.live_storage import LiveStorageManager
 from live_scripts.viral_detector import ViralDetector
 
 
+V4_PREFIX = "[V4]"
+
+
+class LiveConsole:
+    """Rich-first console output for LiveMonitor, with plain-text fallback."""
+
+    def __init__(self) -> None:
+        self.rich_enabled = Console is not None
+        self.console = Console() if self.rich_enabled else None
+
+    def banner(self, title: str) -> None:
+        if self.rich_enabled and Panel is not None:
+            self.console.print(Panel.fit(title, title="V4 Live Monitor", border_style="magenta"))
+        else:
+            sep = "=" * 70
+            print(f"{V4_PREFIX} {title}")
+            print(sep)
+
+    def info(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
+        else:
+            print(f"{V4_PREFIX} {message}")
+
+    def success(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
+        else:
+            print(f"{V4_PREFIX} \u2713 {message}")
+
+    def warning(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
+        else:
+            print(f"{V4_PREFIX} \u26a0 {message}")
+
+    def error(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
+        else:
+            print(f"{V4_PREFIX} \u2717 {message}")
+
+    def account_summary(self, username: str, account_report: Dict[str, Any]) -> None:
+        """Print a summary for a single account after a cycle."""
+        status = account_report.get("status", "unknown")
+        sets = account_report.get("sets", {})
+        new_tweets = account_report.get("new_tweets", {})
+        endpoints = account_report.get("endpoints", {})
+
+        print()
+        if self.rich_enabled and Table is not None:
+            table = Table(title=f"Account: @{username} [{status.upper()}]", show_lines=False)
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="white")
+            table.add_row("Status", status)
+            table.add_row("Priority", str(account_report.get("priority", "")))
+            table.add_row("Tweets (union)", str(sets.get("4_union", 0)))
+            table.add_row("Tweets (intersection)", str(sets.get("3_intersection", 0)))
+            table.add_row("Tweets (new this cycle)", str(new_tweets.get("new", 0)))
+            table.add_row("Duplicates", str(new_tweets.get("duplicates", 0)))
+            table.add_row("Viral Reports", str(new_tweets.get("viral_reports", 0)))
+            for ep, ep_data in endpoints.items():
+                pages = ep_data.get("pages_fetched", 0)
+                http_status = ep_data.get("last_http_status", "N/A")
+                reason = ep_data.get("outcome", "")
+                table.add_row(f"Endpoint: {ep}", f"pages={pages} status={http_status}")
+            self.console.print(table)
+        else:
+            print(f"{V4_PREFIX} @{username} [{status.upper()}]")
+            print(f"{V4_PREFIX}   Priority: {account_report.get('priority', '')}")
+            print(f"{V4_PREFIX}   Tweets (union): {sets.get('4_union', 0)}")
+            print(f"{V4_PREFIX}   Tweets (intersection): {sets.get('3_intersection', 0)}")
+            print(f"{V4_PREFIX}   New this cycle: {new_tweets.get('new', 0)}")
+            print(f"{V4_PREFIX}   Duplicates: {new_tweets.get('duplicates', 0)}")
+            print(f"{V4_PREFIX}   Viral Reports: {new_tweets.get('viral_reports', 0)}")
+            for ep, ep_data in endpoints.items():
+                pages = ep_data.get("pages_fetched", 0)
+                http_status = ep_data.get("last_http_status", "N/A")
+                print(f"{V4_PREFIX}   Endpoint {ep}: pages={pages} status={http_status}")
+
+
 class LiveMonitor:
     """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
 
@@ -576,6 +672,7 @@ class LiveMonitor:
     def __init__(self, config_path: str = "shared/config/config.json"):
         self.project_root = Path(__file__).resolve().parents[1]
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
+        self.console = LiveConsole()
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
         self.account_map, self.priority_policies = load_tier_config(self.config)
@@ -873,11 +970,17 @@ class LiveMonitor:
             if analysis:
                 self.live_storage.save_viral_report(analysis)
                 viral_reports += 1
+        if new_count > 0:
+            self.console.success(f"New tweets for @{username}: {new_count}")
+        if viral_reports > 0:
+            self.console.info(f"Viral reports for @{username}: {viral_reports}")
         return {"new": new_count, "duplicates": duplicate_count, "viral_reports": viral_reports}
 
     def monitor_account(self, username: str) -> Dict[str, Any]:
         policy = get_priority_policy(username, self.account_map, self.priority_policies)
         live_window_hours = int(policy.get("live_window_hours", 24))
+        prio = policy.get("priority", "")
+        self.console.info(f"Starting @{username} (priority={prio}, window={live_window_hours}h)")
         result: Dict[str, Any] = {
             "account": username,
             "priority": policy.get("priority"),
@@ -887,6 +990,7 @@ class LiveMonitor:
         try:
             user_id = self._get_live_user_id(username)
         except Exception as exc:
+            self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
             result["status"] = "failed"
             result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
             self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
@@ -922,6 +1026,7 @@ class LiveMonitor:
 
     def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
         selected = only_accounts or self.accounts
+        self.console.banner(f"Cycle started: {len(selected)} account(s)")
         report = {
             "started_at": datetime.utcnow().isoformat() + "Z",
             "accounts": {},
@@ -931,6 +1036,7 @@ class LiveMonitor:
             if not self.should_fetch_account(username):
                 report["summary"]["skipped"] += 1
                 continue
+            self.console.info(f"Processing @{username}...")
             account_report = self.monitor_account(username)
             report["accounts"][username] = account_report
             report["summary"]["checked"] += 1
@@ -938,13 +1044,21 @@ class LiveMonitor:
                 report["summary"]["failed"] += 1
             self.api_manager.human_delay("between_accounts")
         report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+
+        # Print summary after cycle
+        self.console.banner(f"Cycle complete: {report['summary']}")
+        for username in selected:
+            if username in report.get("accounts", {}):
+                self.console.account_summary(username, report["accounts"][username])
+        if not report.get("accounts"):
+            self.console.warning("No accounts were processed in this cycle")
+
         return report
 
     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:
-        print("Starting v4 live monitor. Press Ctrl+C to stop.")
+        self.console.banner("Starting v4 live monitor. Press Ctrl+C to stop.")
         while True:
             report = self.run_cycle(only_accounts=only_accounts)
-            print(f"Live cycle complete: {report['summary']}")
             sim = self.config.get("anti_bot_simulation", {})
             if sim.get("enabled", True):
                 delays = sim.get("delays_seconds", {})
@@ -972,17 +1086,17 @@ def main() -> None:
     args = parse_args()
     monitor = LiveMonitor(config_path=args.config)
     if args.once:
-        print(monitor.run_cycle(only_accounts=args.accounts))
+        report = monitor.run_cycle(only_accounts=args.accounts)
     else:
         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
 
 
 if __name__ == "__main__":
     main()
-```
+````
 
 ## File: live_scripts/live_storage.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Isolated v4 live-monitoring storage and viral-report helpers.
@@ -1187,10 +1301,10 @@ class LiveStorageManager:
         ]
         txt_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
         return {"json": json_path, "txt": txt_path}
-```
+````
 
 ## File: live_scripts/viral_detector.py
-```python
+````python
 #!/usr/bin/env python3
 """
 V4 live viral detection using isolated live snapshots.
@@ -1413,10 +1527,10 @@ class ViralDetector:
             "confirmed": score >= 2.0,
             "analyzed_at": datetime.utcnow().isoformat() + "Z",
         }
-```
+````
 
 ## File: search_scripts/search_runner.py
-```python
+````python
 #!/usr/bin/env python3
 """
 V4 isolated Advanced SearchTimeline monitor.
@@ -1437,6 +1551,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import quote, urlencode
+
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except Exception:
+    Console = None
+    Panel = None
+    Table = None
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -1492,6 +1617,85 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = {
     "verified_phone_label_enabled": False,
     "view_counts_everywhere_api_enabled": True,
 }
+
+
+V4_PREFIX = "[V4]"
+
+
+class SearchConsole:
+    """Rich-first console output for SearchTimelineMonitor, with plain-text fallback."""
+
+    def __init__(self) -> None:
+        self.rich_enabled = Console is not None
+        self.console = Console() if self.rich_enabled else None
+
+    def banner(self, title: str) -> None:
+        if self.rich_enabled and Panel is not None:
+            self.console.print(Panel.fit(title, title="V4 Search Monitor", border_style="magenta"))
+        else:
+            sep = "=" * 70
+            print(f"{V4_PREFIX} {title}")
+            print(sep)
+
+    def info(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
+        else:
+            print(f"{V4_PREFIX} {message}")
+
+    def success(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
+        else:
+            print(f"{V4_PREFIX} \u2713 {message}")
+
+    def warning(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
+        else:
+            print(f"{V4_PREFIX} \u26a0 {message}")
+
+    def error(self, message: str) -> None:
+        if self.rich_enabled:
+            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
+        else:
+            print(f"{V4_PREFIX} \u2717 {message}")
+
+    def summary(self, report: Dict[str, Any]) -> None:
+        """Print a search report summary."""
+        print()
+        if self.rich_enabled and Table is not None:
+            table = Table(
+                title=f"Search Report: {report.get('search', 'Unknown')}",
+                show_lines=False,
+            )
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="white")
+            table.add_row("Slug", report.get("slug", ""))
+            table.add_row("Product", report.get("product", ""))
+            table.add_row("Raw Query", report.get("raw_query", ""))
+            table.add_row(
+                "Tweets Found",
+                str(report.get("counts", {}).get("tweets", 0)),
+            )
+            meta = report.get("metadata", {})
+            table.add_row("Pages Saved", f"{meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
+            table.add_row("Exhausted Reason", str(meta.get("exhausted_reason", "")))
+            table.add_row("Attempts", str(meta.get("attempts", 0)))
+            last_status = meta.get("last_http_status")
+            table.add_row("Last HTTP Status", str(last_status) if last_status else "N/A")
+            self.console.print(table)
+        else:
+            print(f"{V4_PREFIX} Report for: {report.get('search', 'Unknown')}")
+            print(f"{V4_PREFIX}   Slug: {report.get('slug', '')}")
+            print(f"{V4_PREFIX}   Product: {report.get('product', '')}")
+            print(f"{V4_PREFIX}   Tweets Found: {report.get('counts', {}).get('tweets', 0)}")
+            meta = report.get("metadata", {})
+            print(f"{V4_PREFIX}   Pages Saved: {meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
+            print(f"{V4_PREFIX}   Exhausted Reason: {meta.get('exhausted_reason', 'unknown')}")
+        outputs = report.get("outputs", {})
+        if outputs:
+            print(f"{V4_PREFIX}   Outputs: {', '.join(outputs.values())}")
 
 
 class SearchQueryBuilder:
@@ -1591,7 +1795,12 @@ class SearchTimelineMonitor:
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="search")
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
-        self.storage = StorageManager(base_dir=self.project_root, subsystem="search")
+        self.storage = StorageManager(
+            base_dir=self.project_root,
+            subsystem="search",
+            create_folders=False,
+            manage_sync_state=False,
+        )
         self.processor = TweetSetProcessor()
         self.search_defs = self._load_search_config(search_config_path)
         self.search_root = self.project_root / "data" / "search"
@@ -1601,6 +1810,7 @@ class SearchTimelineMonitor:
         self.reports_root = self.search_root / "reports"
         self.state_file = self.search_root / "state" / "search_state.json"
         self.search_state = self._load_json(self.state_file, {})
+        self.console = SearchConsole()
         for path in [self.raw_root, self.processed_root, self.debug_root, self.reports_root, self.state_file.parent]:
             path.mkdir(parents=True, exist_ok=True)
 
@@ -1979,7 +2189,11 @@ class SearchTimelineMonitor:
     def _state_key(self, search_def: Dict[str, Any], product: str) -> str:
         return f"{SearchQueryBuilder.slug(search_def)}::{product.lower()}"
 
-    def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int) -> bool:
+    def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int, force_run: bool = False) -> bool:
+        # اگر در حالت force_run هستیم، تایمرها کاملا نادیده گرفته می‌شوند
+        if force_run:
+            return True
+            
         state = self.search_state.get(self._state_key(search_def, product), {})
         last = state.get("last_checked_at") if isinstance(state, dict) else None
         if not last:
@@ -1997,6 +2211,8 @@ class SearchTimelineMonitor:
         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
         policy = self._policy_for_search(search_def)
         batch_dir = self._raw_batch_dir(slug, product)
+        self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
+        self.console.info(f"  Query: {raw_query}")
         seen_ids: Set[str] = set()
         cursor: Optional[str] = None
         cursor_history: Set[str] = set()
@@ -2038,7 +2254,10 @@ class SearchTimelineMonitor:
             payload.pop("_attempts", None)
             payload.pop("_error_samples", None)
             payload.pop("_status", None)
-            self.storage.save_raw_page(batch_dir, page, payload)
+            jalali_batch = self.storage._jalali_batch_name()
+            if page <= 3:
+                self.console.info(f"  Page {page} fetched")
+            self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
             tweets.extend(page_result["tweets"])
             if page == 1:
@@ -2077,12 +2296,34 @@ class SearchTimelineMonitor:
         }
         outputs = self._save_exports(slug, product, raw_query, tweets, debug, metadata)
         report = {"search": search_def.get("name", slug), "slug": slug, "product": product, "raw_query": raw_query, "metadata": metadata, "counts": {"tweets": len(tweets)}, "outputs": outputs}
-        self.search_state[self._state_key(search_def, product)] = {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": exhausted_reason, "last_counts": report["counts"]}
+        
+        # ------------- تغییرات جدید سیستم State -------------
+        state_key = self._state_key(search_def, product)
+        current_state = self.search_state.get(state_key, {})
+        
+        # تشخیص اینکه آیا چرخه واقعاً موفق بوده یا به خاطر ارور متوقف شده (مثل 401، 403، 404)
+        is_success = last_http_status in (200, None)
+        
+        new_state = {
+            "last_status": exhausted_reason if is_success else f"error_http_{last_http_status}",
+            "last_counts": report["counts"]
+        }
+        
+        if is_success:
+            # در صورت موفقیت کامل، زمان آپدیت می‌شود تا سیستم طبق Policy به خواب برود
+            new_state["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
+        else:
+            # در صورت بروز خطا، زمان قبلی حفظ می‌شود تا در رانِ بعدی فوراً مجدداً تلاش کند
+            new_state["last_checked_at"] = current_state.get("last_checked_at")
+            
+        self.search_state[state_key] = new_state
         self._save_json(self.state_file, self.search_state)
+        # --------------------------------------------------
+
         self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._jalali_batch_name()}.json", report)
         return report
 
-    def run_cycle(self, only_names: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    def run_cycle(self, only_names: Optional[Set[str]] = None, force_run: bool = False) -> List[Dict[str, Any]]:
         reports = []
         for search_def in self.search_defs:
             if not search_def.get("enabled", True):
@@ -2092,16 +2333,29 @@ class SearchTimelineMonitor:
                 continue
             product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
             policy = self._policy_for_search(search_def)
-            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"])):
+            
+            # پارامتر force_run اینجا به تابع چک‌کننده پاس داده می‌شود
+            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"]), force_run=force_run):
                 continue
+                
             reports.append(self.monitor_search(search_def))
         return reports
 
+    def _print_cycle_summary(self, reports: List[Dict[str, Any]], only_names: Optional[Set[str]]) -> None:
+        """Print a summary after a search cycle completes."""
+        self.console.banner(f"Cycle complete: {len(reports)} search(es) fetched")
+        for report in reports:
+            self.console.summary(report)
+        if not reports:
+            self.console.warning("No searches were fetched in this cycle")
+        if only_names:
+            self.console.info(f"Note: --only filter active: {', '.join(only_names)}")
+
     def run_continuous(self, only_names: Optional[Set[str]] = None, check_interval: int = 60) -> None:
-        print("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
+        self.console.banner("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
         while True:
             reports = self.run_cycle(only_names=only_names)
-            print(f"Search cycle complete: {len(reports)} search(es) fetched")
+            self._print_cycle_summary(reports, only_names)
             time.sleep(max(1, check_interval))
 
 
@@ -2120,138 +2374,540 @@ def main() -> None:
     monitor = SearchTimelineMonitor(config_path=args.config, search_config_path=args.search_config)
     only = set(args.only or []) or None
     if args.once:
-        print(monitor.run_cycle(only_names=only))
+        reports = monitor.run_cycle(only_names=only)
+        monitor._print_cycle_summary(reports, only)
     else:
         monitor.run_continuous(only_names=only, check_interval=args.check_interval)
 
 
 if __name__ == "__main__":
     main()
-```
+````
 
 ## File: shared/auth/__init__.py
-```python
+````python
 """Authentication package for session and cookie management."""
-```
+````
 
 ## File: shared/auth/session_updater.py
-```python
+````python
+#!/usr/bin/env python3
+"""
+Twitter Session Updater
+
+Refreshes authentication parameters (cookies, x-client-transaction-id,
+query IDs) by opening an interactive browser session where the user can
+log in. Uses Playwright to intercept fresh parameters from the live
+Twitter session.
+
+Usage:
+    python3 session_updater.py
+
+Options:
+    1. Quick refresh  - Inject existing cookies, hope they still work
+    2. Full login     - Open a visible browser for manual login (recommended)
+"""
+
 import json
 import logging
+import shutil
+import sys
+import tempfile
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional
-from playwright.sync_api import sync_playwright, Request
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
+from playwright.sync_api import Request, sync_playwright
 
 logger = logging.getLogger(__name__)
 
+# Default query IDs (will be overwritten if fresh IDs are intercepted)
+DEFAULT_QUERY_IDS: Dict[str, str] = {
+    "user_by_screen_name_query_id": "sLVLhk0bGj3MVFEKTdax1w",
+    "user_tweets_query_id": "pQHADmT91zIY83UbK0x4Lw",
+    "user_tweets_and_replies_query_id": "xdqXQQg4vOBF9Np6VtUsdw",
+    "tweet_detail_query_id": "",
+    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
+}
+
+# Maps GraphQL endpoint names to config.json key names
+ENDPOINT_KEY_MAP: Dict[str, str] = {
+    "UserByScreenName": "user_by_screen_name_query_id",
+    "UserTweets": "user_tweets_query_id",
+    "UserTweetsAndReplies": "user_tweets_and_replies_query_id",
+    "TweetDetail": "tweet_detail_query_id",
+    "SearchTimeline": "search_timeline_query_id",
+}
+
+
 class SessionUpdater:
     """
-    مدیریت و به‌روزرسانی پارامترهای احراز هویت توییتر.
-    از Playwright برای استخراج x-client-transaction-id و کوکی‌های جدید (ct0) استفاده می‌کند.
+    Refreshes Twitter authentication parameters via Playwright.
+
+    Two modes:
+      QUICK  - injects existing cookies from config.json, intercepts fresh
+               parameters from GraphQL requests. Works only if the current
+               session is still valid.
+      FULL   - opens a headed (visible) browser so the user can log in
+               manually.  All parameters are then extracted from the fresh
+               session.  Recommended when cookies have expired.
     """
 
-    def __init__(self):
-        # مسیر فایل کانفیگ بر اساس ساختار پروژه
-        self.config_path = Path(__file__).resolve().parents[1] / "config" / "config.json"
-        self._target_url = "https://twitter.com/home"
+    def __init__(self) -> None:
+        self.config_path = (
+            Path(__file__).resolve().parents[1] / "config" / "config.json"
+        )
+        self._target_url = "https://x.com/home"
         self._graphql_indicator = "/graphql/"
 
+    # ------------------------------------------------------------------ #
+    #  Config I/O
+    # ------------------------------------------------------------------ #
+
     def _load_config(self) -> Dict[str, Any]:
-        """بارگذاری فایل کانفیگ اصلی."""
+        """Load shared/config/config.json."""
         if not self.config_path.exists():
-            raise FileNotFoundError(f"Config file not found at: {self.config_path}")
-        with open(self.config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            raise FileNotFoundError(
+                f"Config file not found: {self.config_path}"
+            )
+        with open(self.config_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
 
-    def _save_config(self, config_data: Dict[str, Any]) -> None:
-        """ذخیره تغییرات در فایل کانفیگ."""
-        with open(self.config_path, 'w', encoding='utf-8') as f:
-            json.dump(config_data, f, indent=2, ensure_ascii=False)
-        logger.info(f"Config successfully updated at {self.config_path}")
+    def _save_config(self, cfg: Dict[str, Any]) -> None:
+        """Persist the updated config to disk with atomic write and backup."""
+        if self.config_path.exists():
+            backup_path = self.config_path.with_suffix(".json.bak")
+            shutil.copy2(self.config_path, backup_path)
+            logger.info("Config backup saved to %s", backup_path)
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=self.config_path.parent, suffix=".tmp"
+        )
+        try:
+            with open(tmp_fd, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=2, ensure_ascii=False)
+            Path(tmp_path).replace(self.config_path)
+        except BaseException:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
+        logger.info("Config saved to %s", self.config_path)
 
-    def update_session(self) -> bool:
-        """
-        اجرای مرورگر، تزریق کوکی‌های فعلی، شنود درخواست‌ها و استخراج پارامترهای جدید.
-        برمی‌گرداند: True در صورت موفقیت، False در صورت شکست.
-        """
-        config = self._load_config()
-        current_cookies = config.get("api_cookies", {})
-        
-        # تبدیل کوکی‌های فایل کانفیگ به فرمت Playwright
-        playwright_cookies = []
-        for name, value in current_cookies.items():
-            playwright_cookies.append({
+    # ------------------------------------------------------------------ #
+    #  Helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _cookiestring_to_playwright(
+        cookies_dict: Dict[str, str],
+    ) -> List[Dict[str, Any]]:
+        """Convert a flat {name: value} dict into Playwright cookie format."""
+        return [
+            {
                 "name": name,
                 "value": str(value),
-                "domain": ".twitter.com",
-                "path": "/"
-            })
+                "domain": ".x.com",
+                "path": "/",
+            }
+            for name, value in cookies_dict.items()
+        ]
 
-        extracted_data = {
-            "x-client-transaction-id": None,
-            "ct0": None,
-            "auth_token": current_cookies.get("auth_token")
+    def _extract_query_id_from_url(
+        self, url: str
+    ) -> Optional[tuple[str, str]]:
+        """Extract (endpoint, query_id) from a GraphQL request URL."""
+        try:
+            parsed = urlparse(url.strip())
+            parts = [p for p in (parsed.path or "").split("/") if p]
+            if "graphql" not in parts:
+                return None
+            graph_idx = parts.index("graphql")
+            if len(parts) <= graph_idx + 2:
+                return None
+            query_id = parts[graph_idx + 1]
+            endpoint = parts[graph_idx + 2]
+            if endpoint in ENDPOINT_KEY_MAP and query_id:
+                return (endpoint, query_id)
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _apply_extracted(
+        cfg: Dict[str, Any],
+        extracted: Dict[str, Any],
+        old_txid: Optional[str],
+        old_cookies: Dict[str, str],
+    ) -> Dict[str, str]:
+        """Merge extracted parameters into config and return a change report."""
+        report: Dict[str, str] = {}
+
+        if extracted.get("ct0") and cfg.get("api_cookies"):
+            cfg["api_cookies"]["ct0"] = extracted["ct0"]
+            report["ct0"] = "updated" if extracted["ct0"] != old_cookies.get("ct0") else "unchanged"
+
+        if extracted.get("auth_token") and cfg.get("api_cookies"):
+            cfg["api_cookies"]["auth_token"] = extracted["auth_token"]
+
+        if extracted.get("x_client_transaction_id"):
+            cfg.setdefault("api_headers", {})
+            cfg["api_headers"]["x-client-transaction-id"] = extracted["x_client_transaction_id"]
+            report["x-client-transaction-id"] = "new" if extracted["x_client_transaction_id"] != old_txid else "unchanged"
+
+        if extracted.get("query_ids"):
+            api_config = cfg.setdefault("api_config", {})
+            api_config.update(extracted["query_ids"])
+            report["query_ids"] = str(len(extracted["query_ids"]))
+
+        return report
+
+    # ------------------------------------------------------------------ #
+    #  Mode 1 - Quick Refresh (headless, injects existing cookies)
+    # ------------------------------------------------------------------ #
+
+    def quick_refresh(self, cfg: Dict[str, Any]) -> bool:
+        """
+        Attempt a quick refresh by injecting existing cookies from config.json.
+
+        Returns True if at least one parameter was updated.
+        """
+        current_cookies = cfg.get("api_cookies", {})
+        if not current_cookies:
+            print("\nNo cookies in config.json. Use mode 2 (Full login) instead.\n")
+            return False
+        if not current_cookies.get("auth_token") or not current_cookies.get("ct0"):
+            print(
+                "\nWarning: config.json is missing critical cookies"
+                " (auth_token / ct0). Quick refresh may fail.\n"
+            )
+
+        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
+        old_ct0 = current_cookies.get("ct0")
+
+        playwright_cookies = self._cookiestring_to_playwright(current_cookies)
+
+        extracted: Dict[str, Any] = {
+            "x_client_transaction_id": None,
+            "ct0": old_ct0,
+            "auth_token": current_cookies.get("auth_token"),
+            "query_ids": {},
         }
 
-        logger.info("Launching Playwright to extract fresh auth parameters...")
+        logger.info("Launching Playwright for quick cookie refresh...")
+        print("\nLaunching browser with existing cookies...")
 
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context()
-                context.add_cookies(playwright_cookies)
-                page = context.new_page()
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                ctx = browser.new_context()
+                ctx.add_cookies(playwright_cookies)
+                page = ctx.new_page()
 
-                # تابع شنود (Interceptor)
-                def handle_request(request: Request):
-                    if self._graphql_indicator in request.url:
-                        headers = request.headers
-                        if "x-client-transaction-id" in headers and not extracted_data["x-client-transaction-id"]:
-                            extracted_data["x-client-transaction-id"] = headers["x-client-transaction-id"]
-                            logger.debug("Successfully intercepted x-client-transaction-id.")
+                def _on_request(req: Request) -> None:
+                    url = req.url
+                    headers = req.headers
 
-                page.on("request", handle_request)
-                
-                # رفتن به صفحه هوم توییتر برای تریگر شدن ریکوئست‌های GraphQL
-                page.goto(self._target_url, wait_until="networkidle", timeout=60000)
+                    # Capture x-client-transaction-id
+                    if (
+                        self._graphql_indicator in url
+                        and "x-client-transaction-id" in headers
+                        and not extracted["x_client_transaction_id"]
+                    ):
+                        extracted["x_client_transaction_id"] = headers[
+                            "x-client-transaction-id"
+                        ]
+                        logger.debug("Intercepted x-client-transaction-id")
 
-                # استخراج کوکی‌های جدید به‌روزرسانی شده توسط مرورگر
-                new_cookies = context.cookies()
-                for cookie in new_cookies:
+                    # Extract query IDs
+                    if self._graphql_indicator in url:
+                        result = self._extract_query_id_from_url(url)
+                        if result:
+                            endpoint, query_id = result
+                            key = ENDPOINT_KEY_MAP.get(endpoint)
+                            if key:
+                                extracted["query_ids"][key] = query_id
+
+                page.on("request", _on_request)
+                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
+                time.sleep(5)
+
+                # Read back updated cookies
+                for cookie in ctx.cookies():
                     if cookie["name"] == "ct0":
-                        extracted_data["ct0"] = cookie["value"]
+                        extracted["ct0"] = cookie["value"]
                     elif cookie["name"] == "auth_token":
-                        extracted_data["auth_token"] = cookie["value"]
+                        extracted["auth_token"] = cookie["value"]
 
                 browser.close()
 
-            # بررسی اینکه آیا پارامترهای کلیدی با موفقیت استخراج شده‌اند یا خیر
-            if extracted_data["x-client-transaction-id"] and extracted_data["ct0"]:
-                logger.info("New authentication parameters extracted successfully.")
-                
-                # اعمال تغییرات در شیء کانفیگ
-                config["api_headers"]["x-client-transaction-id"] = extracted_data["x-client-transaction-id"]
-                config["api_cookies"]["ct0"] = extracted_data["ct0"]
-                config["api_cookies"]["auth_token"] = extracted_data["auth_token"]
-                
-                self._save_config(config)
-                return True
-            else:
-                logger.error("Failed to extract complete auth parameters. Manual login may be required.")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error during session update via Playwright: {e}")
+        except KeyboardInterrupt:
+            logger.info("Quick refresh cancelled by user.")
+            print("\nCancelled.\n")
+            return False
+        except Exception as exc:
+            logger.error("Quick refresh failed: %s", exc)
+            print(f"\nQuick refresh failed: {exc}\n")
+            print("Your cookies may have expired. Use mode 2 (Full login) instead.\n")
             return False
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+        if extracted["x_client_transaction_id"] or extracted["ct0"] != old_ct0 or extracted["query_ids"]:
+            report = self._apply_extracted(cfg, extracted, old_txid, current_cookies)
+            self._save_config(cfg)
+
+            print("\nQuick refresh completed!")
+            print(f"  x-client-transaction-id: [{report.get('x-client-transaction-id', 'unchanged')}]")
+            print(f"  ct0:                     [{report.get('ct0', 'unchanged')}]")
+            print(f"  Query IDs extracted:     {report.get('query_ids', '0')}")
+            return True
+
+        logger.error("Quick refresh returned no fresh parameters. Session expired.")
+        print("\nNo fresh parameters captured. Session likely expired.\n")
+        print("Use mode 2 (Full login) instead.\n")
+        return False
+
+    # ------------------------------------------------------------------ #
+    #  Mode 2 - Full Interactive Login (headed, user logs in manually)
+    # ------------------------------------------------------------------ #
+
+    def full_login(self, cfg: Dict[str, Any]) -> bool:
+        """
+        Open a visible browser for the user to log in to X/Twitter manually.
+
+        Extracts ALL fresh parameters: cookies, x-client-transaction-id,
+        and query IDs.  Recommended when existing cookies have expired.
+        """
+        existing_cookies = cfg.get("api_cookies", {})
+        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
+
+        pw_cookies = self._cookiestring_to_playwright(existing_cookies) if existing_cookies else []
+
+        extracted: Dict[str, Any] = {
+            "x_client_transaction_id": None,
+            "ct0": None,
+            "auth_token": None,
+            "all_cookies": {},
+            "query_ids": {},
+        }
+
+        logger.info("Launching Playwright for full interactive login...")
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=False)  # visible browser
+                ctx = browser.new_context()
+
+                if pw_cookies:
+                    ctx.add_cookies(pw_cookies)  # help pre-fill session
+
+                page = ctx.new_page()
+
+                def _on_request(req: Request) -> None:
+                    url = req.url
+                    headers = req.headers
+
+                    if (
+                        self._graphql_indicator in url
+                        and "x-client-transaction-id" in headers
+                        and not extracted["x_client_transaction_id"]
+                    ):
+                        extracted["x_client_transaction_id"] = headers[
+                            "x-client-transaction-id"
+                        ]
+                        logger.debug("Intercepted x-client-transaction-id")
+
+                    if self._graphql_indicator in url:
+                        result = self._extract_query_id_from_url(url)
+                        if result:
+                            endpoint, query_id = result
+                            key = ENDPOINT_KEY_MAP.get(endpoint)
+                            if key:
+                                extracted["query_ids"][key] = query_id
+
+                page.on("request", _on_request)
+
+                # ---------------------------------------------------------- #
+                #  Interactive login prompt
+                # ---------------------------------------------------------- #
+                print("\n" + "=" * 60)
+                print("  Browser window will open shortly.")
+                print("  Please log in to your X (Twitter) account.")
+                print("=" * 60)
+                print()
+                print("After logging in:")
+                print("  1. Navigate to x.com/home (or any page)")
+                print("  2. Wait for the page to fully load")
+                print("  3. Do NOT close the browser yet")
+                print()
+                print("Waiting up to 120 seconds for you to log in...")
+                print("(Press Ctrl+C at any time to cancel)\n")
+
+                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
+
+                # Poll for home page to confirm session is active
+                login_timeout = 120
+                start = time.time()
+                while time.time() - start < login_timeout:
+                    try:
+                        url = page.url
+                        if "home" in url.lower() or "x.com" in url.lower():
+                            time.sleep(3)  # let initial requests fire
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(2)
+
+                # Extra wait for all network activity
+                print("Session active. Waiting for data extraction...")
+                time.sleep(10)
+
+                # Read ALL fresh cookies
+                for cookie in ctx.cookies():
+                    extracted["all_cookies"][cookie["name"]] = cookie["value"]
+
+                browser.close()
+
+        except KeyboardInterrupt:
+            logger.info("Full login cancelled by user.")
+            print("\nCancelled.\n")
+            return False
+        except Exception as exc:
+            logger.error("Full login failed: %s", exc)
+            print(f"\nFull login failed: {exc}\n")
+            return False
+
+        # ---------------------------------------------------------- #
+        #  Apply extracted data to config
+        # ---------------------------------------------------------- #
+        if not extracted["all_cookies"]:
+            logger.error("Full login captured no cookies.")
+            print("\nNo cookies captured. Try again.\n")
+            return False
+
+        critical_missing = [
+            key
+            for key in ("auth_token", "ct0")
+            if key not in extracted["all_cookies"]
+        ]
+        if critical_missing:
+            logger.warning(
+                "Full login captured cookies but missing critical keys: %s",
+                critical_missing,
+            )
+            print(
+                f"\nWarning: captured cookies are missing critical keys:"
+                f" {', '.join(critical_missing)}."
+                f"\nThe session may not work. Saving anyway.\n"
+            )
+
+        # Replace all cookies
+        cfg["api_cookies"] = extracted["all_cookies"]
+
+        if extracted["x_client_transaction_id"]:
+            cfg.setdefault("api_headers", {})
+            cfg["api_headers"]["x-client-transaction-id"] = extracted[
+                "x_client_transaction_id"
+            ]
+
+        if extracted["query_ids"]:
+            api_config = cfg.setdefault("api_config", {})
+            api_config.update(extracted["query_ids"])
+
+        self._save_config(cfg)
+
+        report = {}
+        report["cookies"] = str(len(extracted["all_cookies"]))
+        report["x-client-transaction-id"] = (
+            "fresh" if extracted["x_client_transaction_id"] else "not captured"
+        )
+        report["query_ids"] = str(len(extracted["query_ids"]))
+
+        print("\n" + "=" * 60)
+        print("  Full login refresh completed successfully!")
+        print("=" * 60)
+        print(f"\n  Cookies updated:           {report['cookies']}")
+        print(f"  x-client-transaction-id:   [{report['x-client-transaction-id']}]")
+        print(f"  Query IDs extracted:       {report['query_ids']}")
+
+        if extracted["query_ids"]:
+            for key, val in extracted["query_ids"].items():
+                print(f"    - {key}: {val}")
+
+        print(f"\n  Config saved to: {self.config_path}\n")
+        return True
+
+    # ------------------------------------------------------------------ #
+    #  CLI entry point
+    # ------------------------------------------------------------------ #
+
+    def run(self) -> None:
+        """Interactive CLI: choose quick refresh or full login mode."""
+        print("\n" + "=" * 60)
+        print("  Twitter Session Updater")
+        print("=" * 60)
+        print()
+        print("Choose a refresh mode:")
+        print()
+        print("  1. Quick Refresh")
+        print("     - Uses existing cookies from config.json")
+        print("     - Works only if your session is still active")
+        print("     - Faster, no manual login needed")
+        print()
+        print("  2. Full Login  (recommended)")
+        print("     - Opens a visible browser window")
+        print("     - Log in manually to X/Twitter")
+        print("     - Extracts all fresh parameters:")
+        print("       cookies, x-client-transaction-id, query IDs")
+        print("     - Use when quick refresh fails")
+        print()
+
+        try:
+            choice = input("Choose (1/2, default 2): ").strip() or "2"
+        except EOFError:
+            choice = "2"
+
+        try:
+            cfg = self._load_config()
+        except FileNotFoundError as exc:
+            print(f"\nError: {exc}")
+            print("Run setup_api_cookies.py first to create a config file.")
+            sys.exit(1)
+
+        if choice == "1":
+            success = self.quick_refresh(cfg)
+        elif choice == "2":
+            success = self.full_login(cfg)
+        else:
+            print(f"\nInvalid choice: {choice}. Use 1 or 2.")
+            sys.exit(1)
+
+        if success:
+            print("\nYou can now run your scripts:")
+            print("  python3 historical_scripts/historical_runner.py")
+            print("  python3 live_scripts/live_runner.py")
+            print("  python3 search_scripts/search_runner.py --once")
+        else:
+            print(
+                "\nRefresh failed. Ensure you have an active internet"
+                " connection and valid X/Twitter credentials.\n"
+            )
+            sys.exit(1)
+
+
+def main() -> None:
+    """Entry point for the session updater."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     updater = SessionUpdater()
-    updater.update_session()
-```
+    updater.run()
+
+
+if __name__ == "__main__":
+    main()
+````
 
 ## File: shared/auth/setup_api_cookies.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Twitter API Configuration Setup
@@ -2673,15 +3329,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n✗ Error: {e}")
         print("\nFor help, see CONFIG_GUIDE.md")
-```
+````
 
 ## File: shared/config/__init__.py
-```python
+````python
 """Configuration package for scraper settings and tier policies."""
-```
+````
 
 ## File: shared/config/config.json
-```json
+````json
 {
   "api_cookies": {
     "guest_id": "v1%3A177711975217751018",
@@ -2711,7 +3367,7 @@ if __name__ == "__main__":
     "cursor_error_max_retries": 3,
     "default_timeout_seconds": 20,
     "tweet_detail_query_id": "",
-    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
+    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
     "search_warmup_seconds": 2,
     "first_request_warmup_seconds": 15,
     "pagination_safety_cap_pages": 50
@@ -2910,10 +3566,10 @@ if __name__ == "__main__":
     "snapshot_min_minutes": 10
   }
 }
-```
+````
 
 ## File: shared/config/search_config.json
-```json
+````json
 [
   {
     "name": "Iran_War_Brent_Gold_Inflation_Hormuz",
@@ -2947,10 +3603,10 @@ if __name__ == "__main__":
     "count": 30
   }
 ]
-```
+````
 
 ## File: shared/config/tier_config.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Tier and rolling-window policy configuration.
@@ -3196,15 +3852,15 @@ class TierConfig:
 
     def __repr__(self) -> str:
         return f"TierConfig(accounts={len(self.account_map)}, policies={len(self.policy_map)})"
-```
+````
 
 ## File: shared/core/__init__.py
-```python
+````python
 """Core API and fetching engine package."""
-```
+````
 
 ## File: shared/core/api_manager.py
-```python
+````python
 #!/usr/bin/env python3
 """
 API Manager - Centralized networking and endpoint management
@@ -3994,10 +4650,10 @@ class APIManager:
             "rate_limits": self.rate_limits,
             "endpoint_health": self.endpoint_health,
         }
-```
+````
 
 ## File: shared/core/fetcher_engine.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Phase 2 Fetcher Engine
@@ -4996,10 +5652,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
+````
 
 ## File: shared/core/set_operations.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Tweet set extraction and mathematical set operations.
@@ -5345,10 +6001,10 @@ class TweetSetProcessor:
     def get_difference_b_minus_a(self, set_a: Dict[str, Dict[str, Any]], set_b: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         keys = set((set_b or {}).keys()) - set((set_a or {}).keys())
         return [set_b[k] for k in keys if k in set_b]
-```
+````
 
 ## File: shared/core/windowing.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Rolling-window coverage helpers for v4 subsystems.
@@ -5490,15 +6146,15 @@ class RollingWindowEvaluator:
     ) -> WindowCoverage:
         tweets = self.extract_endpoint_tweets(raw_pages, username=username, endpoint=endpoint)
         return self.evaluate_tweets(tweets, window_days=window_days, now_dt=now_dt)
-```
+````
 
 ## File: shared/data_pipeline/__init__.py
-```python
+````python
 """Data pipeline package for storage and transformations."""
-```
+````
 
 ## File: shared/data_pipeline/storage_manager.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Storage manager for Phase 3 raw/processed persistence.
@@ -5616,6 +6272,8 @@ class StorageManager:
         base_dir: Optional[Path] = None,
         timezone: str = "Asia/Tehran",
         subsystem: str = "historical",
+        create_folders: bool = True,
+        manage_sync_state: bool = True,
     ):
         # اصلاح سطح دسترسی به ریشه پروژه (parents[2])
         self.project_root = project_root or base_dir or Path(__file__).resolve().parents[2]
@@ -5646,8 +6304,11 @@ class StorageManager:
         self.legacy_reports_dir = self.legacy_data_root / "reports"
         self.global_state_dir = self.global_data_root / "state"
         self.legacy_state_dir = self.legacy_data_root / "STATE"
-        self.sync_state_file = self.state_dir / "sync_state.json"
-        self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
+        self.sync_state_file: Optional[Path] = None
+        self.legacy_sync_state_file: Optional[Path] = None
+        if manage_sync_state:
+            self.sync_state_file = self.state_dir / "sync_state.json"
+            self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
 
         # نام‌گذاری دقیق پوشه‌های زیرمجموعه processed و raw
         self.raw_user_tweets_dir = self.raw_root / "UserTweets"
@@ -5658,7 +6319,8 @@ class StorageManager:
         self.merged_dir = self.processed_root / "4_union"
         self.endpoint_diffs_dir = self.processed_root / "5_replies_only"
 
-        self._ensure_base_dirs()
+        if manage_sync_state or create_folders:
+            self._ensure_base_dirs()
 
     def _ensure_base_dirs(self) -> None:
         for path in [
@@ -5909,6 +6571,26 @@ class StorageManager:
     def save_raw_page(self, batch_dir: Path, page_number: int, payload: Dict[str, Any]) -> Path:
         batch_dir.mkdir(parents=True, exist_ok=True)
         output_file = batch_dir / f"page_{int(page_number)}.json"
+        with output_file.open("w", encoding="utf-8") as f:
+            json.dump(payload if isinstance(payload, dict) else {}, f, ensure_ascii=False, indent=2)
+        return output_file
+
+    def save_search_result_page(
+        self,
+        search_slug: str,
+        product: str,
+        jalali_batch: str,
+        page_index: int,
+        payload: Dict[str, Any],
+    ) -> Path:
+        """Save a single SearchTimeline page to data/search/raw/{slug}/{product}/{batch}/page_{i}.json.
+
+        This method is dedicated to the search subsystem and must not reference
+        SET_FOLDER_MAP or any historical/live folder logic.
+        """
+        target = self.raw_root / search_slug / product.lower() / jalali_batch
+        target.mkdir(parents=True, exist_ok=True)
+        output_file = target / f"page_{page_index}.json"
         with output_file.open("w", encoding="utf-8") as f:
             json.dump(payload if isinstance(payload, dict) else {}, f, ensure_ascii=False, indent=2)
         return output_file
@@ -6486,15 +7168,15 @@ class StorageManager:
         """Compatibility datetime helper with Jalali output when available."""
         target = dt or datetime.utcnow()
         return _format_jalali(target, "%Y-%m-%d %H:%M:%S")
-```
+````
 
 ## File: shared/exporters/__init__.py
-```python
+````python
 """Export helpers for text and structured output formatting."""
-```
+````
 
 ## File: shared/exporters/text_export_helper.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Translation-aware TXT export helpers.
@@ -6621,10 +7303,10 @@ def choose_export_text(
         }
 
     return {"text": original, "note": None, "used_translation": False}
-```
+````
 
 ## File: shared/tools/check_replies_parity.py
-```python
+````python
 #!/usr/bin/env python3
 """Offline parity check for v4 UserTweetsAndReplies requests vs test_replies_endpoint.py."""
 
@@ -6730,10 +7412,10 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-```
+````
 
 ## File: shared/tools/diagnose_replies_only.py
-```python
+````python
 #!/usr/bin/env python3
 """
 Diagnose why UserTweetsAndReplies minus UserTweets is empty for an account.
@@ -6830,18 +7512,488 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-```
+````
 
 ## File: .gitignore
-```
+````
 data/
 config/config.json
 __pycache__/
 .env
+````
+
+## File: AGENTS.md
+````markdown
+# TWEETER DATA FETCHING 4.0 — Project Index & Guide
+
+## Quick Navigation
+
+| Component | Description | Main File(s) |
+|-----------|-------------|--------------|
+| **Historical** | Fetches tweets from historical timelines | `historical_scripts/historical_runner.py` |
+| **Live** | Monitors live tweets with viral detection | `live_scripts/live_runner.py`, `live_scripts/live_storage.py` |
+| **Search** | Advanced search timeline monitoring | `search_scripts/search_runner.py` |
+| **Shared Core** | API manager, fetcher engine, utilities | `shared/core/*` |
+| **Shared Storage** | Data persistence and state management | `shared/data_pipeline/storage_manager.py` |
+| **Shared Config** | API keys, endpoints, tier configs | `shared/config/*` |
+
+## Data Storage Layout
+
+```
+data/
+├── historical_live/          # Historical + Live data (shared root)
+│   ├── raw/
+│   │   ├── UserTweets/
+│   │   └── UserTweetsAndReplies/
+│   ├── processed/
+│   │   ├── 1_user_tweets/
+│   │   ├── 2_user_tweets_and_replies/
+│   │   ├── 3_intersection/
+│   │   ├── 4_union/
+│   │   └── 5_replies_only/
+│   ├── reports/
+│   ├── state/                # Contains sync_state.json (historical/live only)
+│   └── viral/
+│       ├── snapshots/
+│       └── reports/
+└── search/                   # Search data (isolated from historical)
+    ├── raw/
+    │   └── {search_slug}/{product}/{jalali_batch}/
+    │       └── page_{i}.json
+    ├── processed/
+    │   └── {search_slug}/{product}/
+    │       ├── {slug}.json
+    │       └── {slug}.txt
+    ├── debug/
+    │   └── {search_slug}/{product}/
+    │       └── {slug}__debug_first_page_{name}.json
+    ├── reports/
+    └── state/
+        └── search_state.json
 ```
 
-## File: structure.txt
+> **Note:** Search data is isolated. It does NOT create `1_user_tweets/`, `2_user_tweets_and_replies/`, etc. These folders belong exclusively to historical/live processing.
+
+---
+
+## Common Workflows
+
+### Adding a New Twitter Account (Historical / Live)
+
+1. Open `shared/config/tier_config.py`.
+2. Find the tier category for your account (`tier_1`, `tier_2`, etc.).
+3. Add an entry as a dict:
+   ```python
+   {"username": "new_account", "polling_priority": 1}
+   ```
+   - `polling_priority` 1-7 determines the polling interval and safety caps.
+4. Save the file. The historical and live runners will pick it up automatically.
+
+### Adding or Editing a Search Query
+
+1. Open `shared/config/search_config.json`.
+2. Each entry is a search definition. To add a new one:
+   ```json
+   {
+     "name": "My New Search",
+     "enabled": true,
+     "product": "Latest",
+     "preserve_exact_query": false,
+     "raw_query": "your search terms here",
+     "polling_priority": 3,
+     "rolling_hours": 24,
+     "poll_interval_seconds": 600,
+     "include_keywords": ["keyword1", "keyword2"],
+     "exclude_keywords": ["spam", "bot"],
+     "exact_phrases": ["exact phrase to match"],
+     "from_account": "optional_username",
+     "to_account": "optional_username",
+     "hashtags": ["#hashtag"]
+   }
+   ```
+3. `preserve_exact_query: true` with `exact_query` field skips keyword parsing and uses the raw string as-is.
+4. `product` must be one of: `Top`, `Latest`, `Media`, `People`.
+5. Save and the search runner picks it up on its next cycle.
+
+### Updating API Cookies
+
+1. Open Twitter/X in your browser and log in.
+2. Open DevTools (F12) → Application tab → Cookies for `x.com`.
+3. Export these cookie values: `auth_token`, `ct0`, `guest_id`, `kdt`, `twid`.
+4. Run:
+   ```bash
+   python shared/auth/setup_api_cookies.py
+   ```
+   Or manually edit `shared/config/config.json` under the `api_cookies` key.
+5. **Important:** Cookies expire. If you see persistent 401/403 errors, refresh them.
+
+---
+
+## Troubleshooting & Debugging
+
+### Rate Limiting (HTTP 429)
+
+- All three modules implement exponential backoff on 429 responses.
+- `APIManager.rate_limit_sleep_seconds()` parses `x-rate-limit-reset` headers.
+- Default retry: 3 attempts with jitter.
+- If rate limits persist, reduce `polling_priority` (lower number = more aggressive = higher rate limit risk) or increase `poll_interval_seconds` in config.
+
+### Authentication Failures (401 / 403)
+
+- **Cause:** Expired cookies or revoked session.
+- **Fix:** Update cookies per "Updating API Cookies" workflow above.
+- Check `auth_token` and `ct0` in `shared/config/config.json`.
+
+### Cursor Exhaustion (HTTP 404)
+
+- **Normal:** Happens when you reach the end of available tweets.
+- **Partial:** Some pages fetched before a 404 — the runner marks it as `partial_cursor_404` and saves what it has.
+- **First-page 404:** Likely an invalid query or account does not exist.
+
+### Empty Pages / No Tweets
+
+- Check `rolling_hours` setting — a very narrow window may yield nothing.
+- Verify `raw_query` syntax is correct for the Twitter Search API.
+- Look at debug output: `data/search/debug/{slug}/{product}/{slug}__debug_first_page_*.json` shows entry type counts and skipped entries.
+
+### Logs
+
+| Log Location | Contents |
+|---|---|
+| `data/historical_live/logs/` | Historical fetch events, endpoint health, state updates |
+| `data/search/logs/` | Search fetch events and pagination details |
+| `data/historical_live/reports/` | Run report JSON files (per-run summaries) |
+| `data/search/reports/` | Search run report JSON files |
+
+---
+
+## Data Schema Reference
+
+### Tweet Object (Processed)
+
+Each tweet in processed JSON files contains these fields:
+
+| Field | Type | Source | Description |
+|-------|------|--------|-------------|
+| `id` | str | `rest_id` or `id` | Twitter tweet ID |
+| `text` | str | `legacy.full_text` | Tweet text content |
+| `created_at` | str | `legacy.created_at` | Twitter timestamp (RFC 2822) |
+| `raw_timestamp` | str | Parsed | ISO format timestamp for windowing |
+| `likes` | int | `legacy.favorite_count` | Like count |
+| `retweets` | int | `legacy.retweet_count` | Retweet count |
+| `replies` | int | `legacy.reply_count` | Reply count |
+| `quotes` | int | `legacy.quote_count` | Quote count |
+| `bookmarks` | int | `legacy.bookmark_count` | Bookmark count |
+| `views` | int | `views.count` | View count |
+| `type` | str | Computed | `tweet`, `retweet`, `reply`, or `quote` |
+| `source_endpoint` | str | Added by pipeline | Which endpoint produced this |
+
+### Raw Page Format
+
+Raw GraphQL response pages are saved as-is from Twitter's API. Structure:
+
+```json
+{
+  "data": {
+    "user": { ... },           // for UserTweets / UserTweetsAndReplies
+    "search_by_raw_query": {   // for SearchTimeline
+      "search_timeline": {
+        "timeline": {
+          "instructions": [ ... ]
+        }
+      }
+    }
+  },
+  "_attempts": 1,
+  "_status": 200,
+  "_error_samples": []
+}
 ```
+
+### Processed Output Files
+
+| File | Description |
+|------|-------------|
+| `1_user_tweets.json` | Tweets from the user's timeline only |
+| `2_user_tweets_and_replies.json` | Tweets + replies from the user |
+| `3_intersection.json` | Tweets that appear in BOTH A and B |
+| `4_union.json` | All tweets from A ∪ B (deduplicated by ID) |
+| `5_replies_only.json` | Replies in B that are NOT in A (B - A) |
+
+---
+
+## Architecture Notes
+
+### Three Isolated Subsystems
+
+| Subsystem | State File | Storage Root |
+|-----------|-----------|--------------|
+| **Historical** | `sync_state.json` | `data/historical_live/` |
+| **Live** | `live_state.json`, `seen_tweets.json` | `data/historical_live/` |
+| **Search** | `search_state.json` | `data/search/` |
+
+Each subsystem is independently runnable. They do not share state files or interfere with each other.
+
+### The `subsystem` Parameter in `StorageManager`
+
+- `subsystem="historical"` or `subsystem="live"` → merges into `historical_live` storage root.
+- `subsystem="search"` → uses `data/search/` as its root.
+- This merging means historical and live share the same base directory but maintain separate state files via their own managers.
+
+### Search Module Isolation (Refactored June 2026)
+
+The search subsystem uses `StorageManager` with two safety flags:
+
+```python
+self.storage = StorageManager(
+    base_dir=self.project_root,
+    subsystem="search",
+    create_folders=False,       # Don't create the 5 historical processed folders
+    manage_sync_state=False,    # Don't touch sync_state.json
+)
+```
+
+- `save_search_result_page()` writes to `data/search/raw/{slug}/{product}/{batch}/page_{i}.json`.
+- `save_raw_page()` is the historical/live method — search should **never** call it.
+- `_ensure_base_dirs()` is skipped entirely, so `1_user_tweets/` etc. are never created.
+
+### Live Module Isolation
+
+`LiveStorageManager` (`live_scripts/live_storage.py`) manages its own state files independently:
+- `live_state.json` — account polling state (last cursor, status)
+- `seen_tweets.json` — deduplication set
+- `snapshot_index.json` — viral snapshot tracking
+- It wraps `StorageManager` internally for shared I/O (text export, batch naming) but owns all state.
+
+---
+
+## Environment & Dependencies
+
+### Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Python | 3.11+ (tested on 3.11) |
+| `pytz` | Timezone handling (Asia/Tehran is the default) |
+| `jdatetime` | Jalali calendar conversion (optional, fallback is built-in) |
+| `rich` | Optional — provides terminal UI formatting |
+
+Install dependencies:
+```bash
+pip3 install pytz
+pip3 install jdatetime    # optional, improves Jalali formatting
+pip3 install rich          # optional, improves terminal output
+```
+
+### Virtual Environment
+
+No virtualenv is configured by default. If you want one:
+```bash
+cd "/Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/TWEETER DATA FETCHING 4.0"
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pytz jdatetime rich
+```
+
+### Timezone
+
+All timestamps use `Asia/Tehran` by default. Jalali (Persian) dates are used for batch naming and run IDs.
+
+---
+
+## Code Conventions & Patterns
+
+### Naming Patterns
+
+- **Slugs:** Generated via `StorageManager._normalize_username()` — strips `@`, removes special chars, lowercase.
+- **Batch names:** Jalali date format `YYYY-MM-DD` via `StorageManager._jalali_batch_name()`.
+- **Run IDs:** `run_YYYY-MM-DD_HH-MM-SS` using Jalali time.
+
+### Error Handling Pattern
+
+All network modules use a consistent pattern:
+```python
+{
+    "_failure": "error_category",      # descriptive error reason
+    "_status": 429,                    # HTTP status code (or None)
+    "_attempts": 3,                    # total attempts made
+    "_error_samples": [ ... ],         # last 5 error details
+}
+```
+
+Common `_failure` values:
+| Value | Meaning |
+|-------|---------|
+| `failed_initial_auth` | First request returned 401/403 |
+| `failed_initial_rate_limit` | First request returned 429 |
+| `partial_cursor_404` | Some pages fetched, then cursor 404'd |
+| `partial_rate_limited` | Rate limit persisted after pages |
+| `success_search_window_crossed` | Search found tweets outside the time window |
+| `repeated_cursor_history` | Cursor loop detected in pagination |
+
+### Fetcher Engine Configuration Flow
+
+```
+config.json
+    → APIManager (loads cookies, tokens, query IDs)
+        → FetcherEngine (creates APIManager, sets up session, pagination caps)
+            → StorageManager (creates via FetcherEngine, gets base_dir and subsystem)
+```
+
+Each runner instantiates `FetcherEngine` → `APIManager` → `StorageManager` in that order. Config is read once from `shared/config/config.json`.
+
+### Query ID Resolution
+
+Endpoint-specific query IDs (e.g., `UserTweets`, `SearchTimeline`) are looked up via `APIManager.get_query_id(endpoint)` from the `api_config` section of `config.json`. If missing, the runner raises `RuntimeError`.
+
+---
+
+## Key Files Reference
+
+### Entry Points (Run These)
+
+| File | Purpose | Usage |
+|------|---------|-------|
+| `historical_scripts/historical_runner.py` | Fetches historical tweets for configured accounts | Run standalone |
+| `live_scripts/live_runner.py` | Monitors live tweets, detects viral content | Run as continuous service |
+| `search_scripts/search_runner.py` | Fetches search results via Advanced Search API | Run with `--once` or continuous mode |
+
+### Shared Infrastructure
+
+| File | Purpose | Key Classes/Functions |
+|------|---------|----------------------|
+| `shared/core/api_manager.py` | HTTP session, rate limiting, auth headers | `APIManager` |
+| `shared/core/fetcher_engine.py` | Fetches pages, handles pagination, windowing | `FetcherEngine` |
+| `shared/data_pipeline/storage_manager.py` | Raw page saving, processed tweet output, state management | `StorageManager` |
+| `shared/core/set_operations.py` | Tweet set operations (intersection, union, diff) | `TweetSetProcessor` |
+| `shared/core/windowing.py` | Rolling time window evaluation | `RollingWindowEvaluator` |
+
+### Live Module (Isolated)
+
+| File | Purpose | Key Classes |
+|------|---------|-------------|
+| `live_scripts/live_storage.py` | Live state management, viral snapshots | `LiveStorageManager` |
+| `live_scripts/viral_detector.py` | Viral tweet detection logic | `ViralDetector` |
+
+### Search Module (Isolated)
+
+| File | Purpose | Key Classes |
+|------|---------|-------------|
+| `search_scripts/search_runner.py` | Search timeline monitoring, pagination, export | `SearchTimelineMonitor`, `SearchQueryBuilder` |
+
+### Configuration
+
+| File | Contents |
+|------|----------|
+| `shared/config/config.json` | API cookies, auth tokens, query IDs, feature flags |
+| `shared/config/search_config.json` | Search queries, polling intervals, products |
+| `shared/config/tier_config.py` | Account tiers, priority policies, pagination settings |
+
+> **Warning:** `config.json` contains sensitive credentials (auth tokens, cookies). Do not commit to version control.
+
+---
+
+## Running the Project
+
+### Prerequisites
+- Python 3.11+
+- `pytz` installed (`pip3 install pytz`)
+- Valid API cookies (configure via `shared/auth/setup_api_cookies.py`)
+
+### Running Each Component
+
+```bash
+# Historical fetcher
+python historical_scripts/historical_runner.py
+
+# Live monitor (continuous)
+python live_scripts/live_runner.py
+
+# Search monitor (one shot)
+python search_scripts/search_runner.py --once
+
+# Search monitor (continuous)
+python search_scripts/search_runner.py --check-interval 60
+
+# Search monitor (specific queries only)
+python search_scripts/search_runner.py --once --only "My Search Name"
+```
+
+---
+
+## Full Directory Tree
+
+```
+.
+├── historical_scripts/
+│   └── historical_runner.py
+├── live_scripts/
+│   ├── live_runner.py
+│   ├── live_storage.py
+│   └── viral_detector.py
+├── search_scripts/
+│   └── search_runner.py
+├── shared/
+│   ├── auth/
+│   │   ├── __init__.py
+│   │   ├── session_updater.py
+│   │   └── setup_api_cookies.py
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── config.json
+│   │   ├── search_config.json
+│   │   └── tier_config.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── api_manager.py
+│   │   ├── fetcher_engine.py
+│   │   ├── set_operations.py
+│   │   └── windowing.py
+│   ├── data_pipeline/
+│   │   ├── __init__.py
+│   │   └── storage_manager.py
+│   ├── exporters/
+│   │   ├── __init__.py
+│   │   └── text_export_helper.py
+│   └── tools/
+│       ├── check_replies_parity.py
+│       └── diagnose_replies_only.py
+├── data/                     # Generated data (not committed)
+├── logs/                     # Generated logs (not committed)
+├── structure.txt             # Legacy project structure doc
+└── repomix-output.md         # Packed repo output
+```
+
+---
+
+## State Management Matrix
+
+| State File | Managed By | Location | Notes |
+|------------|------------|----------|-------|
+| `sync_state.json` | Historical/Live only (`StorageManager`, `manage_sync_state=True`) | `data/historical_live/state/` | Tracks endpoint cursors per account |
+| `search_state.json` | Search only (`SearchTimelineMonitor`) | `data/search/state/` | Tracks last check time and tweet counts per search |
+| `live_state.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Per-account polling state |
+| `seen_tweets.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Tweet deduplication set |
+| `snapshot_index.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Index of viral snapshots |
+
+---
+
+## Recent Refactoring (June 2026)
+
+The search subsystem was refactored to fix three architectural flaws:
+
+1. **Search Storage Isolation:** Search now uses `save_search_result_page()` instead of `save_raw_page()`, saving to `data/search/raw/...` only.
+2. **State Management Isolation:** `StorageManager` now accepts `manage_sync_state=False` to prevent `sync_state.json` access by search.
+3. **Folder Creation Isolation:** `StorageManager` now accepts `create_folders=False` to prevent the 5 standard user-data folders from being created by search.
+
+### Modified Files
+
+- `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
+- `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
+````
+
+## File: structure.txt
+````
 📁 TWEETER DATA FETCHING 4.0/
 ├── 📁 data/
 │   ├── 📁 historical_live/
@@ -6893,4 +8045,5026 @@ __pycache__/
     └── 📁 tools/
         ├── 📄 check_replies_parity.py
         └── 📄 diagnose_replies_only.py
+````
+
+
+# Git Diffs
+## Git Diffs Working Tree
+```diff
+diff --git a/TWEETER DATA FETCHING 4.0/.gitignore b/TWEETER DATA FETCHING 4.0/.gitignore
+index 8f70c40..68efbd4 100644
+--- a/TWEETER DATA FETCHING 4.0/.gitignore	
++++ b/TWEETER DATA FETCHING 4.0/.gitignore	
+@@ -1,4 +1,4 @@
+ data/
+ config/config.json
+ __pycache__/
+-.env
++.env
+\ No newline at end of file
+diff --git a/TWEETER DATA FETCHING 4.0/AGENTS.md b/TWEETER DATA FETCHING 4.0/AGENTS.md
+index b36b96c..1e5f2da 100644
+--- a/TWEETER DATA FETCHING 4.0/AGENTS.md	
++++ b/TWEETER DATA FETCHING 4.0/AGENTS.md	
+@@ -1,4 +1,4 @@
+-# TWEETER DATA FETCHING 4.0 — Project Index
++# TWEETER DATA FETCHING 4.0 — Project Index & Guide
+ 
+ ## Quick Navigation
+ 
+@@ -48,6 +48,280 @@ data/
+ 
+ > **Note:** Search data is isolated. It does NOT create `1_user_tweets/`, `2_user_tweets_and_replies/`, etc. These folders belong exclusively to historical/live processing.
+ 
++---
++
++## Common Workflows
++
++### Adding a New Twitter Account (Historical / Live)
++
++1. Open `shared/config/tier_config.py`.
++2. Find the tier category for your account (`tier_1`, `tier_2`, etc.).
++3. Add an entry as a dict:
++   ```python
++   {"username": "new_account", "polling_priority": 1}
++   ```
++   - `polling_priority` 1-7 determines the polling interval and safety caps.
++4. Save the file. The historical and live runners will pick it up automatically.
++
++### Adding or Editing a Search Query
++
++1. Open `shared/config/search_config.json`.
++2. Each entry is a search definition. To add a new one:
++   ```json
++   {
++     "name": "My New Search",
++     "enabled": true,
++     "product": "Latest",
++     "preserve_exact_query": false,
++     "raw_query": "your search terms here",
++     "polling_priority": 3,
++     "rolling_hours": 24,
++     "poll_interval_seconds": 600,
++     "include_keywords": ["keyword1", "keyword2"],
++     "exclude_keywords": ["spam", "bot"],
++     "exact_phrases": ["exact phrase to match"],
++     "from_account": "optional_username",
++     "to_account": "optional_username",
++     "hashtags": ["#hashtag"]
++   }
++   ```
++3. `preserve_exact_query: true` with `exact_query` field skips keyword parsing and uses the raw string as-is.
++4. `product` must be one of: `Top`, `Latest`, `Media`, `People`.
++5. Save and the search runner picks it up on its next cycle.
++
++### Updating API Cookies
++
++1. Open Twitter/X in your browser and log in.
++2. Open DevTools (F12) → Application tab → Cookies for `x.com`.
++3. Export these cookie values: `auth_token`, `ct0`, `guest_id`, `kdt`, `twid`.
++4. Run:
++   ```bash
++   python shared/auth/setup_api_cookies.py
++   ```
++   Or manually edit `shared/config/config.json` under the `api_cookies` key.
++5. **Important:** Cookies expire. If you see persistent 401/403 errors, refresh them.
++
++---
++
++## Troubleshooting & Debugging
++
++### Rate Limiting (HTTP 429)
++
++- All three modules implement exponential backoff on 429 responses.
++- `APIManager.rate_limit_sleep_seconds()` parses `x-rate-limit-reset` headers.
++- Default retry: 3 attempts with jitter.
++- If rate limits persist, reduce `polling_priority` (lower number = more aggressive = higher rate limit risk) or increase `poll_interval_seconds` in config.
++
++### Authentication Failures (401 / 403)
++
++- **Cause:** Expired cookies or revoked session.
++- **Fix:** Update cookies per "Updating API Cookies" workflow above.
++- Check `auth_token` and `ct0` in `shared/config/config.json`.
++
++### Cursor Exhaustion (HTTP 404)
++
++- **Normal:** Happens when you reach the end of available tweets.
++- **Partial:** Some pages fetched before a 404 — the runner marks it as `partial_cursor_404` and saves what it has.
++- **First-page 404:** Likely an invalid query or account does not exist.
++
++### Empty Pages / No Tweets
++
++- Check `rolling_hours` setting — a very narrow window may yield nothing.
++- Verify `raw_query` syntax is correct for the Twitter Search API.
++- Look at debug output: `data/search/debug/{slug}/{product}/{slug}__debug_first_page_*.json` shows entry type counts and skipped entries.
++
++### Logs
++
++| Log Location | Contents |
++|---|---|
++| `data/historical_live/logs/` | Historical fetch events, endpoint health, state updates |
++| `data/search/logs/` | Search fetch events and pagination details |
++| `data/historical_live/reports/` | Run report JSON files (per-run summaries) |
++| `data/search/reports/` | Search run report JSON files |
++
++---
++
++## Data Schema Reference
++
++### Tweet Object (Processed)
++
++Each tweet in processed JSON files contains these fields:
++
++| Field | Type | Source | Description |
++|-------|------|--------|-------------|
++| `id` | str | `rest_id` or `id` | Twitter tweet ID |
++| `text` | str | `legacy.full_text` | Tweet text content |
++| `created_at` | str | `legacy.created_at` | Twitter timestamp (RFC 2822) |
++| `raw_timestamp` | str | Parsed | ISO format timestamp for windowing |
++| `likes` | int | `legacy.favorite_count` | Like count |
++| `retweets` | int | `legacy.retweet_count` | Retweet count |
++| `replies` | int | `legacy.reply_count` | Reply count |
++| `quotes` | int | `legacy.quote_count` | Quote count |
++| `bookmarks` | int | `legacy.bookmark_count` | Bookmark count |
++| `views` | int | `views.count` | View count |
++| `type` | str | Computed | `tweet`, `retweet`, `reply`, or `quote` |
++| `source_endpoint` | str | Added by pipeline | Which endpoint produced this |
++
++### Raw Page Format
++
++Raw GraphQL response pages are saved as-is from Twitter's API. Structure:
++
++```json
++{
++  "data": {
++    "user": { ... },           // for UserTweets / UserTweetsAndReplies
++    "search_by_raw_query": {   // for SearchTimeline
++      "search_timeline": {
++        "timeline": {
++          "instructions": [ ... ]
++        }
++      }
++    }
++  },
++  "_attempts": 1,
++  "_status": 200,
++  "_error_samples": []
++}
++```
++
++### Processed Output Files
++
++| File | Description |
++|------|-------------|
++| `1_user_tweets.json` | Tweets from the user's timeline only |
++| `2_user_tweets_and_replies.json` | Tweets + replies from the user |
++| `3_intersection.json` | Tweets that appear in BOTH A and B |
++| `4_union.json` | All tweets from A ∪ B (deduplicated by ID) |
++| `5_replies_only.json` | Replies in B that are NOT in A (B - A) |
++
++---
++
++## Architecture Notes
++
++### Three Isolated Subsystems
++
++| Subsystem | State File | Storage Root |
++|-----------|-----------|--------------|
++| **Historical** | `sync_state.json` | `data/historical_live/` |
++| **Live** | `live_state.json`, `seen_tweets.json` | `data/historical_live/` |
++| **Search** | `search_state.json` | `data/search/` |
++
++Each subsystem is independently runnable. They do not share state files or interfere with each other.
++
++### The `subsystem` Parameter in `StorageManager`
++
++- `subsystem="historical"` or `subsystem="live"` → merges into `historical_live` storage root.
++- `subsystem="search"` → uses `data/search/` as its root.
++- This merging means historical and live share the same base directory but maintain separate state files via their own managers.
++
++### Search Module Isolation (Refactored June 2026)
++
++The search subsystem uses `StorageManager` with two safety flags:
++
++```python
++self.storage = StorageManager(
++    base_dir=self.project_root,
++    subsystem="search",
++    create_folders=False,       # Don't create the 5 historical processed folders
++    manage_sync_state=False,    # Don't touch sync_state.json
++)
++```
++
++- `save_search_result_page()` writes to `data/search/raw/{slug}/{product}/{batch}/page_{i}.json`.
++- `save_raw_page()` is the historical/live method — search should **never** call it.
++- `_ensure_base_dirs()` is skipped entirely, so `1_user_tweets/` etc. are never created.
++
++### Live Module Isolation
++
++`LiveStorageManager` (`live_scripts/live_storage.py`) manages its own state files independently:
++- `live_state.json` — account polling state (last cursor, status)
++- `seen_tweets.json` — deduplication set
++- `snapshot_index.json` — viral snapshot tracking
++- It wraps `StorageManager` internally for shared I/O (text export, batch naming) but owns all state.
++
++---
++
++## Environment & Dependencies
++
++### Prerequisites
++
++| Requirement | Details |
++|-------------|---------|
++| Python | 3.11+ (tested on 3.11) |
++| `pytz` | Timezone handling (Asia/Tehran is the default) |
++| `jdatetime` | Jalali calendar conversion (optional, fallback is built-in) |
++| `rich` | Optional — provides terminal UI formatting |
++
++Install dependencies:
++```bash
++pip3 install pytz
++pip3 install jdatetime    # optional, improves Jalali formatting
++pip3 install rich          # optional, improves terminal output
++```
++
++### Virtual Environment
++
++No virtualenv is configured by default. If you want one:
++```bash
++cd "/Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/TWEETER DATA FETCHING 4.0"
++python3 -m venv .venv
++source .venv/bin/activate
++pip install pytz jdatetime rich
++```
++
++### Timezone
++
++All timestamps use `Asia/Tehran` by default. Jalali (Persian) dates are used for batch naming and run IDs.
++
++---
++
++## Code Conventions & Patterns
++
++### Naming Patterns
++
++- **Slugs:** Generated via `StorageManager._normalize_username()` — strips `@`, removes special chars, lowercase.
++- **Batch names:** Jalali date format `YYYY-MM-DD` via `StorageManager._jalali_batch_name()`.
++- **Run IDs:** `run_YYYY-MM-DD_HH-MM-SS` using Jalali time.
++
++### Error Handling Pattern
++
++All network modules use a consistent pattern:
++```python
++{
++    "_failure": "error_category",      # descriptive error reason
++    "_status": 429,                    # HTTP status code (or None)
++    "_attempts": 3,                    # total attempts made
++    "_error_samples": [ ... ],         # last 5 error details
++}
++```
++
++Common `_failure` values:
++| Value | Meaning |
++|-------|---------|
++| `failed_initial_auth` | First request returned 401/403 |
++| `failed_initial_rate_limit` | First request returned 429 |
++| `partial_cursor_404` | Some pages fetched, then cursor 404'd |
++| `partial_rate_limited` | Rate limit persisted after pages |
++| `success_search_window_crossed` | Search found tweets outside the time window |
++| `repeated_cursor_history` | Cursor loop detected in pagination |
++
++### Fetcher Engine Configuration Flow
++
++```
++config.json
++    → APIManager (loads cookies, tokens, query IDs)
++        → FetcherEngine (creates APIManager, sets up session, pagination caps)
++            → StorageManager (creates via FetcherEngine, gets base_dir and subsystem)
++```
++
++Each runner instantiates `FetcherEngine` → `APIManager` → `StorageManager` in that order. Config is read once from `shared/config/config.json`.
++
++### Query ID Resolution
++
++Endpoint-specific query IDs (e.g., `UserTweets`, `SearchTimeline`) are looked up via `APIManager.get_query_id(endpoint)` from the `api_config` section of `config.json`. If missing, the runner raises `RuntimeError`.
++
++---
++
+ ## Key Files Reference
+ 
+ ### Entry Points (Run These)
+@@ -75,17 +349,13 @@ data/
+ | `live_scripts/live_storage.py` | Live state management, viral snapshots | `LiveStorageManager` |
+ | `live_scripts/viral_detector.py` | Viral tweet detection logic | `ViralDetector` |
+ 
+-> **Note:** `LiveStorageManager` manages its own state files (`live_state.json`, `seen_tweets.json`, `snapshot_index.json`) independently from `StorageManager`.
+-
+ ### Search Module (Isolated)
+ 
+ | File | Purpose | Key Classes |
+ |------|---------|-------------|
+ | `search_scripts/search_runner.py` | Search timeline monitoring, pagination, export | `SearchTimelineMonitor`, `SearchQueryBuilder` |
+ 
+-> **Note:** Search uses `StorageManager` with `create_folders=False` and `manage_sync_state=False` to avoid side effects.
+-
+-## Configuration Files
++### Configuration
+ 
+ | File | Contents |
+ |------|----------|
+@@ -95,27 +365,7 @@ data/
+ 
+ > **Warning:** `config.json` contains sensitive credentials (auth tokens, cookies). Do not commit to version control.
+ 
+-## State Management
+-
+-| State File | Managed By | Location |
+-|------------|------------|----------|
+-| `sync_state.json` | Historical/Live only (`StorageManager` with `manage_sync_state=True`) | `data/historical_live/state/` |
+-| `search_state.json` | Search only | `data/search/state/` |
+-| `live_state.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` |
+-| `seen_tweets.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` |
+-
+-## Recent Refactoring (June 2026)
+-
+-The search subsystem was refactored to fix three architectural flaws:
+-
+-1. **Search Storage Isolation:** Search now uses `save_search_result_page()` instead of `save_raw_page()`, saving to `data/search/raw/...` only.
+-2. **State Management Isolation:** `StorageManager` now accepts `manage_sync_state=False` to prevent `sync_state.json` access by search.
+-3. **Folder Creation Isolation:** `StorageManager` now accepts `create_folders=False` to prevent the 5 standard user-data folders from being created by search.
+-
+-### Modified Files (Refactoring)
+-
+-- `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
+-- `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
++---
+ 
+ ## Running the Project
+ 
+@@ -138,8 +388,13 @@ python search_scripts/search_runner.py --once
+ 
+ # Search monitor (continuous)
+ python search_scripts/search_runner.py --check-interval 60
++
++# Search monitor (specific queries only)
++python search_scripts/search_runner.py --once --only "My Search Name"
+ ```
+ 
++---
++
+ ## Full Directory Tree
+ 
+ ```
+@@ -183,9 +438,30 @@ python search_scripts/search_runner.py --check-interval 60
+ └── repomix-output.md         # Packed repo output
+ ```
+ 
+-## Key Architectural Decisions
++---
++
++## State Management Matrix
++
++| State File | Managed By | Location | Notes |
++|------------|------------|----------|-------|
++| `sync_state.json` | Historical/Live only (`StorageManager`, `manage_sync_state=True`) | `data/historical_live/state/` | Tracks endpoint cursors per account |
++| `search_state.json` | Search only (`SearchTimelineMonitor`) | `data/search/state/` | Tracks last check time and tweet counts per search |
++| `live_state.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Per-account polling state |
++| `seen_tweets.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Tweet deduplication set |
++| `snapshot_index.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Index of viral snapshots |
++
++---
++
++## Recent Refactoring (June 2026)
++
++The search subsystem was refactored to fix three architectural flaws:
++
++1. **Search Storage Isolation:** Search now uses `save_search_result_page()` instead of `save_raw_page()`, saving to `data/search/raw/...` only.
++2. **State Management Isolation:** `StorageManager` now accepts `manage_sync_state=False` to prevent `sync_state.json` access by search.
++3. **Folder Creation Isolation:** `StorageManager` now accepts `create_folders=False` to prevent the 5 standard user-data folders from being created by search.
++
++### Modified Files
++
++- `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
++- `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
+ 
+-1. **Three isolated subsystems:** Historical, Live, and Search each have their own state and storage.
+-2. **Shared infrastructure:** `StorageManager`, `APIManager`, `FetcherEngine` are shared but configurable via parameters.
+-3. **Search isolation:** Search subsystem uses `StorageManager` with `manage_sync_state=False` and `create_folders=False` to avoid polluting historical/live state and directories.
+-4. **Live isolation:** `LiveStorageManager` encapsulates all live-specific state (`live_state.json`, `seen_tweets.json`, snapshots) independently.
+diff --git a/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py b/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py
+index 58ba46b..d03c6c3 100644
+--- a/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py	
++++ b/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py	
+@@ -16,6 +16,16 @@ from datetime import datetime, timedelta
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional
+ 
++try:
++    from rich.console import Console
++    from rich.panel import Panel
++    from rich.table import Table
++except Exception:
++    Console = None
++    Panel = None
++    Table = None
++
++
+ PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ if str(PROJECT_ROOT) not in sys.path:
+     sys.path.insert(0, str(PROJECT_ROOT))
+@@ -28,6 +38,87 @@ from live_scripts.live_storage import LiveStorageManager
+ from live_scripts.viral_detector import ViralDetector
+ 
+ 
++V4_PREFIX = "[V4]"
++
++
++class LiveConsole:
++    """Rich-first console output for LiveMonitor, with plain-text fallback."""
++
++    def __init__(self) -> None:
++        self.rich_enabled = Console is not None
++        self.console = Console() if self.rich_enabled else None
++
++    def banner(self, title: str) -> None:
++        if self.rich_enabled and Panel is not None:
++            self.console.print(Panel.fit(title, title="V4 Live Monitor", border_style="magenta"))
++        else:
++            sep = "=" * 70
++            print(f"{V4_PREFIX} {title}")
++            print(sep)
++
++    def info(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
++        else:
++            print(f"{V4_PREFIX} {message}")
++
++    def success(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
++        else:
++            print(f"{V4_PREFIX} \u2713 {message}")
++
++    def warning(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
++        else:
++            print(f"{V4_PREFIX} \u26a0 {message}")
++
++    def error(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
++        else:
++            print(f"{V4_PREFIX} \u2717 {message}")
++
++    def account_summary(self, username: str, account_report: Dict[str, Any]) -> None:
++        """Print a summary for a single account after a cycle."""
++        status = account_report.get("status", "unknown")
++        sets = account_report.get("sets", {})
++        new_tweets = account_report.get("new_tweets", {})
++        endpoints = account_report.get("endpoints", {})
++
++        print()
++        if self.rich_enabled and Table is not None:
++            table = Table(title=f"Account: @{username} [{status.upper()}]", show_lines=False)
++            table.add_column("Metric", style="cyan")
++            table.add_column("Value", style="white")
++            table.add_row("Status", status)
++            table.add_row("Priority", str(account_report.get("priority", "")))
++            table.add_row("Tweets (union)", str(sets.get("4_union", 0)))
++            table.add_row("Tweets (intersection)", str(sets.get("3_intersection", 0)))
++            table.add_row("Tweets (new this cycle)", str(new_tweets.get("new", 0)))
++            table.add_row("Duplicates", str(new_tweets.get("duplicates", 0)))
++            table.add_row("Viral Reports", str(new_tweets.get("viral_reports", 0)))
++            for ep, ep_data in endpoints.items():
++                pages = ep_data.get("pages_fetched", 0)
++                http_status = ep_data.get("last_http_status", "N/A")
++                reason = ep_data.get("outcome", "")
++                table.add_row(f"Endpoint: {ep}", f"pages={pages} status={http_status}")
++            self.console.print(table)
++        else:
++            print(f"{V4_PREFIX} @{username} [{status.upper()}]")
++            print(f"{V4_PREFIX}   Priority: {account_report.get('priority', '')}")
++            print(f"{V4_PREFIX}   Tweets (union): {sets.get('4_union', 0)}")
++            print(f"{V4_PREFIX}   Tweets (intersection): {sets.get('3_intersection', 0)}")
++            print(f"{V4_PREFIX}   New this cycle: {new_tweets.get('new', 0)}")
++            print(f"{V4_PREFIX}   Duplicates: {new_tweets.get('duplicates', 0)}")
++            print(f"{V4_PREFIX}   Viral Reports: {new_tweets.get('viral_reports', 0)}")
++            for ep, ep_data in endpoints.items():
++                pages = ep_data.get("pages_fetched", 0)
++                http_status = ep_data.get("last_http_status", "N/A")
++                print(f"{V4_PREFIX}   Endpoint {ep}: pages={pages} status={http_status}")
++
++
+ class LiveMonitor:
+     """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
+ 
+@@ -36,6 +127,7 @@ class LiveMonitor:
+     def __init__(self, config_path: str = "shared/config/config.json"):
+         self.project_root = Path(__file__).resolve().parents[1]
+         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
++        self.console = LiveConsole()
+         self.api_manager = self.fetcher.api_manager
+         self.config = self.api_manager.config
+         self.account_map, self.priority_policies = load_tier_config(self.config)
+@@ -333,11 +425,17 @@ class LiveMonitor:
+             if analysis:
+                 self.live_storage.save_viral_report(analysis)
+                 viral_reports += 1
++        if new_count > 0:
++            self.console.success(f"New tweets for @{username}: {new_count}")
++        if viral_reports > 0:
++            self.console.info(f"Viral reports for @{username}: {viral_reports}")
+         return {"new": new_count, "duplicates": duplicate_count, "viral_reports": viral_reports}
+ 
+     def monitor_account(self, username: str) -> Dict[str, Any]:
+         policy = get_priority_policy(username, self.account_map, self.priority_policies)
+         live_window_hours = int(policy.get("live_window_hours", 24))
++        prio = policy.get("priority", "")
++        self.console.info(f"Starting @{username} (priority={prio}, window={live_window_hours}h)")
+         result: Dict[str, Any] = {
+             "account": username,
+             "priority": policy.get("priority"),
+@@ -347,6 +445,7 @@ class LiveMonitor:
+         try:
+             user_id = self._get_live_user_id(username)
+         except Exception as exc:
++            self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
+             result["status"] = "failed"
+             result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
+             self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
+@@ -382,6 +481,7 @@ class LiveMonitor:
+ 
+     def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
+         selected = only_accounts or self.accounts
++        self.console.banner(f"Cycle started: {len(selected)} account(s)")
+         report = {
+             "started_at": datetime.utcnow().isoformat() + "Z",
+             "accounts": {},
+@@ -391,6 +491,7 @@ class LiveMonitor:
+             if not self.should_fetch_account(username):
+                 report["summary"]["skipped"] += 1
+                 continue
++            self.console.info(f"Processing @{username}...")
+             account_report = self.monitor_account(username)
+             report["accounts"][username] = account_report
+             report["summary"]["checked"] += 1
+@@ -398,13 +499,21 @@ class LiveMonitor:
+                 report["summary"]["failed"] += 1
+             self.api_manager.human_delay("between_accounts")
+         report["finished_at"] = datetime.utcnow().isoformat() + "Z"
++
++        # Print summary after cycle
++        self.console.banner(f"Cycle complete: {report['summary']}")
++        for username in selected:
++            if username in report.get("accounts", {}):
++                self.console.account_summary(username, report["accounts"][username])
++        if not report.get("accounts"):
++            self.console.warning("No accounts were processed in this cycle")
++
+         return report
+ 
+     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:
+-        print("Starting v4 live monitor. Press Ctrl+C to stop.")
++        self.console.banner("Starting v4 live monitor. Press Ctrl+C to stop.")
+         while True:
+             report = self.run_cycle(only_accounts=only_accounts)
+-            print(f"Live cycle complete: {report['summary']}")
+             sim = self.config.get("anti_bot_simulation", {})
+             if sim.get("enabled", True):
+                 delays = sim.get("delays_seconds", {})
+@@ -432,7 +541,7 @@ def main() -> None:
+     args = parse_args()
+     monitor = LiveMonitor(config_path=args.config)
+     if args.once:
+-        print(monitor.run_cycle(only_accounts=args.accounts))
++        report = monitor.run_cycle(only_accounts=args.accounts)
+     else:
+         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
+ 
+diff --git a/TWEETER DATA FETCHING 4.0/repomix-output.md b/TWEETER DATA FETCHING 4.0/repomix-output.md
+index 5cac8bf..66b85e8 100644
+--- a/TWEETER DATA FETCHING 4.0/repomix-output.md	
++++ b/TWEETER DATA FETCHING 4.0/repomix-output.md	
+@@ -1,4 +1,5 @@
+ This file is a merged representation of the entire codebase, combined into a single document by Repomix.
++The content has been processed where content has been formatted for parsing in markdown style.
+ 
+ # File Summary
+ 
+@@ -30,7 +31,9 @@ The content is organized as follows:
+ - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+ - Files matching patterns in .gitignore are excluded
+ - Files matching default ignore patterns are excluded
++- Content has been formatted for parsing in markdown style
+ - Files are sorted by Git change count (files with more changes are at the bottom)
++- Git diffs from the worktree and staged changes are included
+ 
+ # Directory Structure
+ ```
+@@ -68,13 +71,14 @@ shared/
+     check_replies_parity.py
+     diagnose_replies_only.py
+ .gitignore
++AGENTS.md
+ structure.txt
+ ```
+ 
+ # Files
+ 
+ ## File: historical_scripts/historical_runner.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """Canonical v4 replies-first fetch and processing pipeline."""
+ 
+@@ -534,10 +538,10 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
+ 
+ if __name__ == "__main__":
+     run_v4()
+-```
++````
+ 
+ ## File: live_scripts/live_runner.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ V4 isolated live monitoring subsystem.
+@@ -556,6 +560,16 @@ from datetime import datetime, timedelta
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional
+ 
++try:
++    from rich.console import Console
++    from rich.panel import Panel
++    from rich.table import Table
++except Exception:
++    Console = None
++    Panel = None
++    Table = None
++
++
+ PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ if str(PROJECT_ROOT) not in sys.path:
+     sys.path.insert(0, str(PROJECT_ROOT))
+@@ -568,6 +582,87 @@ from live_scripts.live_storage import LiveStorageManager
+ from live_scripts.viral_detector import ViralDetector
+ 
+ 
++V4_PREFIX = "[V4]"
++
++
++class LiveConsole:
++    """Rich-first console output for LiveMonitor, with plain-text fallback."""
++
++    def __init__(self) -> None:
++        self.rich_enabled = Console is not None
++        self.console = Console() if self.rich_enabled else None
++
++    def banner(self, title: str) -> None:
++        if self.rich_enabled and Panel is not None:
++            self.console.print(Panel.fit(title, title="V4 Live Monitor", border_style="magenta"))
++        else:
++            sep = "=" * 70
++            print(f"{V4_PREFIX} {title}")
++            print(sep)
++
++    def info(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
++        else:
++            print(f"{V4_PREFIX} {message}")
++
++    def success(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
++        else:
++            print(f"{V4_PREFIX} \u2713 {message}")
++
++    def warning(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
++        else:
++            print(f"{V4_PREFIX} \u26a0 {message}")
++
++    def error(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
++        else:
++            print(f"{V4_PREFIX} \u2717 {message}")
++
++    def account_summary(self, username: str, account_report: Dict[str, Any]) -> None:
++        """Print a summary for a single account after a cycle."""
++        status = account_report.get("status", "unknown")
++        sets = account_report.get("sets", {})
++        new_tweets = account_report.get("new_tweets", {})
++        endpoints = account_report.get("endpoints", {})
++
++        print()
++        if self.rich_enabled and Table is not None:
++            table = Table(title=f"Account: @{username} [{status.upper()}]", show_lines=False)
++            table.add_column("Metric", style="cyan")
++            table.add_column("Value", style="white")
++            table.add_row("Status", status)
++            table.add_row("Priority", str(account_report.get("priority", "")))
++            table.add_row("Tweets (union)", str(sets.get("4_union", 0)))
++            table.add_row("Tweets (intersection)", str(sets.get("3_intersection", 0)))
++            table.add_row("Tweets (new this cycle)", str(new_tweets.get("new", 0)))
++            table.add_row("Duplicates", str(new_tweets.get("duplicates", 0)))
++            table.add_row("Viral Reports", str(new_tweets.get("viral_reports", 0)))
++            for ep, ep_data in endpoints.items():
++                pages = ep_data.get("pages_fetched", 0)
++                http_status = ep_data.get("last_http_status", "N/A")
++                reason = ep_data.get("outcome", "")
++                table.add_row(f"Endpoint: {ep}", f"pages={pages} status={http_status}")
++            self.console.print(table)
++        else:
++            print(f"{V4_PREFIX} @{username} [{status.upper()}]")
++            print(f"{V4_PREFIX}   Priority: {account_report.get('priority', '')}")
++            print(f"{V4_PREFIX}   Tweets (union): {sets.get('4_union', 0)}")
++            print(f"{V4_PREFIX}   Tweets (intersection): {sets.get('3_intersection', 0)}")
++            print(f"{V4_PREFIX}   New this cycle: {new_tweets.get('new', 0)}")
++            print(f"{V4_PREFIX}   Duplicates: {new_tweets.get('duplicates', 0)}")
++            print(f"{V4_PREFIX}   Viral Reports: {new_tweets.get('viral_reports', 0)}")
++            for ep, ep_data in endpoints.items():
++                pages = ep_data.get("pages_fetched", 0)
++                http_status = ep_data.get("last_http_status", "N/A")
++                print(f"{V4_PREFIX}   Endpoint {ep}: pages={pages} status={http_status}")
++
++
+ class LiveMonitor:
+     """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
+ 
+@@ -576,6 +671,7 @@ class LiveMonitor:
+     def __init__(self, config_path: str = "shared/config/config.json"):
+         self.project_root = Path(__file__).resolve().parents[1]
+         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
++        self.console = LiveConsole()
+         self.api_manager = self.fetcher.api_manager
+         self.config = self.api_manager.config
+         self.account_map, self.priority_policies = load_tier_config(self.config)
+@@ -873,11 +969,17 @@ class LiveMonitor:
+             if analysis:
+                 self.live_storage.save_viral_report(analysis)
+                 viral_reports += 1
++        if new_count > 0:
++            self.console.success(f"New tweets for @{username}: {new_count}")
++        if viral_reports > 0:
++            self.console.info(f"Viral reports for @{username}: {viral_reports}")
+         return {"new": new_count, "duplicates": duplicate_count, "viral_reports": viral_reports}
+ 
+     def monitor_account(self, username: str) -> Dict[str, Any]:
+         policy = get_priority_policy(username, self.account_map, self.priority_policies)
+         live_window_hours = int(policy.get("live_window_hours", 24))
++        prio = policy.get("priority", "")
++        self.console.info(f"Starting @{username} (priority={prio}, window={live_window_hours}h)")
+         result: Dict[str, Any] = {
+             "account": username,
+             "priority": policy.get("priority"),
+@@ -887,6 +989,7 @@ class LiveMonitor:
+         try:
+             user_id = self._get_live_user_id(username)
+         except Exception as exc:
++            self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
+             result["status"] = "failed"
+             result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
+             self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
+@@ -922,6 +1025,7 @@ class LiveMonitor:
+ 
+     def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
+         selected = only_accounts or self.accounts
++        self.console.banner(f"Cycle started: {len(selected)} account(s)")
+         report = {
+             "started_at": datetime.utcnow().isoformat() + "Z",
+             "accounts": {},
+@@ -931,6 +1035,7 @@ class LiveMonitor:
+             if not self.should_fetch_account(username):
+                 report["summary"]["skipped"] += 1
+                 continue
++            self.console.info(f"Processing @{username}...")
+             account_report = self.monitor_account(username)
+             report["accounts"][username] = account_report
+             report["summary"]["checked"] += 1
+@@ -938,13 +1043,21 @@ class LiveMonitor:
+                 report["summary"]["failed"] += 1
+             self.api_manager.human_delay("between_accounts")
+         report["finished_at"] = datetime.utcnow().isoformat() + "Z"
++
++        # Print summary after cycle
++        self.console.banner(f"Cycle complete: {report['summary']}")
++        for username in selected:
++            if username in report.get("accounts", {}):
++                self.console.account_summary(username, report["accounts"][username])
++        if not report.get("accounts"):
++            self.console.warning("No accounts were processed in this cycle")
++
+         return report
+ 
+     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:
+-        print("Starting v4 live monitor. Press Ctrl+C to stop.")
++        self.console.banner("Starting v4 live monitor. Press Ctrl+C to stop.")
+         while True:
+             report = self.run_cycle(only_accounts=only_accounts)
+-            print(f"Live cycle complete: {report['summary']}")
+             sim = self.config.get("anti_bot_simulation", {})
+             if sim.get("enabled", True):
+                 delays = sim.get("delays_seconds", {})
+@@ -972,17 +1085,17 @@ def main() -> None:
+     args = parse_args()
+     monitor = LiveMonitor(config_path=args.config)
+     if args.once:
+-        print(monitor.run_cycle(only_accounts=args.accounts))
++        report = monitor.run_cycle(only_accounts=args.accounts)
+     else:
+         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
+ 
+ 
+ if __name__ == "__main__":
+     main()
+-```
++````
+ 
+ ## File: live_scripts/live_storage.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Isolated v4 live-monitoring storage and viral-report helpers.
+@@ -1187,10 +1300,10 @@ class LiveStorageManager:
+         ]
+         txt_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+         return {"json": json_path, "txt": txt_path}
+-```
++````
+ 
+ ## File: live_scripts/viral_detector.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ V4 live viral detection using isolated live snapshots.
+@@ -1413,10 +1526,10 @@ class ViralDetector:
+             "confirmed": score >= 2.0,
+             "analyzed_at": datetime.utcnow().isoformat() + "Z",
+         }
+-```
++````
+ 
+ ## File: search_scripts/search_runner.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ V4 isolated Advanced SearchTimeline monitor.
+@@ -1438,6 +1551,17 @@ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ from urllib.parse import quote, urlencode
+ 
++try:
++    from rich.console import Console
++    from rich.panel import Panel
++    from rich.table import Table
++except Exception:
++    Console = None
++    Panel = None
++    Table = None
++
++
++
+ PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ if str(PROJECT_ROOT) not in sys.path:
+     sys.path.insert(0, str(PROJECT_ROOT))
+@@ -1494,6 +1618,85 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = {
+ }
+ 
+ 
++V4_PREFIX = "[V4]"
++
++
++class SearchConsole:
++    """Rich-first console output for SearchTimelineMonitor, with plain-text fallback."""
++
++    def __init__(self) -> None:
++        self.rich_enabled = Console is not None
++        self.console = Console() if self.rich_enabled else None
++
++    def banner(self, title: str) -> None:
++        if self.rich_enabled and Panel is not None:
++            self.console.print(Panel.fit(title, title="V4 Search Monitor", border_style="magenta"))
++        else:
++            sep = "=" * 70
++            print(f"{V4_PREFIX} {title}")
++            print(sep)
++
++    def info(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
++        else:
++            print(f"{V4_PREFIX} {message}")
++
++    def success(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
++        else:
++            print(f"{V4_PREFIX} \u2713 {message}")
++
++    def warning(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
++        else:
++            print(f"{V4_PREFIX} \u26a0 {message}")
++
++    def error(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
++        else:
++            print(f"{V4_PREFIX} \u2717 {message}")
++
++    def summary(self, report: Dict[str, Any]) -> None:
++        """Print a search report summary."""
++        print()
++        if self.rich_enabled and Table is not None:
++            table = Table(
++                title=f"Search Report: {report.get('search', 'Unknown')}",
++                show_lines=False,
++            )
++            table.add_column("Metric", style="cyan")
++            table.add_column("Value", style="white")
++            table.add_row("Slug", report.get("slug", ""))
++            table.add_row("Product", report.get("product", ""))
++            table.add_row("Raw Query", report.get("raw_query", ""))
++            table.add_row(
++                "Tweets Found",
++                str(report.get("counts", {}).get("tweets", 0)),
++            )
++            meta = report.get("metadata", {})
++            table.add_row("Pages Saved", f"{meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
++            table.add_row("Exhausted Reason", str(meta.get("exhausted_reason", "")))
++            table.add_row("Attempts", str(meta.get("attempts", 0)))
++            last_status = meta.get("last_http_status")
++            table.add_row("Last HTTP Status", str(last_status) if last_status else "N/A")
++            self.console.print(table)
++        else:
++            print(f"{V4_PREFIX} Report for: {report.get('search', 'Unknown')}")
++            print(f"{V4_PREFIX}   Slug: {report.get('slug', '')}")
++            print(f"{V4_PREFIX}   Product: {report.get('product', '')}")
++            print(f"{V4_PREFIX}   Tweets Found: {report.get('counts', {}).get('tweets', 0)}")
++            meta = report.get("metadata", {})
++            print(f"{V4_PREFIX}   Pages Saved: {meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
++            print(f"{V4_PREFIX}   Exhausted Reason: {meta.get('exhausted_reason', 'unknown')}")
++        outputs = report.get("outputs", {})
++        if outputs:
++            print(f"{V4_PREFIX}   Outputs: {', '.join(outputs.values())}")
++
++
+ class SearchQueryBuilder:
+     """Build SearchTimeline rawQuery and browser URL from search definitions."""
+ 
+@@ -1591,7 +1794,12 @@ class SearchTimelineMonitor:
+         self.fetcher = FetcherEngine(config_path=config_path, subsystem="search")
+         self.api_manager = self.fetcher.api_manager
+         self.config = self.api_manager.config
+-        self.storage = StorageManager(base_dir=self.project_root, subsystem="search")
++        self.storage = StorageManager(
++            base_dir=self.project_root,
++            subsystem="search",
++            create_folders=False,
++            manage_sync_state=False,
++        )
+         self.processor = TweetSetProcessor()
+         self.search_defs = self._load_search_config(search_config_path)
+         self.search_root = self.project_root / "data" / "search"
+@@ -1601,6 +1809,7 @@ class SearchTimelineMonitor:
+         self.reports_root = self.search_root / "reports"
+         self.state_file = self.search_root / "state" / "search_state.json"
+         self.search_state = self._load_json(self.state_file, {})
++        self.console = SearchConsole()
+         for path in [self.raw_root, self.processed_root, self.debug_root, self.reports_root, self.state_file.parent]:
+             path.mkdir(parents=True, exist_ok=True)
+ 
+@@ -1997,6 +2206,8 @@ class SearchTimelineMonitor:
+         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
+         policy = self._policy_for_search(search_def)
+         batch_dir = self._raw_batch_dir(slug, product)
++        self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
++        self.console.info(f"  Query: {raw_query}")
+         seen_ids: Set[str] = set()
+         cursor: Optional[str] = None
+         cursor_history: Set[str] = set()
+@@ -2038,7 +2249,10 @@ class SearchTimelineMonitor:
+             payload.pop("_attempts", None)
+             payload.pop("_error_samples", None)
+             payload.pop("_status", None)
+-            self.storage.save_raw_page(batch_dir, page, payload)
++            jalali_batch = self.storage._jalali_batch_name()
++            if page <= 3:
++                self.console.info(f"  Page {page} fetched")
++            self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
+             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
+             tweets.extend(page_result["tweets"])
+             if page == 1:
+@@ -2093,15 +2307,28 @@ class SearchTimelineMonitor:
+             product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
+             policy = self._policy_for_search(search_def)
+             if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"])):
++                last_check = self.search_state.get(self._state_key(search_def, product), {}).get("last_checked_at", "never")
++                self.console.info(f"Skipping {name} (last checked: {last_check})")
+                 continue
++            self.console.info(f"Polling: {name} (product={product}, rolling_hours={policy.get('rolling_hours', 24)})")
+             reports.append(self.monitor_search(search_def))
+         return reports
+ 
++    def _print_cycle_summary(self, reports: List[Dict[str, Any]], only_names: Optional[Set[str]]) -> None:
++        """Print a summary after a search cycle completes."""
++        self.console.banner(f"Cycle complete: {len(reports)} search(es) fetched")
++        for report in reports:
++            self.console.summary(report)
++        if not reports:
++            self.console.warning("No searches were fetched in this cycle")
++        if only_names:
++            self.console.info(f"Note: --only filter active: {', '.join(only_names)}")
++
+     def run_continuous(self, only_names: Optional[Set[str]] = None, check_interval: int = 60) -> None:
+-        print("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
++        self.console.banner("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
+         while True:
+             reports = self.run_cycle(only_names=only_names)
+-            print(f"Search cycle complete: {len(reports)} search(es) fetched")
++            self._print_cycle_summary(reports, only_names)
+             time.sleep(max(1, check_interval))
+ 
+ 
+@@ -2120,138 +2347,540 @@ def main() -> None:
+     monitor = SearchTimelineMonitor(config_path=args.config, search_config_path=args.search_config)
+     only = set(args.only or []) or None
+     if args.once:
+-        print(monitor.run_cycle(only_names=only))
++        reports = monitor.run_cycle(only_names=only)
++        monitor._print_cycle_summary(reports, only)
+     else:
+         monitor.run_continuous(only_names=only, check_interval=args.check_interval)
+ 
+ 
+ if __name__ == "__main__":
+     main()
+-```
++````
+ 
+ ## File: shared/auth/__init__.py
+-```python
++````python
+ """Authentication package for session and cookie management."""
+-```
++````
+ 
+ ## File: shared/auth/session_updater.py
+-```python
++````python
++#!/usr/bin/env python3
++"""
++Twitter Session Updater
++
++Refreshes authentication parameters (cookies, x-client-transaction-id,
++query IDs) by opening an interactive browser session where the user can
++log in. Uses Playwright to intercept fresh parameters from the live
++Twitter session.
++
++Usage:
++    python3 session_updater.py
++
++Options:
++    1. Quick refresh  - Inject existing cookies, hope they still work
++    2. Full login     - Open a visible browser for manual login (recommended)
++"""
++
+ import json
+ import logging
++import shutil
++import sys
++import tempfile
++import time
+ from pathlib import Path
+-from typing import Dict, Any, Optional
+-from playwright.sync_api import sync_playwright, Request
++from typing import Any, Dict, List, Optional
++from urllib.parse import urlparse
++
++from playwright.sync_api import Request, sync_playwright
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Default query IDs (will be overwritten if fresh IDs are intercepted)
++DEFAULT_QUERY_IDS: Dict[str, str] = {
++    "user_by_screen_name_query_id": "sLVLhk0bGj3MVFEKTdax1w",
++    "user_tweets_query_id": "pQHADmT91zIY83UbK0x4Lw",
++    "user_tweets_and_replies_query_id": "xdqXQQg4vOBF9Np6VtUsdw",
++    "tweet_detail_query_id": "",
++    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
++}
++
++# Maps GraphQL endpoint names to config.json key names
++ENDPOINT_KEY_MAP: Dict[str, str] = {
++    "UserByScreenName": "user_by_screen_name_query_id",
++    "UserTweets": "user_tweets_query_id",
++    "UserTweetsAndReplies": "user_tweets_and_replies_query_id",
++    "TweetDetail": "tweet_detail_query_id",
++    "SearchTimeline": "search_timeline_query_id",
++}
++
++
+ class SessionUpdater:
+     """
+-    مدیریت و به‌روزرسانی پارامترهای احراز هویت توییتر.
+-    از Playwright برای استخراج x-client-transaction-id و کوکی‌های جدید (ct0) استفاده می‌کند.
++    Refreshes Twitter authentication parameters via Playwright.
++
++    Two modes:
++      QUICK  - injects existing cookies from config.json, intercepts fresh
++               parameters from GraphQL requests. Works only if the current
++               session is still valid.
++      FULL   - opens a headed (visible) browser so the user can log in
++               manually.  All parameters are then extracted from the fresh
++               session.  Recommended when cookies have expired.
+     """
+ 
+-    def __init__(self):
+-        # مسیر فایل کانفیگ بر اساس ساختار پروژه
+-        self.config_path = Path(__file__).resolve().parents[1] / "config" / "config.json"
+-        self._target_url = "https://twitter.com/home"
++    def __init__(self) -> None:
++        self.config_path = (
++            Path(__file__).resolve().parents[1] / "config" / "config.json"
++        )
++        self._target_url = "https://x.com/home"
+         self._graphql_indicator = "/graphql/"
+ 
++    # ------------------------------------------------------------------ #
++    #  Config I/O
++    # ------------------------------------------------------------------ #
++
+     def _load_config(self) -> Dict[str, Any]:
+-        """بارگذاری فایل کانفیگ اصلی."""
++        """Load shared/config/config.json."""
+         if not self.config_path.exists():
+-            raise FileNotFoundError(f"Config file not found at: {self.config_path}")
+-        with open(self.config_path, 'r', encoding='utf-8') as f:
+-            return json.load(f)
++            raise FileNotFoundError(
++                f"Config file not found: {self.config_path}"
++            )
++        with open(self.config_path, "r", encoding="utf-8") as fh:
++            return json.load(fh)
++
++    def _save_config(self, cfg: Dict[str, Any]) -> None:
++        """Persist the updated config to disk with atomic write and backup."""
++        if self.config_path.exists():
++            backup_path = self.config_path.with_suffix(".json.bak")
++            shutil.copy2(self.config_path, backup_path)
++            logger.info("Config backup saved to %s", backup_path)
++        tmp_fd, tmp_path = tempfile.mkstemp(
++            dir=self.config_path.parent, suffix=".tmp"
++        )
++        try:
++            with open(tmp_fd, "w", encoding="utf-8") as fh:
++                json.dump(cfg, fh, indent=2, ensure_ascii=False)
++            Path(tmp_path).replace(self.config_path)
++        except BaseException:
++            Path(tmp_path).unlink(missing_ok=True)
++            raise
++        logger.info("Config saved to %s", self.config_path)
++
++    # ------------------------------------------------------------------ #
++    #  Helpers
++    # ------------------------------------------------------------------ #
+ 
+-    def _save_config(self, config_data: Dict[str, Any]) -> None:
+-        """ذخیره تغییرات در فایل کانفیگ."""
+-        with open(self.config_path, 'w', encoding='utf-8') as f:
+-            json.dump(config_data, f, indent=2, ensure_ascii=False)
+-        logger.info(f"Config successfully updated at {self.config_path}")
++    @staticmethod
++    def _cookiestring_to_playwright(
++        cookies_dict: Dict[str, str],
++    ) -> List[Dict[str, Any]]:
++        """Convert a flat {name: value} dict into Playwright cookie format."""
++        return [
++            {
++                "name": name,
++                "value": str(value),
++                "domain": ".x.com",
++                "path": "/",
++            }
++            for name, value in cookies_dict.items()
++        ]
+ 
+-    def update_session(self) -> bool:
++    def _extract_query_id_from_url(
++        self, url: str
++    ) -> Optional[tuple[str, str]]:
++        """Extract (endpoint, query_id) from a GraphQL request URL."""
++        try:
++            parsed = urlparse(url.strip())
++            parts = [p for p in (parsed.path or "").split("/") if p]
++            if "graphql" not in parts:
++                return None
++            graph_idx = parts.index("graphql")
++            if len(parts) <= graph_idx + 2:
++                return None
++            query_id = parts[graph_idx + 1]
++            endpoint = parts[graph_idx + 2]
++            if endpoint in ENDPOINT_KEY_MAP and query_id:
++                return (endpoint, query_id)
++        except Exception:
++            pass
++        return None
++
++    @staticmethod
++    def _apply_extracted(
++        cfg: Dict[str, Any],
++        extracted: Dict[str, Any],
++        old_txid: Optional[str],
++        old_cookies: Dict[str, str],
++    ) -> Dict[str, str]:
++        """Merge extracted parameters into config and return a change report."""
++        report: Dict[str, str] = {}
++
++        if extracted.get("ct0") and cfg.get("api_cookies"):
++            cfg["api_cookies"]["ct0"] = extracted["ct0"]
++            report["ct0"] = "updated" if extracted["ct0"] != old_cookies.get("ct0") else "unchanged"
++
++        if extracted.get("auth_token") and cfg.get("api_cookies"):
++            cfg["api_cookies"]["auth_token"] = extracted["auth_token"]
++
++        if extracted.get("x_client_transaction_id"):
++            cfg.setdefault("api_headers", {})
++            cfg["api_headers"]["x-client-transaction-id"] = extracted["x_client_transaction_id"]
++            report["x-client-transaction-id"] = "new" if extracted["x_client_transaction_id"] != old_txid else "unchanged"
++
++        if extracted.get("query_ids"):
++            api_config = cfg.setdefault("api_config", {})
++            api_config.update(extracted["query_ids"])
++            report["query_ids"] = str(len(extracted["query_ids"]))
++
++        return report
++
++    # ------------------------------------------------------------------ #
++    #  Mode 1 - Quick Refresh (headless, injects existing cookies)
++    # ------------------------------------------------------------------ #
++
++    def quick_refresh(self, cfg: Dict[str, Any]) -> bool:
+         """
+-        اجرای مرورگر، تزریق کوکی‌های فعلی، شنود درخواست‌ها و استخراج پارامترهای جدید.
+-        برمی‌گرداند: True در صورت موفقیت، False در صورت شکست.
++        Attempt a quick refresh by injecting existing cookies from config.json.
++
++        Returns True if at least one parameter was updated.
+         """
+-        config = self._load_config()
+-        current_cookies = config.get("api_cookies", {})
+-        
+-        # تبدیل کوکی‌های فایل کانفیگ به فرمت Playwright
+-        playwright_cookies = []
+-        for name, value in current_cookies.items():
+-            playwright_cookies.append({
+-                "name": name,
+-                "value": str(value),
+-                "domain": ".twitter.com",
+-                "path": "/"
+-            })
++        current_cookies = cfg.get("api_cookies", {})
++        if not current_cookies:
++            print("\nNo cookies in config.json. Use mode 2 (Full login) instead.\n")
++            return False
++        if not current_cookies.get("auth_token") or not current_cookies.get("ct0"):
++            print(
++                "\nWarning: config.json is missing critical cookies"
++                " (auth_token / ct0). Quick refresh may fail.\n"
++            )
+ 
+-        extracted_data = {
+-            "x-client-transaction-id": None,
+-            "ct0": None,
+-            "auth_token": current_cookies.get("auth_token")
++        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
++        old_ct0 = current_cookies.get("ct0")
++
++        playwright_cookies = self._cookiestring_to_playwright(current_cookies)
++
++        extracted: Dict[str, Any] = {
++            "x_client_transaction_id": None,
++            "ct0": old_ct0,
++            "auth_token": current_cookies.get("auth_token"),
++            "query_ids": {},
+         }
+ 
+-        logger.info("Launching Playwright to extract fresh auth parameters...")
++        logger.info("Launching Playwright for quick cookie refresh...")
++        print("\nLaunching browser with existing cookies...")
+ 
+         try:
+-            with sync_playwright() as p:
+-                browser = p.chromium.launch(headless=True)
+-                context = browser.new_context()
+-                context.add_cookies(playwright_cookies)
+-                page = context.new_page()
+-
+-                # تابع شنود (Interceptor)
+-                def handle_request(request: Request):
+-                    if self._graphql_indicator in request.url:
+-                        headers = request.headers
+-                        if "x-client-transaction-id" in headers and not extracted_data["x-client-transaction-id"]:
+-                            extracted_data["x-client-transaction-id"] = headers["x-client-transaction-id"]
+-                            logger.debug("Successfully intercepted x-client-transaction-id.")
+-
+-                page.on("request", handle_request)
+-                
+-                # رفتن به صفحه هوم توییتر برای تریگر شدن ریکوئست‌های GraphQL
+-                page.goto(self._target_url, wait_until="networkidle", timeout=60000)
+-
+-                # استخراج کوکی‌های جدید به‌روزرسانی شده توسط مرورگر
+-                new_cookies = context.cookies()
+-                for cookie in new_cookies:
++            with sync_playwright() as pw:
++                browser = pw.chromium.launch(headless=True)
++                ctx = browser.new_context()
++                ctx.add_cookies(playwright_cookies)
++                page = ctx.new_page()
++
++                def _on_request(req: Request) -> None:
++                    url = req.url
++                    headers = req.headers
++
++                    # Capture x-client-transaction-id
++                    if (
++                        self._graphql_indicator in url
++                        and "x-client-transaction-id" in headers
++                        and not extracted["x_client_transaction_id"]
++                    ):
++                        extracted["x_client_transaction_id"] = headers[
++                            "x-client-transaction-id"
++                        ]
++                        logger.debug("Intercepted x-client-transaction-id")
++
++                    # Extract query IDs
++                    if self._graphql_indicator in url:
++                        result = self._extract_query_id_from_url(url)
++                        if result:
++                            endpoint, query_id = result
++                            key = ENDPOINT_KEY_MAP.get(endpoint)
++                            if key:
++                                extracted["query_ids"][key] = query_id
++
++                page.on("request", _on_request)
++                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
++                time.sleep(5)
++
++                # Read back updated cookies
++                for cookie in ctx.cookies():
+                     if cookie["name"] == "ct0":
+-                        extracted_data["ct0"] = cookie["value"]
++                        extracted["ct0"] = cookie["value"]
+                     elif cookie["name"] == "auth_token":
+-                        extracted_data["auth_token"] = cookie["value"]
++                        extracted["auth_token"] = cookie["value"]
+ 
+                 browser.close()
+ 
+-            # بررسی اینکه آیا پارامترهای کلیدی با موفقیت استخراج شده‌اند یا خیر
+-            if extracted_data["x-client-transaction-id"] and extracted_data["ct0"]:
+-                logger.info("New authentication parameters extracted successfully.")
+-                
+-                # اعمال تغییرات در شیء کانفیگ
+-                config["api_headers"]["x-client-transaction-id"] = extracted_data["x-client-transaction-id"]
+-                config["api_cookies"]["ct0"] = extracted_data["ct0"]
+-                config["api_cookies"]["auth_token"] = extracted_data["auth_token"]
+-                
+-                self._save_config(config)
+-                return True
+-            else:
+-                logger.error("Failed to extract complete auth parameters. Manual login may be required.")
+-                return False
++        except KeyboardInterrupt:
++            logger.info("Quick refresh cancelled by user.")
++            print("\nCancelled.\n")
++            return False
++        except Exception as exc:
++            logger.error("Quick refresh failed: %s", exc)
++            print(f"\nQuick refresh failed: {exc}\n")
++            print("Your cookies may have expired. Use mode 2 (Full login) instead.\n")
++            return False
+ 
+-        except Exception as e:
+-            logger.error(f"Error during session update via Playwright: {e}")
++        if extracted["x_client_transaction_id"] or extracted["ct0"] != old_ct0 or extracted["query_ids"]:
++            report = self._apply_extracted(cfg, extracted, old_txid, current_cookies)
++            self._save_config(cfg)
++
++            print("\nQuick refresh completed!")
++            print(f"  x-client-transaction-id: [{report.get('x-client-transaction-id', 'unchanged')}]")
++            print(f"  ct0:                     [{report.get('ct0', 'unchanged')}]")
++            print(f"  Query IDs extracted:     {report.get('query_ids', '0')}")
++            return True
++
++        logger.error("Quick refresh returned no fresh parameters. Session expired.")
++        print("\nNo fresh parameters captured. Session likely expired.\n")
++        print("Use mode 2 (Full login) instead.\n")
++        return False
++
++    # ------------------------------------------------------------------ #
++    #  Mode 2 - Full Interactive Login (headed, user logs in manually)
++    # ------------------------------------------------------------------ #
++
++    def full_login(self, cfg: Dict[str, Any]) -> bool:
++        """
++        Open a visible browser for the user to log in to X/Twitter manually.
++
++        Extracts ALL fresh parameters: cookies, x-client-transaction-id,
++        and query IDs.  Recommended when existing cookies have expired.
++        """
++        existing_cookies = cfg.get("api_cookies", {})
++        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
++
++        pw_cookies = self._cookiestring_to_playwright(existing_cookies) if existing_cookies else []
++
++        extracted: Dict[str, Any] = {
++            "x_client_transaction_id": None,
++            "ct0": None,
++            "auth_token": None,
++            "all_cookies": {},
++            "query_ids": {},
++        }
++
++        logger.info("Launching Playwright for full interactive login...")
++
++        try:
++            with sync_playwright() as pw:
++                browser = pw.chromium.launch(headless=False)  # visible browser
++                ctx = browser.new_context()
++
++                if pw_cookies:
++                    ctx.add_cookies(pw_cookies)  # help pre-fill session
++
++                page = ctx.new_page()
++
++                def _on_request(req: Request) -> None:
++                    url = req.url
++                    headers = req.headers
++
++                    if (
++                        self._graphql_indicator in url
++                        and "x-client-transaction-id" in headers
++                        and not extracted["x_client_transaction_id"]
++                    ):
++                        extracted["x_client_transaction_id"] = headers[
++                            "x-client-transaction-id"
++                        ]
++                        logger.debug("Intercepted x-client-transaction-id")
++
++                    if self._graphql_indicator in url:
++                        result = self._extract_query_id_from_url(url)
++                        if result:
++                            endpoint, query_id = result
++                            key = ENDPOINT_KEY_MAP.get(endpoint)
++                            if key:
++                                extracted["query_ids"][key] = query_id
++
++                page.on("request", _on_request)
++
++                # ---------------------------------------------------------- #
++                #  Interactive login prompt
++                # ---------------------------------------------------------- #
++                print("\n" + "=" * 60)
++                print("  Browser window will open shortly.")
++                print("  Please log in to your X (Twitter) account.")
++                print("=" * 60)
++                print()
++                print("After logging in:")
++                print("  1. Navigate to x.com/home (or any page)")
++                print("  2. Wait for the page to fully load")
++                print("  3. Do NOT close the browser yet")
++                print()
++                print("Waiting up to 120 seconds for you to log in...")
++                print("(Press Ctrl+C at any time to cancel)\n")
++
++                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
++
++                # Poll for home page to confirm session is active
++                login_timeout = 120
++                start = time.time()
++                while time.time() - start < login_timeout:
++                    try:
++                        url = page.url
++                        if "home" in url.lower() or "x.com" in url.lower():
++                            time.sleep(3)  # let initial requests fire
++                            break
++                    except Exception:
++                        pass
++                    time.sleep(2)
++
++                # Extra wait for all network activity
++                print("Session active. Waiting for data extraction...")
++                time.sleep(10)
++
++                # Read ALL fresh cookies
++                for cookie in ctx.cookies():
++                    extracted["all_cookies"][cookie["name"]] = cookie["value"]
++
++                browser.close()
++
++        except KeyboardInterrupt:
++            logger.info("Full login cancelled by user.")
++            print("\nCancelled.\n")
++            return False
++        except Exception as exc:
++            logger.error("Full login failed: %s", exc)
++            print(f"\nFull login failed: {exc}\n")
+             return False
+ 
+-if __name__ == "__main__":
+-    logging.basicConfig(level=logging.INFO)
++        # ---------------------------------------------------------- #
++        #  Apply extracted data to config
++        # ---------------------------------------------------------- #
++        if not extracted["all_cookies"]:
++            logger.error("Full login captured no cookies.")
++            print("\nNo cookies captured. Try again.\n")
++            return False
++
++        critical_missing = [
++            key
++            for key in ("auth_token", "ct0")
++            if key not in extracted["all_cookies"]
++        ]
++        if critical_missing:
++            logger.warning(
++                "Full login captured cookies but missing critical keys: %s",
++                critical_missing,
++            )
++            print(
++                f"\nWarning: captured cookies are missing critical keys:"
++                f" {', '.join(critical_missing)}."
++                f"\nThe session may not work. Saving anyway.\n"
++            )
++
++        # Replace all cookies
++        cfg["api_cookies"] = extracted["all_cookies"]
++
++        if extracted["x_client_transaction_id"]:
++            cfg.setdefault("api_headers", {})
++            cfg["api_headers"]["x-client-transaction-id"] = extracted[
++                "x_client_transaction_id"
++            ]
++
++        if extracted["query_ids"]:
++            api_config = cfg.setdefault("api_config", {})
++            api_config.update(extracted["query_ids"])
++
++        self._save_config(cfg)
++
++        report = {}
++        report["cookies"] = str(len(extracted["all_cookies"]))
++        report["x-client-transaction-id"] = (
++            "fresh" if extracted["x_client_transaction_id"] else "not captured"
++        )
++        report["query_ids"] = str(len(extracted["query_ids"]))
++
++        print("\n" + "=" * 60)
++        print("  Full login refresh completed successfully!")
++        print("=" * 60)
++        print(f"\n  Cookies updated:           {report['cookies']}")
++        print(f"  x-client-transaction-id:   [{report['x-client-transaction-id']}]")
++        print(f"  Query IDs extracted:       {report['query_ids']}")
++
++        if extracted["query_ids"]:
++            for key, val in extracted["query_ids"].items():
++                print(f"    - {key}: {val}")
++
++        print(f"\n  Config saved to: {self.config_path}\n")
++        return True
++
++    # ------------------------------------------------------------------ #
++    #  CLI entry point
++    # ------------------------------------------------------------------ #
++
++    def run(self) -> None:
++        """Interactive CLI: choose quick refresh or full login mode."""
++        print("\n" + "=" * 60)
++        print("  Twitter Session Updater")
++        print("=" * 60)
++        print()
++        print("Choose a refresh mode:")
++        print()
++        print("  1. Quick Refresh")
++        print("     - Uses existing cookies from config.json")
++        print("     - Works only if your session is still active")
++        print("     - Faster, no manual login needed")
++        print()
++        print("  2. Full Login  (recommended)")
++        print("     - Opens a visible browser window")
++        print("     - Log in manually to X/Twitter")
++        print("     - Extracts all fresh parameters:")
++        print("       cookies, x-client-transaction-id, query IDs")
++        print("     - Use when quick refresh fails")
++        print()
++
++        try:
++            choice = input("Choose (1/2, default 2): ").strip() or "2"
++        except EOFError:
++            choice = "2"
++
++        try:
++            cfg = self._load_config()
++        except FileNotFoundError as exc:
++            print(f"\nError: {exc}")
++            print("Run setup_api_cookies.py first to create a config file.")
++            sys.exit(1)
++
++        if choice == "1":
++            success = self.quick_refresh(cfg)
++        elif choice == "2":
++            success = self.full_login(cfg)
++        else:
++            print(f"\nInvalid choice: {choice}. Use 1 or 2.")
++            sys.exit(1)
++
++        if success:
++            print("\nYou can now run your scripts:")
++            print("  python3 historical_scripts/historical_runner.py")
++            print("  python3 live_scripts/live_runner.py")
++            print("  python3 search_scripts/search_runner.py --once")
++        else:
++            print(
++                "\nRefresh failed. Ensure you have an active internet"
++                " connection and valid X/Twitter credentials.\n"
++            )
++            sys.exit(1)
++
++
++def main() -> None:
++    """Entry point for the session updater."""
++    logging.basicConfig(
++        level=logging.INFO,
++        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
++    )
+     updater = SessionUpdater()
+-    updater.update_session()
+-```
++    updater.run()
++
++
++if __name__ == "__main__":
++    main()
++````
+ 
+ ## File: shared/auth/setup_api_cookies.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Twitter API Configuration Setup
+@@ -2673,15 +3302,15 @@ if __name__ == "__main__":
+     except Exception as e:
+         print(f"\n✗ Error: {e}")
+         print("\nFor help, see CONFIG_GUIDE.md")
+-```
++````
+ 
+ ## File: shared/config/__init__.py
+-```python
++````python
+ """Configuration package for scraper settings and tier policies."""
+-```
++````
+ 
+ ## File: shared/config/config.json
+-```json
++````json
+ {
+   "api_cookies": {
+     "guest_id": "v1%3A177711975217751018",
+@@ -2711,7 +3340,7 @@ if __name__ == "__main__":
+     "cursor_error_max_retries": 3,
+     "default_timeout_seconds": 20,
+     "tweet_detail_query_id": "",
+-    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
++    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
+     "search_warmup_seconds": 2,
+     "first_request_warmup_seconds": 15,
+     "pagination_safety_cap_pages": 50
+@@ -2910,10 +3539,10 @@ if __name__ == "__main__":
+     "snapshot_min_minutes": 10
+   }
+ }
+-```
++````
+ 
+ ## File: shared/config/search_config.json
+-```json
++````json
+ [
+   {
+     "name": "Iran_War_Brent_Gold_Inflation_Hormuz",
+@@ -2947,10 +3576,10 @@ if __name__ == "__main__":
+     "count": 30
+   }
+ ]
+-```
++````
+ 
+ ## File: shared/config/tier_config.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Tier and rolling-window policy configuration.
+@@ -3196,15 +3825,15 @@ class TierConfig:
+ 
+     def __repr__(self) -> str:
+         return f"TierConfig(accounts={len(self.account_map)}, policies={len(self.policy_map)})"
+-```
++````
+ 
+ ## File: shared/core/__init__.py
+-```python
++````python
+ """Core API and fetching engine package."""
+-```
++````
+ 
+ ## File: shared/core/api_manager.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ API Manager - Centralized networking and endpoint management
+@@ -3994,10 +4623,10 @@ class APIManager:
+             "rate_limits": self.rate_limits,
+             "endpoint_health": self.endpoint_health,
+         }
+-```
++````
+ 
+ ## File: shared/core/fetcher_engine.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Phase 2 Fetcher Engine
+@@ -4996,10 +5625,10 @@ def main():
+ 
+ if __name__ == "__main__":
+     main()
+-```
++````
+ 
+ ## File: shared/core/set_operations.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Tweet set extraction and mathematical set operations.
+@@ -5345,10 +5974,10 @@ class TweetSetProcessor:
+     def get_difference_b_minus_a(self, set_a: Dict[str, Dict[str, Any]], set_b: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+         keys = set((set_b or {}).keys()) - set((set_a or {}).keys())
+         return [set_b[k] for k in keys if k in set_b]
+-```
++````
+ 
+ ## File: shared/core/windowing.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Rolling-window coverage helpers for v4 subsystems.
+@@ -5490,15 +6119,15 @@ class RollingWindowEvaluator:
+     ) -> WindowCoverage:
+         tweets = self.extract_endpoint_tweets(raw_pages, username=username, endpoint=endpoint)
+         return self.evaluate_tweets(tweets, window_days=window_days, now_dt=now_dt)
+-```
++````
+ 
+ ## File: shared/data_pipeline/__init__.py
+-```python
++````python
+ """Data pipeline package for storage and transformations."""
+-```
++````
+ 
+ ## File: shared/data_pipeline/storage_manager.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Storage manager for Phase 3 raw/processed persistence.
+@@ -5616,6 +6245,8 @@ class StorageManager:
+         base_dir: Optional[Path] = None,
+         timezone: str = "Asia/Tehran",
+         subsystem: str = "historical",
++        create_folders: bool = True,
++        manage_sync_state: bool = True,
+     ):
+         # اصلاح سطح دسترسی به ریشه پروژه (parents[2])
+         self.project_root = project_root or base_dir or Path(__file__).resolve().parents[2]
+@@ -5646,8 +6277,11 @@ class StorageManager:
+         self.legacy_reports_dir = self.legacy_data_root / "reports"
+         self.global_state_dir = self.global_data_root / "state"
+         self.legacy_state_dir = self.legacy_data_root / "STATE"
+-        self.sync_state_file = self.state_dir / "sync_state.json"
+-        self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
++        self.sync_state_file: Optional[Path] = None
++        self.legacy_sync_state_file: Optional[Path] = None
++        if manage_sync_state:
++            self.sync_state_file = self.state_dir / "sync_state.json"
++            self.legacy_sync_state_file = self.legacy_state_dir / "sync_state.json"
+ 
+         # نام‌گذاری دقیق پوشه‌های زیرمجموعه processed و raw
+         self.raw_user_tweets_dir = self.raw_root / "UserTweets"
+@@ -5658,7 +6292,8 @@ class StorageManager:
+         self.merged_dir = self.processed_root / "4_union"
+         self.endpoint_diffs_dir = self.processed_root / "5_replies_only"
+ 
+-        self._ensure_base_dirs()
++        if manage_sync_state or create_folders:
++            self._ensure_base_dirs()
+ 
+     def _ensure_base_dirs(self) -> None:
+         for path in [
+@@ -5913,6 +6548,26 @@ class StorageManager:
+             json.dump(payload if isinstance(payload, dict) else {}, f, ensure_ascii=False, indent=2)
+         return output_file
+ 
++    def save_search_result_page(
++        self,
++        search_slug: str,
++        product: str,
++        jalali_batch: str,
++        page_index: int,
++        payload: Dict[str, Any],
++    ) -> Path:
++        """Save a single SearchTimeline page to data/search/raw/{slug}/{product}/{batch}/page_{i}.json.
++
++        This method is dedicated to the search subsystem and must not reference
++        SET_FOLDER_MAP or any historical/live folder logic.
++        """
++        target = self.raw_root / search_slug / product.lower() / jalali_batch
++        target.mkdir(parents=True, exist_ok=True)
++        output_file = target / f"page_{page_index}.json"
++        with output_file.open("w", encoding="utf-8") as f:
++            json.dump(payload if isinstance(payload, dict) else {}, f, ensure_ascii=False, indent=2)
++        return output_file
++
+     def load_raw_pages_from_batch(self, batch_path: Any) -> List[Dict[str, Any]]:
+         path = Path(str(batch_path)) if batch_path else Path()
+         if not path.exists() or not path.is_dir():
+@@ -6486,15 +7141,15 @@ class StorageManager:
+         """Compatibility datetime helper with Jalali output when available."""
+         target = dt or datetime.utcnow()
+         return _format_jalali(target, "%Y-%m-%d %H:%M:%S")
+-```
++````
+ 
+ ## File: shared/exporters/__init__.py
+-```python
++````python
+ """Export helpers for text and structured output formatting."""
+-```
++````
+ 
+ ## File: shared/exporters/text_export_helper.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Translation-aware TXT export helpers.
+@@ -6621,10 +7276,10 @@ def choose_export_text(
+         }
+ 
+     return {"text": original, "note": None, "used_translation": False}
+-```
++````
+ 
+ ## File: shared/tools/check_replies_parity.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """Offline parity check for v4 UserTweetsAndReplies requests vs test_replies_endpoint.py."""
+ 
+@@ -6730,10 +7385,10 @@ def main() -> None:
+ 
+ if __name__ == "__main__":
+     main()
+-```
++````
+ 
+ ## File: shared/tools/diagnose_replies_only.py
+-```python
++````python
+ #!/usr/bin/env python3
+ """
+ Diagnose why UserTweetsAndReplies minus UserTweets is empty for an account.
+@@ -6830,18 +7485,488 @@ def main() -> None:
+ 
+ if __name__ == "__main__":
+     main()
+-```
++````
+ 
+ ## File: .gitignore
+-```
++````
+ data/
+ config/config.json
+ __pycache__/
+ .env
++````
++
++## File: AGENTS.md
++````markdown
++# TWEETER DATA FETCHING 4.0 — Project Index & Guide
++
++## Quick Navigation
++
++| Component | Description | Main File(s) |
++|-----------|-------------|--------------|
++| **Historical** | Fetches tweets from historical timelines | `historical_scripts/historical_runner.py` |
++| **Live** | Monitors live tweets with viral detection | `live_scripts/live_runner.py`, `live_scripts/live_storage.py` |
++| **Search** | Advanced search timeline monitoring | `search_scripts/search_runner.py` |
++| **Shared Core** | API manager, fetcher engine, utilities | `shared/core/*` |
++| **Shared Storage** | Data persistence and state management | `shared/data_pipeline/storage_manager.py` |
++| **Shared Config** | API keys, endpoints, tier configs | `shared/config/*` |
++
++## Data Storage Layout
++
++```
++data/
++├── historical_live/          # Historical + Live data (shared root)
++│   ├── raw/
++│   │   ├── UserTweets/
++│   │   └── UserTweetsAndReplies/
++│   ├── processed/
++│   │   ├── 1_user_tweets/
++│   │   ├── 2_user_tweets_and_replies/
++│   │   ├── 3_intersection/
++│   │   ├── 4_union/
++│   │   └── 5_replies_only/
++│   ├── reports/
++│   ├── state/                # Contains sync_state.json (historical/live only)
++│   └── viral/
++│       ├── snapshots/
++│       └── reports/
++└── search/                   # Search data (isolated from historical)
++    ├── raw/
++    │   └── {search_slug}/{product}/{jalali_batch}/
++    │       └── page_{i}.json
++    ├── processed/
++    │   └── {search_slug}/{product}/
++    │       ├── {slug}.json
++    │       └── {slug}.txt
++    ├── debug/
++    │   └── {search_slug}/{product}/
++    │       └── {slug}__debug_first_page_{name}.json
++    ├── reports/
++    └── state/
++        └── search_state.json
+ ```
+ 
+-## File: structure.txt
++> **Note:** Search data is isolated. It does NOT create `1_user_tweets/`, `2_user_tweets_and_replies/`, etc. These folders belong exclusively to historical/live processing.
++
++---
++
++## Common Workflows
++
++### Adding a New Twitter Account (Historical / Live)
++
++1. Open `shared/config/tier_config.py`.
++2. Find the tier category for your account (`tier_1`, `tier_2`, etc.).
++3. Add an entry as a dict:
++   ```python
++   {"username": "new_account", "polling_priority": 1}
++   ```
++   - `polling_priority` 1-7 determines the polling interval and safety caps.
++4. Save the file. The historical and live runners will pick it up automatically.
++
++### Adding or Editing a Search Query
++
++1. Open `shared/config/search_config.json`.
++2. Each entry is a search definition. To add a new one:
++   ```json
++   {
++     "name": "My New Search",
++     "enabled": true,
++     "product": "Latest",
++     "preserve_exact_query": false,
++     "raw_query": "your search terms here",
++     "polling_priority": 3,
++     "rolling_hours": 24,
++     "poll_interval_seconds": 600,
++     "include_keywords": ["keyword1", "keyword2"],
++     "exclude_keywords": ["spam", "bot"],
++     "exact_phrases": ["exact phrase to match"],
++     "from_account": "optional_username",
++     "to_account": "optional_username",
++     "hashtags": ["#hashtag"]
++   }
++   ```
++3. `preserve_exact_query: true` with `exact_query` field skips keyword parsing and uses the raw string as-is.
++4. `product` must be one of: `Top`, `Latest`, `Media`, `People`.
++5. Save and the search runner picks it up on its next cycle.
++
++### Updating API Cookies
++
++1. Open Twitter/X in your browser and log in.
++2. Open DevTools (F12) → Application tab → Cookies for `x.com`.
++3. Export these cookie values: `auth_token`, `ct0`, `guest_id`, `kdt`, `twid`.
++4. Run:
++   ```bash
++   python shared/auth/setup_api_cookies.py
++   ```
++   Or manually edit `shared/config/config.json` under the `api_cookies` key.
++5. **Important:** Cookies expire. If you see persistent 401/403 errors, refresh them.
++
++---
++
++## Troubleshooting & Debugging
++
++### Rate Limiting (HTTP 429)
++
++- All three modules implement exponential backoff on 429 responses.
++- `APIManager.rate_limit_sleep_seconds()` parses `x-rate-limit-reset` headers.
++- Default retry: 3 attempts with jitter.
++- If rate limits persist, reduce `polling_priority` (lower number = more aggressive = higher rate limit risk) or increase `poll_interval_seconds` in config.
++
++### Authentication Failures (401 / 403)
++
++- **Cause:** Expired cookies or revoked session.
++- **Fix:** Update cookies per "Updating API Cookies" workflow above.
++- Check `auth_token` and `ct0` in `shared/config/config.json`.
++
++### Cursor Exhaustion (HTTP 404)
++
++- **Normal:** Happens when you reach the end of available tweets.
++- **Partial:** Some pages fetched before a 404 — the runner marks it as `partial_cursor_404` and saves what it has.
++- **First-page 404:** Likely an invalid query or account does not exist.
++
++### Empty Pages / No Tweets
++
++- Check `rolling_hours` setting — a very narrow window may yield nothing.
++- Verify `raw_query` syntax is correct for the Twitter Search API.
++- Look at debug output: `data/search/debug/{slug}/{product}/{slug}__debug_first_page_*.json` shows entry type counts and skipped entries.
++
++### Logs
++
++| Log Location | Contents |
++|---|---|
++| `data/historical_live/logs/` | Historical fetch events, endpoint health, state updates |
++| `data/search/logs/` | Search fetch events and pagination details |
++| `data/historical_live/reports/` | Run report JSON files (per-run summaries) |
++| `data/search/reports/` | Search run report JSON files |
++
++---
++
++## Data Schema Reference
++
++### Tweet Object (Processed)
++
++Each tweet in processed JSON files contains these fields:
++
++| Field | Type | Source | Description |
++|-------|------|--------|-------------|
++| `id` | str | `rest_id` or `id` | Twitter tweet ID |
++| `text` | str | `legacy.full_text` | Tweet text content |
++| `created_at` | str | `legacy.created_at` | Twitter timestamp (RFC 2822) |
++| `raw_timestamp` | str | Parsed | ISO format timestamp for windowing |
++| `likes` | int | `legacy.favorite_count` | Like count |
++| `retweets` | int | `legacy.retweet_count` | Retweet count |
++| `replies` | int | `legacy.reply_count` | Reply count |
++| `quotes` | int | `legacy.quote_count` | Quote count |
++| `bookmarks` | int | `legacy.bookmark_count` | Bookmark count |
++| `views` | int | `views.count` | View count |
++| `type` | str | Computed | `tweet`, `retweet`, `reply`, or `quote` |
++| `source_endpoint` | str | Added by pipeline | Which endpoint produced this |
++
++### Raw Page Format
++
++Raw GraphQL response pages are saved as-is from Twitter's API. Structure:
++
++```json
++{
++  "data": {
++    "user": { ... },           // for UserTweets / UserTweetsAndReplies
++    "search_by_raw_query": {   // for SearchTimeline
++      "search_timeline": {
++        "timeline": {
++          "instructions": [ ... ]
++        }
++      }
++    }
++  },
++  "_attempts": 1,
++  "_status": 200,
++  "_error_samples": []
++}
++```
++
++### Processed Output Files
++
++| File | Description |
++|------|-------------|
++| `1_user_tweets.json` | Tweets from the user's timeline only |
++| `2_user_tweets_and_replies.json` | Tweets + replies from the user |
++| `3_intersection.json` | Tweets that appear in BOTH A and B |
++| `4_union.json` | All tweets from A ∪ B (deduplicated by ID) |
++| `5_replies_only.json` | Replies in B that are NOT in A (B - A) |
++
++---
++
++## Architecture Notes
++
++### Three Isolated Subsystems
++
++| Subsystem | State File | Storage Root |
++|-----------|-----------|--------------|
++| **Historical** | `sync_state.json` | `data/historical_live/` |
++| **Live** | `live_state.json`, `seen_tweets.json` | `data/historical_live/` |
++| **Search** | `search_state.json` | `data/search/` |
++
++Each subsystem is independently runnable. They do not share state files or interfere with each other.
++
++### The `subsystem` Parameter in `StorageManager`
++
++- `subsystem="historical"` or `subsystem="live"` → merges into `historical_live` storage root.
++- `subsystem="search"` → uses `data/search/` as its root.
++- This merging means historical and live share the same base directory but maintain separate state files via their own managers.
++
++### Search Module Isolation (Refactored June 2026)
++
++The search subsystem uses `StorageManager` with two safety flags:
++
++```python
++self.storage = StorageManager(
++    base_dir=self.project_root,
++    subsystem="search",
++    create_folders=False,       # Don't create the 5 historical processed folders
++    manage_sync_state=False,    # Don't touch sync_state.json
++)
++```
++
++- `save_search_result_page()` writes to `data/search/raw/{slug}/{product}/{batch}/page_{i}.json`.
++- `save_raw_page()` is the historical/live method — search should **never** call it.
++- `_ensure_base_dirs()` is skipped entirely, so `1_user_tweets/` etc. are never created.
++
++### Live Module Isolation
++
++`LiveStorageManager` (`live_scripts/live_storage.py`) manages its own state files independently:
++- `live_state.json` — account polling state (last cursor, status)
++- `seen_tweets.json` — deduplication set
++- `snapshot_index.json` — viral snapshot tracking
++- It wraps `StorageManager` internally for shared I/O (text export, batch naming) but owns all state.
++
++---
++
++## Environment & Dependencies
++
++### Prerequisites
++
++| Requirement | Details |
++|-------------|---------|
++| Python | 3.11+ (tested on 3.11) |
++| `pytz` | Timezone handling (Asia/Tehran is the default) |
++| `jdatetime` | Jalali calendar conversion (optional, fallback is built-in) |
++| `rich` | Optional — provides terminal UI formatting |
++
++Install dependencies:
++```bash
++pip3 install pytz
++pip3 install jdatetime    # optional, improves Jalali formatting
++pip3 install rich          # optional, improves terminal output
++```
++
++### Virtual Environment
++
++No virtualenv is configured by default. If you want one:
++```bash
++cd "/Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/TWEETER DATA FETCHING 4.0"
++python3 -m venv .venv
++source .venv/bin/activate
++pip install pytz jdatetime rich
++```
++
++### Timezone
++
++All timestamps use `Asia/Tehran` by default. Jalali (Persian) dates are used for batch naming and run IDs.
++
++---
++
++## Code Conventions & Patterns
++
++### Naming Patterns
++
++- **Slugs:** Generated via `StorageManager._normalize_username()` — strips `@`, removes special chars, lowercase.
++- **Batch names:** Jalali date format `YYYY-MM-DD` via `StorageManager._jalali_batch_name()`.
++- **Run IDs:** `run_YYYY-MM-DD_HH-MM-SS` using Jalali time.
++
++### Error Handling Pattern
++
++All network modules use a consistent pattern:
++```python
++{
++    "_failure": "error_category",      # descriptive error reason
++    "_status": 429,                    # HTTP status code (or None)
++    "_attempts": 3,                    # total attempts made
++    "_error_samples": [ ... ],         # last 5 error details
++}
++```
++
++Common `_failure` values:
++| Value | Meaning |
++|-------|---------|
++| `failed_initial_auth` | First request returned 401/403 |
++| `failed_initial_rate_limit` | First request returned 429 |
++| `partial_cursor_404` | Some pages fetched, then cursor 404'd |
++| `partial_rate_limited` | Rate limit persisted after pages |
++| `success_search_window_crossed` | Search found tweets outside the time window |
++| `repeated_cursor_history` | Cursor loop detected in pagination |
++
++### Fetcher Engine Configuration Flow
++
+ ```
++config.json
++    → APIManager (loads cookies, tokens, query IDs)
++        → FetcherEngine (creates APIManager, sets up session, pagination caps)
++            → StorageManager (creates via FetcherEngine, gets base_dir and subsystem)
++```
++
++Each runner instantiates `FetcherEngine` → `APIManager` → `StorageManager` in that order. Config is read once from `shared/config/config.json`.
++
++### Query ID Resolution
++
++Endpoint-specific query IDs (e.g., `UserTweets`, `SearchTimeline`) are looked up via `APIManager.get_query_id(endpoint)` from the `api_config` section of `config.json`. If missing, the runner raises `RuntimeError`.
++
++---
++
++## Key Files Reference
++
++### Entry Points (Run These)
++
++| File | Purpose | Usage |
++|------|---------|-------|
++| `historical_scripts/historical_runner.py` | Fetches historical tweets for configured accounts | Run standalone |
++| `live_scripts/live_runner.py` | Monitors live tweets, detects viral content | Run as continuous service |
++| `search_scripts/search_runner.py` | Fetches search results via Advanced Search API | Run with `--once` or continuous mode |
++
++### Shared Infrastructure
++
++| File | Purpose | Key Classes/Functions |
++|------|---------|----------------------|
++| `shared/core/api_manager.py` | HTTP session, rate limiting, auth headers | `APIManager` |
++| `shared/core/fetcher_engine.py` | Fetches pages, handles pagination, windowing | `FetcherEngine` |
++| `shared/data_pipeline/storage_manager.py` | Raw page saving, processed tweet output, state management | `StorageManager` |
++| `shared/core/set_operations.py` | Tweet set operations (intersection, union, diff) | `TweetSetProcessor` |
++| `shared/core/windowing.py` | Rolling time window evaluation | `RollingWindowEvaluator` |
++
++### Live Module (Isolated)
++
++| File | Purpose | Key Classes |
++|------|---------|-------------|
++| `live_scripts/live_storage.py` | Live state management, viral snapshots | `LiveStorageManager` |
++| `live_scripts/viral_detector.py` | Viral tweet detection logic | `ViralDetector` |
++
++### Search Module (Isolated)
++
++| File | Purpose | Key Classes |
++|------|---------|-------------|
++| `search_scripts/search_runner.py` | Search timeline monitoring, pagination, export | `SearchTimelineMonitor`, `SearchQueryBuilder` |
++
++### Configuration
++
++| File | Contents |
++|------|----------|
++| `shared/config/config.json` | API cookies, auth tokens, query IDs, feature flags |
++| `shared/config/search_config.json` | Search queries, polling intervals, products |
++| `shared/config/tier_config.py` | Account tiers, priority policies, pagination settings |
++
++> **Warning:** `config.json` contains sensitive credentials (auth tokens, cookies). Do not commit to version control.
++
++---
++
++## Running the Project
++
++### Prerequisites
++- Python 3.11+
++- `pytz` installed (`pip3 install pytz`)
++- Valid API cookies (configure via `shared/auth/setup_api_cookies.py`)
++
++### Running Each Component
++
++```bash
++# Historical fetcher
++python historical_scripts/historical_runner.py
++
++# Live monitor (continuous)
++python live_scripts/live_runner.py
++
++# Search monitor (one shot)
++python search_scripts/search_runner.py --once
++
++# Search monitor (continuous)
++python search_scripts/search_runner.py --check-interval 60
++
++# Search monitor (specific queries only)
++python search_scripts/search_runner.py --once --only "My Search Name"
++```
++
++---
++
++## Full Directory Tree
++
++```
++.
++├── historical_scripts/
++│   └── historical_runner.py
++├── live_scripts/
++│   ├── live_runner.py
++│   ├── live_storage.py
++│   └── viral_detector.py
++├── search_scripts/
++│   └── search_runner.py
++├── shared/
++│   ├── auth/
++│   │   ├── __init__.py
++│   │   ├── session_updater.py
++│   │   └── setup_api_cookies.py
++│   ├── config/
++│   │   ├── __init__.py
++│   │   ├── config.json
++│   │   ├── search_config.json
++│   │   └── tier_config.py
++│   ├── core/
++│   │   ├── __init__.py
++│   │   ├── api_manager.py
++│   │   ├── fetcher_engine.py
++│   │   ├── set_operations.py
++│   │   └── windowing.py
++│   ├── data_pipeline/
++│   │   ├── __init__.py
++│   │   └── storage_manager.py
++│   ├── exporters/
++│   │   ├── __init__.py
++│   │   └── text_export_helper.py
++│   └── tools/
++│       ├── check_replies_parity.py
++│       └── diagnose_replies_only.py
++├── data/                     # Generated data (not committed)
++├── logs/                     # Generated logs (not committed)
++├── structure.txt             # Legacy project structure doc
++└── repomix-output.md         # Packed repo output
++```
++
++---
++
++## State Management Matrix
++
++| State File | Managed By | Location | Notes |
++|------------|------------|----------|-------|
++| `sync_state.json` | Historical/Live only (`StorageManager`, `manage_sync_state=True`) | `data/historical_live/state/` | Tracks endpoint cursors per account |
++| `search_state.json` | Search only (`SearchTimelineMonitor`) | `data/search/state/` | Tracks last check time and tweet counts per search |
++| `live_state.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Per-account polling state |
++| `seen_tweets.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Tweet deduplication set |
++| `snapshot_index.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Index of viral snapshots |
++
++---
++
++## Recent Refactoring (June 2026)
++
++The search subsystem was refactored to fix three architectural flaws:
++
++1. **Search Storage Isolation:** Search now uses `save_search_result_page()` instead of `save_raw_page()`, saving to `data/search/raw/...` only.
++2. **State Management Isolation:** `StorageManager` now accepts `manage_sync_state=False` to prevent `sync_state.json` access by search.
++3. **Folder Creation Isolation:** `StorageManager` now accepts `create_folders=False` to prevent the 5 standard user-data folders from being created by search.
++
++### Modified Files
++
++- `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
++- `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
++````
++
++## File: structure.txt
++````
+ 📁 TWEETER DATA FETCHING 4.0/
+ ├── 📁 data/
+ │   ├── 📁 historical_live/
+@@ -6893,4 +8018,1384 @@ __pycache__/
+     └── 📁 tools/
+         ├── 📄 check_replies_parity.py
+         └── 📄 diagnose_replies_only.py
++````
++
++
++# Git Diffs
++## Git Diffs Working Tree
++```diff
++diff --git a/TWEETER DATA FETCHING 4.0/AGENTS.md b/TWEETER DATA FETCHING 4.0/AGENTS.md
++index b36b96c..1e5f2da 100644
++--- a/TWEETER DATA FETCHING 4.0/AGENTS.md	
+++++ b/TWEETER DATA FETCHING 4.0/AGENTS.md	
++@@ -1,4 +1,4 @@
++-# TWEETER DATA FETCHING 4.0 — Project Index
+++# TWEETER DATA FETCHING 4.0 — Project Index & Guide
++ 
++ ## Quick Navigation
++ 
++@@ -48,6 +48,280 @@ data/
++ 
++ > **Note:** Search data is isolated. It does NOT create `1_user_tweets/`, `2_user_tweets_and_replies/`, etc. These folders belong exclusively to historical/live processing.
++ 
+++---
+++
+++## Common Workflows
+++
+++### Adding a New Twitter Account (Historical / Live)
+++
+++1. Open `shared/config/tier_config.py`.
+++2. Find the tier category for your account (`tier_1`, `tier_2`, etc.).
+++3. Add an entry as a dict:
+++   ```python
+++   {"username": "new_account", "polling_priority": 1}
+++   ```
+++   - `polling_priority` 1-7 determines the polling interval and safety caps.
+++4. Save the file. The historical and live runners will pick it up automatically.
+++
+++### Adding or Editing a Search Query
+++
+++1. Open `shared/config/search_config.json`.
+++2. Each entry is a search definition. To add a new one:
+++   ```json
+++   {
+++     "name": "My New Search",
+++     "enabled": true,
+++     "product": "Latest",
+++     "preserve_exact_query": false,
+++     "raw_query": "your search terms here",
+++     "polling_priority": 3,
+++     "rolling_hours": 24,
+++     "poll_interval_seconds": 600,
+++     "include_keywords": ["keyword1", "keyword2"],
+++     "exclude_keywords": ["spam", "bot"],
+++     "exact_phrases": ["exact phrase to match"],
+++     "from_account": "optional_username",
+++     "to_account": "optional_username",
+++     "hashtags": ["#hashtag"]
+++   }
+++   ```
+++3. `preserve_exact_query: true` with `exact_query` field skips keyword parsing and uses the raw string as-is.
+++4. `product` must be one of: `Top`, `Latest`, `Media`, `People`.
+++5. Save and the search runner picks it up on its next cycle.
+++
+++### Updating API Cookies
+++
+++1. Open Twitter/X in your browser and log in.
+++2. Open DevTools (F12) → Application tab → Cookies for `x.com`.
+++3. Export these cookie values: `auth_token`, `ct0`, `guest_id`, `kdt`, `twid`.
+++4. Run:
+++   ```bash
+++   python shared/auth/setup_api_cookies.py
+++   ```
+++   Or manually edit `shared/config/config.json` under the `api_cookies` key.
+++5. **Important:** Cookies expire. If you see persistent 401/403 errors, refresh them.
+++
+++---
+++
+++## Troubleshooting & Debugging
+++
+++### Rate Limiting (HTTP 429)
+++
+++- All three modules implement exponential backoff on 429 responses.
+++- `APIManager.rate_limit_sleep_seconds()` parses `x-rate-limit-reset` headers.
+++- Default retry: 3 attempts with jitter.
+++- If rate limits persist, reduce `polling_priority` (lower number = more aggressive = higher rate limit risk) or increase `poll_interval_seconds` in config.
+++
+++### Authentication Failures (401 / 403)
+++
+++- **Cause:** Expired cookies or revoked session.
+++- **Fix:** Update cookies per "Updating API Cookies" workflow above.
+++- Check `auth_token` and `ct0` in `shared/config/config.json`.
+++
+++### Cursor Exhaustion (HTTP 404)
+++
+++- **Normal:** Happens when you reach the end of available tweets.
+++- **Partial:** Some pages fetched before a 404 — the runner marks it as `partial_cursor_404` and saves what it has.
+++- **First-page 404:** Likely an invalid query or account does not exist.
+++
+++### Empty Pages / No Tweets
+++
+++- Check `rolling_hours` setting — a very narrow window may yield nothing.
+++- Verify `raw_query` syntax is correct for the Twitter Search API.
+++- Look at debug output: `data/search/debug/{slug}/{product}/{slug}__debug_first_page_*.json` shows entry type counts and skipped entries.
+++
+++### Logs
+++
+++| Log Location | Contents |
+++|---|---|
+++| `data/historical_live/logs/` | Historical fetch events, endpoint health, state updates |
+++| `data/search/logs/` | Search fetch events and pagination details |
+++| `data/historical_live/reports/` | Run report JSON files (per-run summaries) |
+++| `data/search/reports/` | Search run report JSON files |
+++
+++---
+++
+++## Data Schema Reference
+++
+++### Tweet Object (Processed)
+++
+++Each tweet in processed JSON files contains these fields:
+++
+++| Field | Type | Source | Description |
+++|-------|------|--------|-------------|
+++| `id` | str | `rest_id` or `id` | Twitter tweet ID |
+++| `text` | str | `legacy.full_text` | Tweet text content |
+++| `created_at` | str | `legacy.created_at` | Twitter timestamp (RFC 2822) |
+++| `raw_timestamp` | str | Parsed | ISO format timestamp for windowing |
+++| `likes` | int | `legacy.favorite_count` | Like count |
+++| `retweets` | int | `legacy.retweet_count` | Retweet count |
+++| `replies` | int | `legacy.reply_count` | Reply count |
+++| `quotes` | int | `legacy.quote_count` | Quote count |
+++| `bookmarks` | int | `legacy.bookmark_count` | Bookmark count |
+++| `views` | int | `views.count` | View count |
+++| `type` | str | Computed | `tweet`, `retweet`, `reply`, or `quote` |
+++| `source_endpoint` | str | Added by pipeline | Which endpoint produced this |
+++
+++### Raw Page Format
+++
+++Raw GraphQL response pages are saved as-is from Twitter's API. Structure:
+++
+++```json
+++{
+++  "data": {
+++    "user": { ... },           // for UserTweets / UserTweetsAndReplies
+++    "search_by_raw_query": {   // for SearchTimeline
+++      "search_timeline": {
+++        "timeline": {
+++          "instructions": [ ... ]
+++        }
+++      }
+++    }
+++  },
+++  "_attempts": 1,
+++  "_status": 200,
+++  "_error_samples": []
+++}
+++```
+++
+++### Processed Output Files
+++
+++| File | Description |
+++|------|-------------|
+++| `1_user_tweets.json` | Tweets from the user's timeline only |
+++| `2_user_tweets_and_replies.json` | Tweets + replies from the user |
+++| `3_intersection.json` | Tweets that appear in BOTH A and B |
+++| `4_union.json` | All tweets from A ∪ B (deduplicated by ID) |
+++| `5_replies_only.json` | Replies in B that are NOT in A (B - A) |
+++
+++---
+++
+++## Architecture Notes
+++
+++### Three Isolated Subsystems
+++
+++| Subsystem | State File | Storage Root |
+++|-----------|-----------|--------------|
+++| **Historical** | `sync_state.json` | `data/historical_live/` |
+++| **Live** | `live_state.json`, `seen_tweets.json` | `data/historical_live/` |
+++| **Search** | `search_state.json` | `data/search/` |
+++
+++Each subsystem is independently runnable. They do not share state files or interfere with each other.
+++
+++### The `subsystem` Parameter in `StorageManager`
+++
+++- `subsystem="historical"` or `subsystem="live"` → merges into `historical_live` storage root.
+++- `subsystem="search"` → uses `data/search/` as its root.
+++- This merging means historical and live share the same base directory but maintain separate state files via their own managers.
+++
+++### Search Module Isolation (Refactored June 2026)
+++
+++The search subsystem uses `StorageManager` with two safety flags:
+++
+++```python
+++self.storage = StorageManager(
+++    base_dir=self.project_root,
+++    subsystem="search",
+++    create_folders=False,       # Don't create the 5 historical processed folders
+++    manage_sync_state=False,    # Don't touch sync_state.json
+++)
+++```
+++
+++- `save_search_result_page()` writes to `data/search/raw/{slug}/{product}/{batch}/page_{i}.json`.
+++- `save_raw_page()` is the historical/live method — search should **never** call it.
+++- `_ensure_base_dirs()` is skipped entirely, so `1_user_tweets/` etc. are never created.
+++
+++### Live Module Isolation
+++
+++`LiveStorageManager` (`live_scripts/live_storage.py`) manages its own state files independently:
+++- `live_state.json` — account polling state (last cursor, status)
+++- `seen_tweets.json` — deduplication set
+++- `snapshot_index.json` — viral snapshot tracking
+++- It wraps `StorageManager` internally for shared I/O (text export, batch naming) but owns all state.
+++
+++---
+++
+++## Environment & Dependencies
+++
+++### Prerequisites
+++
+++| Requirement | Details |
+++|-------------|---------|
+++| Python | 3.11+ (tested on 3.11) |
+++| `pytz` | Timezone handling (Asia/Tehran is the default) |
+++| `jdatetime` | Jalali calendar conversion (optional, fallback is built-in) |
+++| `rich` | Optional — provides terminal UI formatting |
+++
+++Install dependencies:
+++```bash
+++pip3 install pytz
+++pip3 install jdatetime    # optional, improves Jalali formatting
+++pip3 install rich          # optional, improves terminal output
+++```
+++
+++### Virtual Environment
+++
+++No virtualenv is configured by default. If you want one:
+++```bash
+++cd "/Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/TWEETER DATA FETCHING 4.0"
+++python3 -m venv .venv
+++source .venv/bin/activate
+++pip install pytz jdatetime rich
+++```
+++
+++### Timezone
+++
+++All timestamps use `Asia/Tehran` by default. Jalali (Persian) dates are used for batch naming and run IDs.
+++
+++---
+++
+++## Code Conventions & Patterns
+++
+++### Naming Patterns
+++
+++- **Slugs:** Generated via `StorageManager._normalize_username()` — strips `@`, removes special chars, lowercase.
+++- **Batch names:** Jalali date format `YYYY-MM-DD` via `StorageManager._jalali_batch_name()`.
+++- **Run IDs:** `run_YYYY-MM-DD_HH-MM-SS` using Jalali time.
+++
+++### Error Handling Pattern
+++
+++All network modules use a consistent pattern:
+++```python
+++{
+++    "_failure": "error_category",      # descriptive error reason
+++    "_status": 429,                    # HTTP status code (or None)
+++    "_attempts": 3,                    # total attempts made
+++    "_error_samples": [ ... ],         # last 5 error details
+++}
+++```
+++
+++Common `_failure` values:
+++| Value | Meaning |
+++|-------|---------|
+++| `failed_initial_auth` | First request returned 401/403 |
+++| `failed_initial_rate_limit` | First request returned 429 |
+++| `partial_cursor_404` | Some pages fetched, then cursor 404'd |
+++| `partial_rate_limited` | Rate limit persisted after pages |
+++| `success_search_window_crossed` | Search found tweets outside the time window |
+++| `repeated_cursor_history` | Cursor loop detected in pagination |
+++
+++### Fetcher Engine Configuration Flow
+++
+++```
+++config.json
+++    → APIManager (loads cookies, tokens, query IDs)
+++        → FetcherEngine (creates APIManager, sets up session, pagination caps)
+++            → StorageManager (creates via FetcherEngine, gets base_dir and subsystem)
+++```
+++
+++Each runner instantiates `FetcherEngine` → `APIManager` → `StorageManager` in that order. Config is read once from `shared/config/config.json`.
+++
+++### Query ID Resolution
+++
+++Endpoint-specific query IDs (e.g., `UserTweets`, `SearchTimeline`) are looked up via `APIManager.get_query_id(endpoint)` from the `api_config` section of `config.json`. If missing, the runner raises `RuntimeError`.
+++
+++---
+++
++ ## Key Files Reference
++ 
++ ### Entry Points (Run These)
++@@ -75,17 +349,13 @@ data/
++ | `live_scripts/live_storage.py` | Live state management, viral snapshots | `LiveStorageManager` |
++ | `live_scripts/viral_detector.py` | Viral tweet detection logic | `ViralDetector` |
++ 
++-> **Note:** `LiveStorageManager` manages its own state files (`live_state.json`, `seen_tweets.json`, `snapshot_index.json`) independently from `StorageManager`.
++-
++ ### Search Module (Isolated)
++ 
++ | File | Purpose | Key Classes |
++ |------|---------|-------------|
++ | `search_scripts/search_runner.py` | Search timeline monitoring, pagination, export | `SearchTimelineMonitor`, `SearchQueryBuilder` |
++ 
++-> **Note:** Search uses `StorageManager` with `create_folders=False` and `manage_sync_state=False` to avoid side effects.
++-
++-## Configuration Files
+++### Configuration
++ 
++ | File | Contents |
++ |------|----------|
++@@ -95,27 +365,7 @@ data/
++ 
++ > **Warning:** `config.json` contains sensitive credentials (auth tokens, cookies). Do not commit to version control.
++ 
++-## State Management
++-
++-| State File | Managed By | Location |
++-|------------|------------|----------|
++-| `sync_state.json` | Historical/Live only (`StorageManager` with `manage_sync_state=True`) | `data/historical_live/state/` |
++-| `search_state.json` | Search only | `data/search/state/` |
++-| `live_state.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` |
++-| `seen_tweets.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` |
++-
++-## Recent Refactoring (June 2026)
++-
++-The search subsystem was refactored to fix three architectural flaws:
++-
++-1. **Search Storage Isolation:** Search now uses `save_search_result_page()` instead of `save_raw_page()`, saving to `data/search/raw/...` only.
++-2. **State Management Isolation:** `StorageManager` now accepts `manage_sync_state=False` to prevent `sync_state.json` access by search.
++-3. **Folder Creation Isolation:** `StorageManager` now accepts `create_folders=False` to prevent the 5 standard user-data folders from being created by search.
++-
++-### Modified Files (Refactoring)
++-
++-- `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
++-- `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
+++---
++ 
++ ## Running the Project
++ 
++@@ -138,8 +388,13 @@ python search_scripts/search_runner.py --once
++ 
++ # Search monitor (continuous)
++ python search_scripts/search_runner.py --check-interval 60
+++
+++# Search monitor (specific queries only)
+++python search_scripts/search_runner.py --once --only "My Search Name"
++ ```
++ 
+++---
+++
++ ## Full Directory Tree
++ 
++ ```
++@@ -183,9 +438,30 @@ python search_scripts/search_runner.py --check-interval 60
++ └── repomix-output.md         # Packed repo output
++ ```
++ 
++-## Key Architectural Decisions
+++---
+++
+++## State Management Matrix
+++
+++| State File | Managed By | Location | Notes |
+++|------------|------------|----------|-------|
+++| `sync_state.json` | Historical/Live only (`StorageManager`, `manage_sync_state=True`) | `data/historical_live/state/` | Tracks endpoint cursors per account |
+++| `search_state.json` | Search only (`SearchTimelineMonitor`) | `data/search/state/` | Tracks last check time and tweet counts per search |
+++| `live_state.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Per-account polling state |
+++| `seen_tweets.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Tweet deduplication set |
+++| `snapshot_index.json` | Live only (`LiveStorageManager`) | `data/historical_live/state/` | Index of viral snapshots |
+++
+++---
+++
+++## Recent Refactoring (June 2026)
+++
+++The search subsystem was refactored to fix three architectural flaws:
+++
+++1. **Search Storage Isolation:** Search now uses `save_search_result_page()` instead of `save_raw_page()`, saving to `data/search/raw/...` only.
+++2. **State Management Isolation:** `StorageManager` now accepts `manage_sync_state=False` to prevent `sync_state.json` access by search.
+++3. **Folder Creation Isolation:** `StorageManager` now accepts `create_folders=False` to prevent the 5 standard user-data folders from being created by search.
+++
+++### Modified Files
+++
+++- `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
+++- `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
++ 
++-1. **Three isolated subsystems:** Historical, Live, and Search each have their own state and storage.
++-2. **Shared infrastructure:** `StorageManager`, `APIManager`, `FetcherEngine` are shared but configurable via parameters.
++-3. **Search isolation:** Search subsystem uses `StorageManager` with `manage_sync_state=False` and `create_folders=False` to avoid polluting historical/live state and directories.
++-4. **Live isolation:** `LiveStorageManager` encapsulates all live-specific state (`live_state.json`, `seen_tweets.json`, snapshots) independently.
++diff --git a/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py b/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py
++index 58ba46b..d03c6c3 100644
++--- a/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py	
+++++ b/TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py	
++@@ -16,6 +16,16 @@ from datetime import datetime, timedelta
++ from pathlib import Path
++ from typing import Any, Dict, List, Optional
++ 
+++try:
+++    from rich.console import Console
+++    from rich.panel import Panel
+++    from rich.table import Table
+++except Exception:
+++    Console = None
+++    Panel = None
+++    Table = None
+++
+++
++ PROJECT_ROOT = Path(__file__).resolve().parents[1]
++ if str(PROJECT_ROOT) not in sys.path:
++     sys.path.insert(0, str(PROJECT_ROOT))
++@@ -28,6 +38,87 @@ from live_scripts.live_storage import LiveStorageManager
++ from live_scripts.viral_detector import ViralDetector
++ 
++ 
+++V4_PREFIX = "[V4]"
+++
+++
+++class LiveConsole:
+++    """Rich-first console output for LiveMonitor, with plain-text fallback."""
+++
+++    def __init__(self) -> None:
+++        self.rich_enabled = Console is not None
+++        self.console = Console() if self.rich_enabled else None
+++
+++    def banner(self, title: str) -> None:
+++        if self.rich_enabled and Panel is not None:
+++            self.console.print(Panel.fit(title, title="V4 Live Monitor", border_style="magenta"))
+++        else:
+++            sep = "=" * 70
+++            print(f"{V4_PREFIX} {title}")
+++            print(sep)
+++
+++    def info(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
+++        else:
+++            print(f"{V4_PREFIX} {message}")
+++
+++    def success(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
+++        else:
+++            print(f"{V4_PREFIX} \u2713 {message}")
+++
+++    def warning(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
+++        else:
+++            print(f"{V4_PREFIX} \u26a0 {message}")
+++
+++    def error(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
+++        else:
+++            print(f"{V4_PREFIX} \u2717 {message}")
+++
+++    def account_summary(self, username: str, account_report: Dict[str, Any]) -> None:
+++        """Print a summary for a single account after a cycle."""
+++        status = account_report.get("status", "unknown")
+++        sets = account_report.get("sets", {})
+++        new_tweets = account_report.get("new_tweets", {})
+++        endpoints = account_report.get("endpoints", {})
+++
+++        print()
+++        if self.rich_enabled and Table is not None:
+++            table = Table(title=f"Account: @{username} [{status.upper()}]", show_lines=False)
+++            table.add_column("Metric", style="cyan")
+++            table.add_column("Value", style="white")
+++            table.add_row("Status", status)
+++            table.add_row("Priority", str(account_report.get("priority", "")))
+++            table.add_row("Tweets (union)", str(sets.get("4_union", 0)))
+++            table.add_row("Tweets (intersection)", str(sets.get("3_intersection", 0)))
+++            table.add_row("Tweets (new this cycle)", str(new_tweets.get("new", 0)))
+++            table.add_row("Duplicates", str(new_tweets.get("duplicates", 0)))
+++            table.add_row("Viral Reports", str(new_tweets.get("viral_reports", 0)))
+++            for ep, ep_data in endpoints.items():
+++                pages = ep_data.get("pages_fetched", 0)
+++                http_status = ep_data.get("last_http_status", "N/A")
+++                reason = ep_data.get("outcome", "")
+++                table.add_row(f"Endpoint: {ep}", f"pages={pages} status={http_status}")
+++            self.console.print(table)
+++        else:
+++            print(f"{V4_PREFIX} @{username} [{status.upper()}]")
+++            print(f"{V4_PREFIX}   Priority: {account_report.get('priority', '')}")
+++            print(f"{V4_PREFIX}   Tweets (union): {sets.get('4_union', 0)}")
+++            print(f"{V4_PREFIX}   Tweets (intersection): {sets.get('3_intersection', 0)}")
+++            print(f"{V4_PREFIX}   New this cycle: {new_tweets.get('new', 0)}")
+++            print(f"{V4_PREFIX}   Duplicates: {new_tweets.get('duplicates', 0)}")
+++            print(f"{V4_PREFIX}   Viral Reports: {new_tweets.get('viral_reports', 0)}")
+++            for ep, ep_data in endpoints.items():
+++                pages = ep_data.get("pages_fetched", 0)
+++                http_status = ep_data.get("last_http_status", "N/A")
+++                print(f"{V4_PREFIX}   Endpoint {ep}: pages={pages} status={http_status}")
+++
+++
++ class LiveMonitor:
++     """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
++ 
++@@ -36,6 +127,7 @@ class LiveMonitor:
++     def __init__(self, config_path: str = "shared/config/config.json"):
++         self.project_root = Path(__file__).resolve().parents[1]
++         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
+++        self.console = LiveConsole()
++         self.api_manager = self.fetcher.api_manager
++         self.config = self.api_manager.config
++         self.account_map, self.priority_policies = load_tier_config(self.config)
++@@ -333,11 +425,17 @@ class LiveMonitor:
++             if analysis:
++                 self.live_storage.save_viral_report(analysis)
++                 viral_reports += 1
+++        if new_count > 0:
+++            self.console.success(f"New tweets for @{username}: {new_count}")
+++        if viral_reports > 0:
+++            self.console.info(f"Viral reports for @{username}: {viral_reports}")
++         return {"new": new_count, "duplicates": duplicate_count, "viral_reports": viral_reports}
++ 
++     def monitor_account(self, username: str) -> Dict[str, Any]:
++         policy = get_priority_policy(username, self.account_map, self.priority_policies)
++         live_window_hours = int(policy.get("live_window_hours", 24))
+++        prio = policy.get("priority", "")
+++        self.console.info(f"Starting @{username} (priority={prio}, window={live_window_hours}h)")
++         result: Dict[str, Any] = {
++             "account": username,
++             "priority": policy.get("priority"),
++@@ -347,6 +445,7 @@ class LiveMonitor:
++         try:
++             user_id = self._get_live_user_id(username)
++         except Exception as exc:
+++            self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
++             result["status"] = "failed"
++             result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
++             self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
++@@ -382,6 +481,7 @@ class LiveMonitor:
++ 
++     def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
++         selected = only_accounts or self.accounts
+++        self.console.banner(f"Cycle started: {len(selected)} account(s)")
++         report = {
++             "started_at": datetime.utcnow().isoformat() + "Z",
++             "accounts": {},
++@@ -391,6 +491,7 @@ class LiveMonitor:
++             if not self.should_fetch_account(username):
++                 report["summary"]["skipped"] += 1
++                 continue
+++            self.console.info(f"Processing @{username}...")
++             account_report = self.monitor_account(username)
++             report["accounts"][username] = account_report
++             report["summary"]["checked"] += 1
++@@ -398,13 +499,21 @@ class LiveMonitor:
++                 report["summary"]["failed"] += 1
++             self.api_manager.human_delay("between_accounts")
++         report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+++
+++        # Print summary after cycle
+++        self.console.banner(f"Cycle complete: {report['summary']}")
+++        for username in selected:
+++            if username in report.get("accounts", {}):
+++                self.console.account_summary(username, report["accounts"][username])
+++        if not report.get("accounts"):
+++            self.console.warning("No accounts were processed in this cycle")
+++
++         return report
++ 
++     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:
++-        print("Starting v4 live monitor. Press Ctrl+C to stop.")
+++        self.console.banner("Starting v4 live monitor. Press Ctrl+C to stop.")
++         while True:
++             report = self.run_cycle(only_accounts=only_accounts)
++-            print(f"Live cycle complete: {report['summary']}")
++             sim = self.config.get("anti_bot_simulation", {})
++             if sim.get("enabled", True):
++                 delays = sim.get("delays_seconds", {})
++@@ -432,7 +541,7 @@ def main() -> None:
++     args = parse_args()
++     monitor = LiveMonitor(config_path=args.config)
++     if args.once:
++-        print(monitor.run_cycle(only_accounts=args.accounts))
+++        report = monitor.run_cycle(only_accounts=args.accounts)
++     else:
++         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
++ 
++diff --git a/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py b/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py
++index d01e831..587f31c 100644
++--- a/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py	
+++++ b/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py	
++@@ -19,6 +19,17 @@ from pathlib import Path
++ from typing import Any, Dict, List, Optional, Set
++ from urllib.parse import quote, urlencode
++ 
+++try:
+++    from rich.console import Console
+++    from rich.panel import Panel
+++    from rich.table import Table
+++except Exception:
+++    Console = None
+++    Panel = None
+++    Table = None
+++
+++
+++
++ PROJECT_ROOT = Path(__file__).resolve().parents[1]
++ if str(PROJECT_ROOT) not in sys.path:
++     sys.path.insert(0, str(PROJECT_ROOT))
++@@ -75,6 +86,85 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = {
++ }
++ 
++ 
+++V4_PREFIX = "[V4]"
+++
+++
+++class SearchConsole:
+++    """Rich-first console output for SearchTimelineMonitor, with plain-text fallback."""
+++
+++    def __init__(self) -> None:
+++        self.rich_enabled = Console is not None
+++        self.console = Console() if self.rich_enabled else None
+++
+++    def banner(self, title: str) -> None:
+++        if self.rich_enabled and Panel is not None:
+++            self.console.print(Panel.fit(title, title="V4 Search Monitor", border_style="magenta"))
+++        else:
+++            sep = "=" * 70
+++            print(f"{V4_PREFIX} {title}")
+++            print(sep)
+++
+++    def info(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
+++        else:
+++            print(f"{V4_PREFIX} {message}")
+++
+++    def success(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
+++        else:
+++            print(f"{V4_PREFIX} \u2713 {message}")
+++
+++    def warning(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
+++        else:
+++            print(f"{V4_PREFIX} \u26a0 {message}")
+++
+++    def error(self, message: str) -> None:
+++        if self.rich_enabled:
+++            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
+++        else:
+++            print(f"{V4_PREFIX} \u2717 {message}")
+++
+++    def summary(self, report: Dict[str, Any]) -> None:
+++        """Print a search report summary."""
+++        print()
+++        if self.rich_enabled and Table is not None:
+++            table = Table(
+++                title=f"Search Report: {report.get('search', 'Unknown')}",
+++                show_lines=False,
+++            )
+++            table.add_column("Metric", style="cyan")
+++            table.add_column("Value", style="white")
+++            table.add_row("Slug", report.get("slug", ""))
+++            table.add_row("Product", report.get("product", ""))
+++            table.add_row("Raw Query", report.get("raw_query", ""))
+++            table.add_row(
+++                "Tweets Found",
+++                str(report.get("counts", {}).get("tweets", 0)),
+++            )
+++            meta = report.get("metadata", {})
+++            table.add_row("Pages Saved", f"{meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
+++            table.add_row("Exhausted Reason", str(meta.get("exhausted_reason", "")))
+++            table.add_row("Attempts", str(meta.get("attempts", 0)))
+++            last_status = meta.get("last_http_status")
+++            table.add_row("Last HTTP Status", str(last_status) if last_status else "N/A")
+++            self.console.print(table)
+++        else:
+++            print(f"{V4_PREFIX} Report for: {report.get('search', 'Unknown')}")
+++            print(f"{V4_PREFIX}   Slug: {report.get('slug', '')}")
+++            print(f"{V4_PREFIX}   Product: {report.get('product', '')}")
+++            print(f"{V4_PREFIX}   Tweets Found: {report.get('counts', {}).get('tweets', 0)}")
+++            meta = report.get("metadata", {})
+++            print(f"{V4_PREFIX}   Pages Saved: {meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
+++            print(f"{V4_PREFIX}   Exhausted Reason: {meta.get('exhausted_reason', 'unknown')}")
+++        outputs = report.get("outputs", {})
+++        if outputs:
+++            print(f"{V4_PREFIX}   Outputs: {', '.join(outputs.values())}")
+++
+++
++ class SearchQueryBuilder:
++     """Build SearchTimeline rawQuery and browser URL from search definitions."""
++ 
++@@ -187,6 +277,7 @@ class SearchTimelineMonitor:
++         self.reports_root = self.search_root / "reports"
++         self.state_file = self.search_root / "state" / "search_state.json"
++         self.search_state = self._load_json(self.state_file, {})
+++        self.console = SearchConsole()
++         for path in [self.raw_root, self.processed_root, self.debug_root, self.reports_root, self.state_file.parent]:
++             path.mkdir(parents=True, exist_ok=True)
++ 
++@@ -583,6 +674,8 @@ class SearchTimelineMonitor:
++         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
++         policy = self._policy_for_search(search_def)
++         batch_dir = self._raw_batch_dir(slug, product)
+++        self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
+++        self.console.info(f"  Query: {raw_query}")
++         seen_ids: Set[str] = set()
++         cursor: Optional[str] = None
++         cursor_history: Set[str] = set()
++@@ -625,6 +718,8 @@ class SearchTimelineMonitor:
++             payload.pop("_error_samples", None)
++             payload.pop("_status", None)
++             jalali_batch = self.storage._jalali_batch_name()
+++            if page <= 3:
+++                self.console.info(f"  Page {page} fetched")
++             self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
++             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
++             tweets.extend(page_result["tweets"])
++@@ -680,15 +775,28 @@ class SearchTimelineMonitor:
++             product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
++             policy = self._policy_for_search(search_def)
++             if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"])):
+++                last_check = self.search_state.get(self._state_key(search_def, product), {}).get("last_checked_at", "never")
+++                self.console.info(f"Skipping {name} (last checked: {last_check})")
++                 continue
+++            self.console.info(f"Polling: {name} (product={product}, rolling_hours={policy.get('rolling_hours', 24)})")
++             reports.append(self.monitor_search(search_def))
++         return reports
++ 
+++    def _print_cycle_summary(self, reports: List[Dict[str, Any]], only_names: Optional[Set[str]]) -> None:
+++        """Print a summary after a search cycle completes."""
+++        self.console.banner(f"Cycle complete: {len(reports)} search(es) fetched")
+++        for report in reports:
+++            self.console.summary(report)
+++        if not reports:
+++            self.console.warning("No searches were fetched in this cycle")
+++        if only_names:
+++            self.console.info(f"Note: --only filter active: {', '.join(only_names)}")
+++
++     def run_continuous(self, only_names: Optional[Set[str]] = None, check_interval: int = 60) -> None:
++-        print("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
+++        self.console.banner("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
++         while True:
++             reports = self.run_cycle(only_names=only_names)
++-            print(f"Search cycle complete: {len(reports)} search(es) fetched")
+++            self._print_cycle_summary(reports, only_names)
++             time.sleep(max(1, check_interval))
++ 
++ 
++@@ -707,7 +815,8 @@ def main() -> None:
++     monitor = SearchTimelineMonitor(config_path=args.config, search_config_path=args.search_config)
++     only = set(args.only or []) or None
++     if args.once:
++-        print(monitor.run_cycle(only_names=only))
+++        reports = monitor.run_cycle(only_names=only)
+++        monitor._print_cycle_summary(reports, only)
++     else:
++         monitor.run_continuous(only_names=only, check_interval=args.check_interval)
++ 
++diff --git a/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py b/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py
++index 0fbe515..c558874 100644
++--- a/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py	
+++++ b/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py	
++@@ -1,112 +1,513 @@
+++#!/usr/bin/env python3
+++"""
+++Twitter Session Updater
+++
+++Refreshes authentication parameters (cookies, x-client-transaction-id,
+++query IDs) by opening an interactive browser session where the user can
+++log in. Uses Playwright to intercept fresh parameters from the live
+++Twitter session.
+++
+++Usage:
+++    python3 session_updater.py
+++
+++Options:
+++    1. Quick refresh  - Inject existing cookies, hope they still work
+++    2. Full login     - Open a visible browser for manual login (recommended)
+++"""
+++
++ import json
++ import logging
+++import shutil
+++import sys
+++import tempfile
+++import time
++ from pathlib import Path
++-from typing import Dict, Any, Optional
++-from playwright.sync_api import sync_playwright, Request
+++from typing import Any, Dict, List, Optional
+++from urllib.parse import urlparse
+++
+++from playwright.sync_api import Request, sync_playwright
++ 
++ logger = logging.getLogger(__name__)
++ 
+++# Default query IDs (will be overwritten if fresh IDs are intercepted)
+++DEFAULT_QUERY_IDS: Dict[str, str] = {
+++    "user_by_screen_name_query_id": "sLVLhk0bGj3MVFEKTdax1w",
+++    "user_tweets_query_id": "pQHADmT91zIY83UbK0x4Lw",
+++    "user_tweets_and_replies_query_id": "xdqXQQg4vOBF9Np6VtUsdw",
+++    "tweet_detail_query_id": "",
+++    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
+++}
+++
+++# Maps GraphQL endpoint names to config.json key names
+++ENDPOINT_KEY_MAP: Dict[str, str] = {
+++    "UserByScreenName": "user_by_screen_name_query_id",
+++    "UserTweets": "user_tweets_query_id",
+++    "UserTweetsAndReplies": "user_tweets_and_replies_query_id",
+++    "TweetDetail": "tweet_detail_query_id",
+++    "SearchTimeline": "search_timeline_query_id",
+++}
+++
+++
++ class SessionUpdater:
++     """
++-    مدیریت و به‌روزرسانی پارامترهای احراز هویت توییتر.
++-    از Playwright برای استخراج x-client-transaction-id و کوکی‌های جدید (ct0) استفاده می‌کند.
+++    Refreshes Twitter authentication parameters via Playwright.
+++
+++    Two modes:
+++      QUICK  - injects existing cookies from config.json, intercepts fresh
+++               parameters from GraphQL requests. Works only if the current
+++               session is still valid.
+++      FULL   - opens a headed (visible) browser so the user can log in
+++               manually.  All parameters are then extracted from the fresh
+++               session.  Recommended when cookies have expired.
++     """
++ 
++-    def __init__(self):
++-        # مسیر فایل کانفیگ بر اساس ساختار پروژه
++-        self.config_path = Path(__file__).resolve().parents[1] / "config" / "config.json"
++-        self._target_url = "https://twitter.com/home"
+++    def __init__(self) -> None:
+++        self.config_path = (
+++            Path(__file__).resolve().parents[1] / "config" / "config.json"
+++        )
+++        self._target_url = "https://x.com/home"
++         self._graphql_indicator = "/graphql/"
++ 
+++    # ------------------------------------------------------------------ #
+++    #  Config I/O
+++    # ------------------------------------------------------------------ #
+++
++     def _load_config(self) -> Dict[str, Any]:
++-        """بارگذاری فایل کانفیگ اصلی."""
+++        """Load shared/config/config.json."""
++         if not self.config_path.exists():
++-            raise FileNotFoundError(f"Config file not found at: {self.config_path}")
++-        with open(self.config_path, 'r', encoding='utf-8') as f:
++-            return json.load(f)
+++            raise FileNotFoundError(
+++                f"Config file not found: {self.config_path}"
+++            )
+++        with open(self.config_path, "r", encoding="utf-8") as fh:
+++            return json.load(fh)
++ 
++-    def _save_config(self, config_data: Dict[str, Any]) -> None:
++-        """ذخیره تغییرات در فایل کانفیگ."""
++-        with open(self.config_path, 'w', encoding='utf-8') as f:
++-            json.dump(config_data, f, indent=2, ensure_ascii=False)
++-        logger.info(f"Config successfully updated at {self.config_path}")
+++    def _save_config(self, cfg: Dict[str, Any]) -> None:
+++        """Persist the updated config to disk with atomic write and backup."""
+++        if self.config_path.exists():
+++            backup_path = self.config_path.with_suffix(".json.bak")
+++            shutil.copy2(self.config_path, backup_path)
+++            logger.info("Config backup saved to %s", backup_path)
+++        tmp_fd, tmp_path = tempfile.mkstemp(
+++            dir=self.config_path.parent, suffix=".tmp"
+++        )
+++        try:
+++            with open(tmp_fd, "w", encoding="utf-8") as fh:
+++                json.dump(cfg, fh, indent=2, ensure_ascii=False)
+++            Path(tmp_path).replace(self.config_path)
+++        except BaseException:
+++            Path(tmp_path).unlink(missing_ok=True)
+++            raise
+++        logger.info("Config saved to %s", self.config_path)
++ 
++-    def update_session(self) -> bool:
++-        """
++-        اجرای مرورگر، تزریق کوکی‌های فعلی، شنود درخواست‌ها و استخراج پارامترهای جدید.
++-        برمی‌گرداند: True در صورت موفقیت، False در صورت شکست.
++-        """
++-        config = self._load_config()
++-        current_cookies = config.get("api_cookies", {})
++-        
++-        # تبدیل کوکی‌های فایل کانفیگ به فرمت Playwright
++-        playwright_cookies = []
++-        for name, value in current_cookies.items():
++-            playwright_cookies.append({
+++    # ------------------------------------------------------------------ #
+++    #  Helpers
+++    # ------------------------------------------------------------------ #
+++
+++    @staticmethod
+++    def _cookiestring_to_playwright(
+++        cookies_dict: Dict[str, str],
+++    ) -> List[Dict[str, Any]]:
+++        """Convert a flat {name: value} dict into Playwright cookie format."""
+++        return [
+++            {
++                 "name": name,
++                 "value": str(value),
++-                "domain": ".twitter.com",
++-                "path": "/"
++-            })
+++                "domain": ".x.com",
+++                "path": "/",
+++            }
+++            for name, value in cookies_dict.items()
+++        ]
++ 
++-        extracted_data = {
++-            "x-client-transaction-id": None,
++-            "ct0": None,
++-            "auth_token": current_cookies.get("auth_token")
+++    def _extract_query_id_from_url(
+++        self, url: str
+++    ) -> Optional[tuple[str, str]]:
+++        """Extract (endpoint, query_id) from a GraphQL request URL."""
+++        try:
+++            parsed = urlparse(url.strip())
+++            parts = [p for p in (parsed.path or "").split("/") if p]
+++            if "graphql" not in parts:
+++                return None
+++            graph_idx = parts.index("graphql")
+++            if len(parts) <= graph_idx + 2:
+++                return None
+++            query_id = parts[graph_idx + 1]
+++            endpoint = parts[graph_idx + 2]
+++            if endpoint in ENDPOINT_KEY_MAP and query_id:
+++                return (endpoint, query_id)
+++        except Exception:
+++            pass
+++        return None
+++
+++    @staticmethod
+++    def _apply_extracted(
+++        cfg: Dict[str, Any],
+++        extracted: Dict[str, Any],
+++        old_txid: Optional[str],
+++        old_cookies: Dict[str, str],
+++    ) -> Dict[str, str]:
+++        """Merge extracted parameters into config and return a change report."""
+++        report: Dict[str, str] = {}
+++
+++        if extracted.get("ct0") and cfg.get("api_cookies"):
+++            cfg["api_cookies"]["ct0"] = extracted["ct0"]
+++            report["ct0"] = "updated" if extracted["ct0"] != old_cookies.get("ct0") else "unchanged"
+++
+++        if extracted.get("auth_token") and cfg.get("api_cookies"):
+++            cfg["api_cookies"]["auth_token"] = extracted["auth_token"]
+++
+++        if extracted.get("x_client_transaction_id"):
+++            cfg.setdefault("api_headers", {})
+++            cfg["api_headers"]["x-client-transaction-id"] = extracted["x_client_transaction_id"]
+++            report["x-client-transaction-id"] = "new" if extracted["x_client_transaction_id"] != old_txid else "unchanged"
+++
+++        if extracted.get("query_ids"):
+++            api_config = cfg.setdefault("api_config", {})
+++            api_config.update(extracted["query_ids"])
+++            report["query_ids"] = str(len(extracted["query_ids"]))
+++
+++        return report
+++
+++    # ------------------------------------------------------------------ #
+++    #  Mode 1 - Quick Refresh (headless, injects existing cookies)
+++    # ------------------------------------------------------------------ #
+++
+++    def quick_refresh(self, cfg: Dict[str, Any]) -> bool:
+++        """
+++        Attempt a quick refresh by injecting existing cookies from config.json.
+++
+++        Returns True if at least one parameter was updated.
+++        """
+++        current_cookies = cfg.get("api_cookies", {})
+++        if not current_cookies:
+++            print("\nNo cookies in config.json. Use mode 2 (Full login) instead.\n")
+++            return False
+++        if not current_cookies.get("auth_token") or not current_cookies.get("ct0"):
+++            print(
+++                "\nWarning: config.json is missing critical cookies"
+++                " (auth_token / ct0). Quick refresh may fail.\n"
+++            )
+++
+++        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
+++        old_ct0 = current_cookies.get("ct0")
+++
+++        playwright_cookies = self._cookiestring_to_playwright(current_cookies)
+++
+++        extracted: Dict[str, Any] = {
+++            "x_client_transaction_id": None,
+++            "ct0": old_ct0,
+++            "auth_token": current_cookies.get("auth_token"),
+++            "query_ids": {},
++         }
++ 
++-        logger.info("Launching Playwright to extract fresh auth parameters...")
+++        logger.info("Launching Playwright for quick cookie refresh...")
+++        print("\nLaunching browser with existing cookies...")
++ 
++         try:
++-            with sync_playwright() as p:
++-                browser = p.chromium.launch(headless=True)
++-                context = browser.new_context()
++-                context.add_cookies(playwright_cookies)
++-                page = context.new_page()
++-
++-                # تابع شنود (Interceptor)
++-                def handle_request(request: Request):
++-                    if self._graphql_indicator in request.url:
++-                        headers = request.headers
++-                        if "x-client-transaction-id" in headers and not extracted_data["x-client-transaction-id"]:
++-                            extracted_data["x-client-transaction-id"] = headers["x-client-transaction-id"]
++-                            logger.debug("Successfully intercepted x-client-transaction-id.")
++-
++-                page.on("request", handle_request)
++-                
++-                # رفتن به صفحه هوم توییتر برای تریگر شدن ریکوئست‌های GraphQL
++-                page.goto(self._target_url, wait_until="networkidle", timeout=60000)
++-
++-                # استخراج کوکی‌های جدید به‌روزرسانی شده توسط مرورگر
++-                new_cookies = context.cookies()
++-                for cookie in new_cookies:
+++            with sync_playwright() as pw:
+++                browser = pw.chromium.launch(headless=True)
+++                ctx = browser.new_context()
+++                ctx.add_cookies(playwright_cookies)
+++                page = ctx.new_page()
+++
+++                def _on_request(req: Request) -> None:
+++                    url = req.url
+++                    headers = req.headers
+++
+++                    # Capture x-client-transaction-id
+++                    if (
+++                        self._graphql_indicator in url
+++                        and "x-client-transaction-id" in headers
+++                        and not extracted["x_client_transaction_id"]
+++                    ):
+++                        extracted["x_client_transaction_id"] = headers[
+++                            "x-client-transaction-id"
+++                        ]
+++                        logger.debug("Intercepted x-client-transaction-id")
+++
+++                    # Extract query IDs
+++                    if self._graphql_indicator in url:
+++                        result = self._extract_query_id_from_url(url)
+++                        if result:
+++                            endpoint, query_id = result
+++                            key = ENDPOINT_KEY_MAP.get(endpoint)
+++                            if key:
+++                                extracted["query_ids"][key] = query_id
+++
+++                page.on("request", _on_request)
+++                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
+++                time.sleep(5)
+++
+++                # Read back updated cookies
+++                for cookie in ctx.cookies():
++                     if cookie["name"] == "ct0":
++-                        extracted_data["ct0"] = cookie["value"]
+++                        extracted["ct0"] = cookie["value"]
++                     elif cookie["name"] == "auth_token":
++-                        extracted_data["auth_token"] = cookie["value"]
+++                        extracted["auth_token"] = cookie["value"]
++ 
++                 browser.close()
++ 
++-            # بررسی اینکه آیا پارامترهای کلیدی با موفقیت استخراج شده‌اند یا خیر
++-            if extracted_data["x-client-transaction-id"] and extracted_data["ct0"]:
++-                logger.info("New authentication parameters extracted successfully.")
++-                
++-                # اعمال تغییرات در شیء کانفیگ
++-                config["api_headers"]["x-client-transaction-id"] = extracted_data["x-client-transaction-id"]
++-                config["api_cookies"]["ct0"] = extracted_data["ct0"]
++-                config["api_cookies"]["auth_token"] = extracted_data["auth_token"]
++-                
++-                self._save_config(config)
++-                return True
++-            else:
++-                logger.error("Failed to extract complete auth parameters. Manual login may be required.")
++-                return False
++-
++-        except Exception as e:
++-            logger.error(f"Error during session update via Playwright: {e}")
+++        except KeyboardInterrupt:
+++            logger.info("Quick refresh cancelled by user.")
+++            print("\nCancelled.\n")
+++            return False
+++        except Exception as exc:
+++            logger.error("Quick refresh failed: %s", exc)
+++            print(f"\nQuick refresh failed: {exc}\n")
+++            print("Your cookies may have expired. Use mode 2 (Full login) instead.\n")
++             return False
++ 
++-if __name__ == "__main__":
++-    logging.basicConfig(level=logging.INFO)
+++        if extracted["x_client_transaction_id"] or extracted["ct0"] != old_ct0 or extracted["query_ids"]:
+++            report = self._apply_extracted(cfg, extracted, old_txid, current_cookies)
+++            self._save_config(cfg)
+++
+++            print("\nQuick refresh completed!")
+++            print(f"  x-client-transaction-id: [{report.get('x-client-transaction-id', 'unchanged')}]")
+++            print(f"  ct0:                     [{report.get('ct0', 'unchanged')}]")
+++            print(f"  Query IDs extracted:     {report.get('query_ids', '0')}")
+++            return True
+++
+++        logger.error("Quick refresh returned no fresh parameters. Session expired.")
+++        print("\nNo fresh parameters captured. Session likely expired.\n")
+++        print("Use mode 2 (Full login) instead.\n")
+++        return False
+++
+++    # ------------------------------------------------------------------ #
+++    #  Mode 2 - Full Interactive Login (headed, user logs in manually)
+++    # ------------------------------------------------------------------ #
+++
+++    def full_login(self, cfg: Dict[str, Any]) -> bool:
+++        """
+++        Open a visible browser for the user to log in to X/Twitter manually.
+++
+++        Extracts ALL fresh parameters: cookies, x-client-transaction-id,
+++        and query IDs.  Recommended when existing cookies have expired.
+++        """
+++        existing_cookies = cfg.get("api_cookies", {})
+++        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
+++
+++        pw_cookies = self._cookiestring_to_playwright(existing_cookies) if existing_cookies else []
+++
+++        extracted: Dict[str, Any] = {
+++            "x_client_transaction_id": None,
+++            "ct0": None,
+++            "auth_token": None,
+++            "all_cookies": {},
+++            "query_ids": {},
+++        }
+++
+++        logger.info("Launching Playwright for full interactive login...")
+++
+++        try:
+++            with sync_playwright() as pw:
+++                browser = pw.chromium.launch(headless=False)  # visible browser
+++                ctx = browser.new_context()
+++
+++                if pw_cookies:
+++                    ctx.add_cookies(pw_cookies)  # help pre-fill session
+++
+++                page = ctx.new_page()
+++
+++                def _on_request(req: Request) -> None:
+++                    url = req.url
+++                    headers = req.headers
+++
+++                    if (
+++                        self._graphql_indicator in url
+++                        and "x-client-transaction-id" in headers
+++                        and not extracted["x_client_transaction_id"]
+++                    ):
+++                        extracted["x_client_transaction_id"] = headers[
+++                            "x-client-transaction-id"
+++                        ]
+++                        logger.debug("Intercepted x-client-transaction-id")
+++
+++                    if self._graphql_indicator in url:
+++                        result = self._extract_query_id_from_url(url)
+++                        if result:
+++                            endpoint, query_id = result
+++                            key = ENDPOINT_KEY_MAP.get(endpoint)
+++                            if key:
+++                                extracted["query_ids"][key] = query_id
+++
+++                page.on("request", _on_request)
+++
+++                # ---------------------------------------------------------- #
+++                #  Interactive login prompt
+++                # ---------------------------------------------------------- #
+++                print("\n" + "=" * 60)
+++                print("  Browser window will open shortly.")
+++                print("  Please log in to your X (Twitter) account.")
+++                print("=" * 60)
+++                print()
+++                print("After logging in:")
+++                print("  1. Navigate to x.com/home (or any page)")
+++                print("  2. Wait for the page to fully load")
+++                print("  3. Do NOT close the browser yet")
+++                print()
+++                print("Waiting up to 120 seconds for you to log in...")
+++                print("(Press Ctrl+C at any time to cancel)\n")
+++
+++                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
+++
+++                # Poll for home page to confirm session is active
+++                login_timeout = 120
+++                start = time.time()
+++                while time.time() - start < login_timeout:
+++                    try:
+++                        url = page.url
+++                        if "home" in url.lower() or "x.com" in url.lower():
+++                            time.sleep(3)  # let initial requests fire
+++                            break
+++                    except Exception:
+++                        pass
+++                    time.sleep(2)
+++
+++                # Extra wait for all network activity
+++                print("Session active. Waiting for data extraction...")
+++                time.sleep(10)
+++
+++                # Read ALL fresh cookies
+++                for cookie in ctx.cookies():
+++                    extracted["all_cookies"][cookie["name"]] = cookie["value"]
+++
+++                browser.close()
+++
+++        except KeyboardInterrupt:
+++            logger.info("Full login cancelled by user.")
+++            print("\nCancelled.\n")
+++            return False
+++        except Exception as exc:
+++            logger.error("Full login failed: %s", exc)
+++            print(f"\nFull login failed: {exc}\n")
+++            return False
+++
+++        # ---------------------------------------------------------- #
+++        #  Apply extracted data to config
+++        # ---------------------------------------------------------- #
+++        if not extracted["all_cookies"]:
+++            logger.error("Full login captured no cookies.")
+++            print("\nNo cookies captured. Try again.\n")
+++            return False
+++
+++        critical_missing = [
+++            key
+++            for key in ("auth_token", "ct0")
+++            if key not in extracted["all_cookies"]
+++        ]
+++        if critical_missing:
+++            logger.warning(
+++                "Full login captured cookies but missing critical keys: %s",
+++                critical_missing,
+++            )
+++            print(
+++                f"\nWarning: captured cookies are missing critical keys:"
+++                f" {', '.join(critical_missing)}."
+++                f"\nThe session may not work. Saving anyway.\n"
+++            )
+++
+++        # Replace all cookies
+++        cfg["api_cookies"] = extracted["all_cookies"]
+++
+++        if extracted["x_client_transaction_id"]:
+++            cfg.setdefault("api_headers", {})
+++            cfg["api_headers"]["x-client-transaction-id"] = extracted[
+++                "x_client_transaction_id"
+++            ]
+++
+++        if extracted["query_ids"]:
+++            api_config = cfg.setdefault("api_config", {})
+++            api_config.update(extracted["query_ids"])
+++
+++        self._save_config(cfg)
+++
+++        report = {}
+++        report["cookies"] = str(len(extracted["all_cookies"]))
+++        report["x-client-transaction-id"] = (
+++            "fresh" if extracted["x_client_transaction_id"] else "not captured"
+++        )
+++        report["query_ids"] = str(len(extracted["query_ids"]))
+++
+++        print("\n" + "=" * 60)
+++        print("  Full login refresh completed successfully!")
+++        print("=" * 60)
+++        print(f"\n  Cookies updated:           {report['cookies']}")
+++        print(f"  x-client-transaction-id:   [{report['x-client-transaction-id']}]")
+++        print(f"  Query IDs extracted:       {report['query_ids']}")
+++
+++        if extracted["query_ids"]:
+++            for key, val in extracted["query_ids"].items():
+++                print(f"    - {key}: {val}")
+++
+++        print(f"\n  Config saved to: {self.config_path}\n")
+++        return True
+++
+++    # ------------------------------------------------------------------ #
+++    #  CLI entry point
+++    # ------------------------------------------------------------------ #
+++
+++    def run(self) -> None:
+++        """Interactive CLI: choose quick refresh or full login mode."""
+++        print("\n" + "=" * 60)
+++        print("  Twitter Session Updater")
+++        print("=" * 60)
+++        print()
+++        print("Choose a refresh mode:")
+++        print()
+++        print("  1. Quick Refresh")
+++        print("     - Uses existing cookies from config.json")
+++        print("     - Works only if your session is still active")
+++        print("     - Faster, no manual login needed")
+++        print()
+++        print("  2. Full Login  (recommended)")
+++        print("     - Opens a visible browser window")
+++        print("     - Log in manually to X/Twitter")
+++        print("     - Extracts all fresh parameters:")
+++        print("       cookies, x-client-transaction-id, query IDs")
+++        print("     - Use when quick refresh fails")
+++        print()
+++
+++        try:
+++            choice = input("Choose (1/2, default 2): ").strip() or "2"
+++        except EOFError:
+++            choice = "2"
+++
+++        try:
+++            cfg = self._load_config()
+++        except FileNotFoundError as exc:
+++            print(f"\nError: {exc}")
+++            print("Run setup_api_cookies.py first to create a config file.")
+++            sys.exit(1)
+++
+++        if choice == "1":
+++            success = self.quick_refresh(cfg)
+++        elif choice == "2":
+++            success = self.full_login(cfg)
+++        else:
+++            print(f"\nInvalid choice: {choice}. Use 1 or 2.")
+++            sys.exit(1)
+++
+++        if success:
+++            print("\nYou can now run your scripts:")
+++            print("  python3 historical_scripts/historical_runner.py")
+++            print("  python3 live_scripts/live_runner.py")
+++            print("  python3 search_scripts/search_runner.py --once")
+++        else:
+++            print(
+++                "\nRefresh failed. Ensure you have an active internet"
+++                " connection and valid X/Twitter credentials.\n"
+++            )
+++            sys.exit(1)
+++
+++
+++def main() -> None:
+++    """Entry point for the session updater."""
+++    logging.basicConfig(
+++        level=logging.INFO,
+++        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+++    )
++     updater = SessionUpdater()
++-    updater.update_session()
+++    updater.run()
+++
+++
+++if __name__ == "__main__":
+++    main()
++diff --git a/TWEETER DATA FETCHING 4.0/shared/config/config.json b/TWEETER DATA FETCHING 4.0/shared/config/config.json
++index 46c34a5..293dd58 100644
++--- a/TWEETER DATA FETCHING 4.0/shared/config/config.json	
+++++ b/TWEETER DATA FETCHING 4.0/shared/config/config.json	
++@@ -27,7 +27,7 @@
++     "cursor_error_max_retries": 3,
++     "default_timeout_seconds": 20,
++     "tweet_detail_query_id": "",
++-    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
+++    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
++     "search_warmup_seconds": 2,
++     "first_request_warmup_seconds": 15,
++     "pagination_safety_cap_pages": 50
++
++```
++
++## Git Diffs Staged
++```diff
++
+ ```
+diff --git a/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py b/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py
+index d01e831..ace679c 100644
+--- a/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py	
++++ b/TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py	
+@@ -19,6 +19,17 @@ from pathlib import Path
+ from typing import Any, Dict, List, Optional, Set
+ from urllib.parse import quote, urlencode
+ 
++try:
++    from rich.console import Console
++    from rich.panel import Panel
++    from rich.table import Table
++except Exception:
++    Console = None
++    Panel = None
++    Table = None
++
++
++
+ PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ if str(PROJECT_ROOT) not in sys.path:
+     sys.path.insert(0, str(PROJECT_ROOT))
+@@ -75,6 +86,85 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = {
+ }
+ 
+ 
++V4_PREFIX = "[V4]"
++
++
++class SearchConsole:
++    """Rich-first console output for SearchTimelineMonitor, with plain-text fallback."""
++
++    def __init__(self) -> None:
++        self.rich_enabled = Console is not None
++        self.console = Console() if self.rich_enabled else None
++
++    def banner(self, title: str) -> None:
++        if self.rich_enabled and Panel is not None:
++            self.console.print(Panel.fit(title, title="V4 Search Monitor", border_style="magenta"))
++        else:
++            sep = "=" * 70
++            print(f"{V4_PREFIX} {title}")
++            print(sep)
++
++    def info(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
++        else:
++            print(f"{V4_PREFIX} {message}")
++
++    def success(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
++        else:
++            print(f"{V4_PREFIX} \u2713 {message}")
++
++    def warning(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
++        else:
++            print(f"{V4_PREFIX} \u26a0 {message}")
++
++    def error(self, message: str) -> None:
++        if self.rich_enabled:
++            self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
++        else:
++            print(f"{V4_PREFIX} \u2717 {message}")
++
++    def summary(self, report: Dict[str, Any]) -> None:
++        """Print a search report summary."""
++        print()
++        if self.rich_enabled and Table is not None:
++            table = Table(
++                title=f"Search Report: {report.get('search', 'Unknown')}",
++                show_lines=False,
++            )
++            table.add_column("Metric", style="cyan")
++            table.add_column("Value", style="white")
++            table.add_row("Slug", report.get("slug", ""))
++            table.add_row("Product", report.get("product", ""))
++            table.add_row("Raw Query", report.get("raw_query", ""))
++            table.add_row(
++                "Tweets Found",
++                str(report.get("counts", {}).get("tweets", 0)),
++            )
++            meta = report.get("metadata", {})
++            table.add_row("Pages Saved", f"{meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
++            table.add_row("Exhausted Reason", str(meta.get("exhausted_reason", "")))
++            table.add_row("Attempts", str(meta.get("attempts", 0)))
++            last_status = meta.get("last_http_status")
++            table.add_row("Last HTTP Status", str(last_status) if last_status else "N/A")
++            self.console.print(table)
++        else:
++            print(f"{V4_PREFIX} Report for: {report.get('search', 'Unknown')}")
++            print(f"{V4_PREFIX}   Slug: {report.get('slug', '')}")
++            print(f"{V4_PREFIX}   Product: {report.get('product', '')}")
++            print(f"{V4_PREFIX}   Tweets Found: {report.get('counts', {}).get('tweets', 0)}")
++            meta = report.get("metadata", {})
++            print(f"{V4_PREFIX}   Pages Saved: {meta.get('pages_saved', 0)}/{meta.get('pages_requested', 0)}")
++            print(f"{V4_PREFIX}   Exhausted Reason: {meta.get('exhausted_reason', 'unknown')}")
++        outputs = report.get("outputs", {})
++        if outputs:
++            print(f"{V4_PREFIX}   Outputs: {', '.join(outputs.values())}")
++
++
+ class SearchQueryBuilder:
+     """Build SearchTimeline rawQuery and browser URL from search definitions."""
+ 
+@@ -187,6 +277,7 @@ class SearchTimelineMonitor:
+         self.reports_root = self.search_root / "reports"
+         self.state_file = self.search_root / "state" / "search_state.json"
+         self.search_state = self._load_json(self.state_file, {})
++        self.console = SearchConsole()
+         for path in [self.raw_root, self.processed_root, self.debug_root, self.reports_root, self.state_file.parent]:
+             path.mkdir(parents=True, exist_ok=True)
+ 
+@@ -565,7 +656,11 @@ class SearchTimelineMonitor:
+     def _state_key(self, search_def: Dict[str, Any], product: str) -> str:
+         return f"{SearchQueryBuilder.slug(search_def)}::{product.lower()}"
+ 
+-    def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int) -> bool:
++    def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int, force_run: bool = False) -> bool:
++        # اگر در حالت force_run هستیم، تایمرها کاملا نادیده گرفته می‌شوند
++        if force_run:
++            return True
++            
+         state = self.search_state.get(self._state_key(search_def, product), {})
+         last = state.get("last_checked_at") if isinstance(state, dict) else None
+         if not last:
+@@ -583,6 +678,8 @@ class SearchTimelineMonitor:
+         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
+         policy = self._policy_for_search(search_def)
+         batch_dir = self._raw_batch_dir(slug, product)
++        self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
++        self.console.info(f"  Query: {raw_query}")
+         seen_ids: Set[str] = set()
+         cursor: Optional[str] = None
+         cursor_history: Set[str] = set()
+@@ -625,6 +722,8 @@ class SearchTimelineMonitor:
+             payload.pop("_error_samples", None)
+             payload.pop("_status", None)
+             jalali_batch = self.storage._jalali_batch_name()
++            if page <= 3:
++                self.console.info(f"  Page {page} fetched")
+             self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
+             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
+             tweets.extend(page_result["tweets"])
+@@ -664,12 +763,34 @@ class SearchTimelineMonitor:
+         }
+         outputs = self._save_exports(slug, product, raw_query, tweets, debug, metadata)
+         report = {"search": search_def.get("name", slug), "slug": slug, "product": product, "raw_query": raw_query, "metadata": metadata, "counts": {"tweets": len(tweets)}, "outputs": outputs}
+-        self.search_state[self._state_key(search_def, product)] = {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": exhausted_reason, "last_counts": report["counts"]}
++        
++        # ------------- تغییرات جدید سیستم State -------------
++        state_key = self._state_key(search_def, product)
++        current_state = self.search_state.get(state_key, {})
++        
++        # تشخیص اینکه آیا چرخه واقعاً موفق بوده یا به خاطر ارور متوقف شده (مثل 401، 403، 404)
++        is_success = last_http_status in (200, None)
++        
++        new_state = {
++            "last_status": exhausted_reason if is_success else f"error_http_{last_http_status}",
++            "last_counts": report["counts"]
++        }
++        
++        if is_success:
++            # در صورت موفقیت کامل، زمان آپدیت می‌شود تا سیستم طبق Policy به خواب برود
++            new_state["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
++        else:
++            # در صورت بروز خطا، زمان قبلی حفظ می‌شود تا در رانِ بعدی فوراً مجدداً تلاش کند
++            new_state["last_checked_at"] = current_state.get("last_checked_at")
++            
++        self.search_state[state_key] = new_state
+         self._save_json(self.state_file, self.search_state)
++        # --------------------------------------------------
++
+         self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._jalali_batch_name()}.json", report)
+         return report
+ 
+-    def run_cycle(self, only_names: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
++    def run_cycle(self, only_names: Optional[Set[str]] = None, force_run: bool = False) -> List[Dict[str, Any]]:
+         reports = []
+         for search_def in self.search_defs:
+             if not search_def.get("enabled", True):
+@@ -679,16 +800,29 @@ class SearchTimelineMonitor:
+                 continue
+             product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
+             policy = self._policy_for_search(search_def)
+-            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"])):
++            
++            # پارامتر force_run اینجا به تابع چک‌کننده پاس داده می‌شود
++            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"]), force_run=force_run):
+                 continue
++                
+             reports.append(self.monitor_search(search_def))
+         return reports
+ 
++    def _print_cycle_summary(self, reports: List[Dict[str, Any]], only_names: Optional[Set[str]]) -> None:
++        """Print a summary after a search cycle completes."""
++        self.console.banner(f"Cycle complete: {len(reports)} search(es) fetched")
++        for report in reports:
++            self.console.summary(report)
++        if not reports:
++            self.console.warning("No searches were fetched in this cycle")
++        if only_names:
++            self.console.info(f"Note: --only filter active: {', '.join(only_names)}")
++
+     def run_continuous(self, only_names: Optional[Set[str]] = None, check_interval: int = 60) -> None:
+-        print("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
++        self.console.banner("Starting v4 SearchTimeline monitor. Press Ctrl+C to stop.")
+         while True:
+             reports = self.run_cycle(only_names=only_names)
+-            print(f"Search cycle complete: {len(reports)} search(es) fetched")
++            self._print_cycle_summary(reports, only_names)
+             time.sleep(max(1, check_interval))
+ 
+ 
+@@ -707,7 +841,8 @@ def main() -> None:
+     monitor = SearchTimelineMonitor(config_path=args.config, search_config_path=args.search_config)
+     only = set(args.only or []) or None
+     if args.once:
+-        print(monitor.run_cycle(only_names=only))
++        reports = monitor.run_cycle(only_names=only)
++        monitor._print_cycle_summary(reports, only)
+     else:
+         monitor.run_continuous(only_names=only, check_interval=args.check_interval)
+ 
+diff --git a/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py b/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py
+index 0fbe515..c558874 100644
+--- a/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py	
++++ b/TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py	
+@@ -1,112 +1,513 @@
++#!/usr/bin/env python3
++"""
++Twitter Session Updater
++
++Refreshes authentication parameters (cookies, x-client-transaction-id,
++query IDs) by opening an interactive browser session where the user can
++log in. Uses Playwright to intercept fresh parameters from the live
++Twitter session.
++
++Usage:
++    python3 session_updater.py
++
++Options:
++    1. Quick refresh  - Inject existing cookies, hope they still work
++    2. Full login     - Open a visible browser for manual login (recommended)
++"""
++
+ import json
+ import logging
++import shutil
++import sys
++import tempfile
++import time
+ from pathlib import Path
+-from typing import Dict, Any, Optional
+-from playwright.sync_api import sync_playwright, Request
++from typing import Any, Dict, List, Optional
++from urllib.parse import urlparse
++
++from playwright.sync_api import Request, sync_playwright
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Default query IDs (will be overwritten if fresh IDs are intercepted)
++DEFAULT_QUERY_IDS: Dict[str, str] = {
++    "user_by_screen_name_query_id": "sLVLhk0bGj3MVFEKTdax1w",
++    "user_tweets_query_id": "pQHADmT91zIY83UbK0x4Lw",
++    "user_tweets_and_replies_query_id": "xdqXQQg4vOBF9Np6VtUsdw",
++    "tweet_detail_query_id": "",
++    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
++}
++
++# Maps GraphQL endpoint names to config.json key names
++ENDPOINT_KEY_MAP: Dict[str, str] = {
++    "UserByScreenName": "user_by_screen_name_query_id",
++    "UserTweets": "user_tweets_query_id",
++    "UserTweetsAndReplies": "user_tweets_and_replies_query_id",
++    "TweetDetail": "tweet_detail_query_id",
++    "SearchTimeline": "search_timeline_query_id",
++}
++
++
+ class SessionUpdater:
+     """
+-    مدیریت و به‌روزرسانی پارامترهای احراز هویت توییتر.
+-    از Playwright برای استخراج x-client-transaction-id و کوکی‌های جدید (ct0) استفاده می‌کند.
++    Refreshes Twitter authentication parameters via Playwright.
++
++    Two modes:
++      QUICK  - injects existing cookies from config.json, intercepts fresh
++               parameters from GraphQL requests. Works only if the current
++               session is still valid.
++      FULL   - opens a headed (visible) browser so the user can log in
++               manually.  All parameters are then extracted from the fresh
++               session.  Recommended when cookies have expired.
+     """
+ 
+-    def __init__(self):
+-        # مسیر فایل کانفیگ بر اساس ساختار پروژه
+-        self.config_path = Path(__file__).resolve().parents[1] / "config" / "config.json"
+-        self._target_url = "https://twitter.com/home"
++    def __init__(self) -> None:
++        self.config_path = (
++            Path(__file__).resolve().parents[1] / "config" / "config.json"
++        )
++        self._target_url = "https://x.com/home"
+         self._graphql_indicator = "/graphql/"
+ 
++    # ------------------------------------------------------------------ #
++    #  Config I/O
++    # ------------------------------------------------------------------ #
++
+     def _load_config(self) -> Dict[str, Any]:
+-        """بارگذاری فایل کانفیگ اصلی."""
++        """Load shared/config/config.json."""
+         if not self.config_path.exists():
+-            raise FileNotFoundError(f"Config file not found at: {self.config_path}")
+-        with open(self.config_path, 'r', encoding='utf-8') as f:
+-            return json.load(f)
++            raise FileNotFoundError(
++                f"Config file not found: {self.config_path}"
++            )
++        with open(self.config_path, "r", encoding="utf-8") as fh:
++            return json.load(fh)
+ 
+-    def _save_config(self, config_data: Dict[str, Any]) -> None:
+-        """ذخیره تغییرات در فایل کانفیگ."""
+-        with open(self.config_path, 'w', encoding='utf-8') as f:
+-            json.dump(config_data, f, indent=2, ensure_ascii=False)
+-        logger.info(f"Config successfully updated at {self.config_path}")
++    def _save_config(self, cfg: Dict[str, Any]) -> None:
++        """Persist the updated config to disk with atomic write and backup."""
++        if self.config_path.exists():
++            backup_path = self.config_path.with_suffix(".json.bak")
++            shutil.copy2(self.config_path, backup_path)
++            logger.info("Config backup saved to %s", backup_path)
++        tmp_fd, tmp_path = tempfile.mkstemp(
++            dir=self.config_path.parent, suffix=".tmp"
++        )
++        try:
++            with open(tmp_fd, "w", encoding="utf-8") as fh:
++                json.dump(cfg, fh, indent=2, ensure_ascii=False)
++            Path(tmp_path).replace(self.config_path)
++        except BaseException:
++            Path(tmp_path).unlink(missing_ok=True)
++            raise
++        logger.info("Config saved to %s", self.config_path)
+ 
+-    def update_session(self) -> bool:
+-        """
+-        اجرای مرورگر، تزریق کوکی‌های فعلی، شنود درخواست‌ها و استخراج پارامترهای جدید.
+-        برمی‌گرداند: True در صورت موفقیت، False در صورت شکست.
+-        """
+-        config = self._load_config()
+-        current_cookies = config.get("api_cookies", {})
+-        
+-        # تبدیل کوکی‌های فایل کانفیگ به فرمت Playwright
+-        playwright_cookies = []
+-        for name, value in current_cookies.items():
+-            playwright_cookies.append({
++    # ------------------------------------------------------------------ #
++    #  Helpers
++    # ------------------------------------------------------------------ #
++
++    @staticmethod
++    def _cookiestring_to_playwright(
++        cookies_dict: Dict[str, str],
++    ) -> List[Dict[str, Any]]:
++        """Convert a flat {name: value} dict into Playwright cookie format."""
++        return [
++            {
+                 "name": name,
+                 "value": str(value),
+-                "domain": ".twitter.com",
+-                "path": "/"
+-            })
++                "domain": ".x.com",
++                "path": "/",
++            }
++            for name, value in cookies_dict.items()
++        ]
+ 
+-        extracted_data = {
+-            "x-client-transaction-id": None,
+-            "ct0": None,
+-            "auth_token": current_cookies.get("auth_token")
++    def _extract_query_id_from_url(
++        self, url: str
++    ) -> Optional[tuple[str, str]]:
++        """Extract (endpoint, query_id) from a GraphQL request URL."""
++        try:
++            parsed = urlparse(url.strip())
++            parts = [p for p in (parsed.path or "").split("/") if p]
++            if "graphql" not in parts:
++                return None
++            graph_idx = parts.index("graphql")
++            if len(parts) <= graph_idx + 2:
++                return None
++            query_id = parts[graph_idx + 1]
++            endpoint = parts[graph_idx + 2]
++            if endpoint in ENDPOINT_KEY_MAP and query_id:
++                return (endpoint, query_id)
++        except Exception:
++            pass
++        return None
++
++    @staticmethod
++    def _apply_extracted(
++        cfg: Dict[str, Any],
++        extracted: Dict[str, Any],
++        old_txid: Optional[str],
++        old_cookies: Dict[str, str],
++    ) -> Dict[str, str]:
++        """Merge extracted parameters into config and return a change report."""
++        report: Dict[str, str] = {}
++
++        if extracted.get("ct0") and cfg.get("api_cookies"):
++            cfg["api_cookies"]["ct0"] = extracted["ct0"]
++            report["ct0"] = "updated" if extracted["ct0"] != old_cookies.get("ct0") else "unchanged"
++
++        if extracted.get("auth_token") and cfg.get("api_cookies"):
++            cfg["api_cookies"]["auth_token"] = extracted["auth_token"]
++
++        if extracted.get("x_client_transaction_id"):
++            cfg.setdefault("api_headers", {})
++            cfg["api_headers"]["x-client-transaction-id"] = extracted["x_client_transaction_id"]
++            report["x-client-transaction-id"] = "new" if extracted["x_client_transaction_id"] != old_txid else "unchanged"
++
++        if extracted.get("query_ids"):
++            api_config = cfg.setdefault("api_config", {})
++            api_config.update(extracted["query_ids"])
++            report["query_ids"] = str(len(extracted["query_ids"]))
++
++        return report
++
++    # ------------------------------------------------------------------ #
++    #  Mode 1 - Quick Refresh (headless, injects existing cookies)
++    # ------------------------------------------------------------------ #
++
++    def quick_refresh(self, cfg: Dict[str, Any]) -> bool:
++        """
++        Attempt a quick refresh by injecting existing cookies from config.json.
++
++        Returns True if at least one parameter was updated.
++        """
++        current_cookies = cfg.get("api_cookies", {})
++        if not current_cookies:
++            print("\nNo cookies in config.json. Use mode 2 (Full login) instead.\n")
++            return False
++        if not current_cookies.get("auth_token") or not current_cookies.get("ct0"):
++            print(
++                "\nWarning: config.json is missing critical cookies"
++                " (auth_token / ct0). Quick refresh may fail.\n"
++            )
++
++        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
++        old_ct0 = current_cookies.get("ct0")
++
++        playwright_cookies = self._cookiestring_to_playwright(current_cookies)
++
++        extracted: Dict[str, Any] = {
++            "x_client_transaction_id": None,
++            "ct0": old_ct0,
++            "auth_token": current_cookies.get("auth_token"),
++            "query_ids": {},
+         }
+ 
+-        logger.info("Launching Playwright to extract fresh auth parameters...")
++        logger.info("Launching Playwright for quick cookie refresh...")
++        print("\nLaunching browser with existing cookies...")
+ 
+         try:
+-            with sync_playwright() as p:
+-                browser = p.chromium.launch(headless=True)
+-                context = browser.new_context()
+-                context.add_cookies(playwright_cookies)
+-                page = context.new_page()
+-
+-                # تابع شنود (Interceptor)
+-                def handle_request(request: Request):
+-                    if self._graphql_indicator in request.url:
+-                        headers = request.headers
+-                        if "x-client-transaction-id" in headers and not extracted_data["x-client-transaction-id"]:
+-                            extracted_data["x-client-transaction-id"] = headers["x-client-transaction-id"]
+-                            logger.debug("Successfully intercepted x-client-transaction-id.")
+-
+-                page.on("request", handle_request)
+-                
+-                # رفتن به صفحه هوم توییتر برای تریگر شدن ریکوئست‌های GraphQL
+-                page.goto(self._target_url, wait_until="networkidle", timeout=60000)
+-
+-                # استخراج کوکی‌های جدید به‌روزرسانی شده توسط مرورگر
+-                new_cookies = context.cookies()
+-                for cookie in new_cookies:
++            with sync_playwright() as pw:
++                browser = pw.chromium.launch(headless=True)
++                ctx = browser.new_context()
++                ctx.add_cookies(playwright_cookies)
++                page = ctx.new_page()
++
++                def _on_request(req: Request) -> None:
++                    url = req.url
++                    headers = req.headers
++
++                    # Capture x-client-transaction-id
++                    if (
++                        self._graphql_indicator in url
++                        and "x-client-transaction-id" in headers
++                        and not extracted["x_client_transaction_id"]
++                    ):
++                        extracted["x_client_transaction_id"] = headers[
++                            "x-client-transaction-id"
++                        ]
++                        logger.debug("Intercepted x-client-transaction-id")
++
++                    # Extract query IDs
++                    if self._graphql_indicator in url:
++                        result = self._extract_query_id_from_url(url)
++                        if result:
++                            endpoint, query_id = result
++                            key = ENDPOINT_KEY_MAP.get(endpoint)
++                            if key:
++                                extracted["query_ids"][key] = query_id
++
++                page.on("request", _on_request)
++                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
++                time.sleep(5)
++
++                # Read back updated cookies
++                for cookie in ctx.cookies():
+                     if cookie["name"] == "ct0":
+-                        extracted_data["ct0"] = cookie["value"]
++                        extracted["ct0"] = cookie["value"]
+                     elif cookie["name"] == "auth_token":
+-                        extracted_data["auth_token"] = cookie["value"]
++                        extracted["auth_token"] = cookie["value"]
+ 
+                 browser.close()
+ 
+-            # بررسی اینکه آیا پارامترهای کلیدی با موفقیت استخراج شده‌اند یا خیر
+-            if extracted_data["x-client-transaction-id"] and extracted_data["ct0"]:
+-                logger.info("New authentication parameters extracted successfully.")
+-                
+-                # اعمال تغییرات در شیء کانفیگ
+-                config["api_headers"]["x-client-transaction-id"] = extracted_data["x-client-transaction-id"]
+-                config["api_cookies"]["ct0"] = extracted_data["ct0"]
+-                config["api_cookies"]["auth_token"] = extracted_data["auth_token"]
+-                
+-                self._save_config(config)
+-                return True
+-            else:
+-                logger.error("Failed to extract complete auth parameters. Manual login may be required.")
+-                return False
+-
+-        except Exception as e:
+-            logger.error(f"Error during session update via Playwright: {e}")
++        except KeyboardInterrupt:
++            logger.info("Quick refresh cancelled by user.")
++            print("\nCancelled.\n")
++            return False
++        except Exception as exc:
++            logger.error("Quick refresh failed: %s", exc)
++            print(f"\nQuick refresh failed: {exc}\n")
++            print("Your cookies may have expired. Use mode 2 (Full login) instead.\n")
+             return False
+ 
+-if __name__ == "__main__":
+-    logging.basicConfig(level=logging.INFO)
++        if extracted["x_client_transaction_id"] or extracted["ct0"] != old_ct0 or extracted["query_ids"]:
++            report = self._apply_extracted(cfg, extracted, old_txid, current_cookies)
++            self._save_config(cfg)
++
++            print("\nQuick refresh completed!")
++            print(f"  x-client-transaction-id: [{report.get('x-client-transaction-id', 'unchanged')}]")
++            print(f"  ct0:                     [{report.get('ct0', 'unchanged')}]")
++            print(f"  Query IDs extracted:     {report.get('query_ids', '0')}")
++            return True
++
++        logger.error("Quick refresh returned no fresh parameters. Session expired.")
++        print("\nNo fresh parameters captured. Session likely expired.\n")
++        print("Use mode 2 (Full login) instead.\n")
++        return False
++
++    # ------------------------------------------------------------------ #
++    #  Mode 2 - Full Interactive Login (headed, user logs in manually)
++    # ------------------------------------------------------------------ #
++
++    def full_login(self, cfg: Dict[str, Any]) -> bool:
++        """
++        Open a visible browser for the user to log in to X/Twitter manually.
++
++        Extracts ALL fresh parameters: cookies, x-client-transaction-id,
++        and query IDs.  Recommended when existing cookies have expired.
++        """
++        existing_cookies = cfg.get("api_cookies", {})
++        old_txid = cfg.get("api_headers", {}).get("x-client-transaction-id")
++
++        pw_cookies = self._cookiestring_to_playwright(existing_cookies) if existing_cookies else []
++
++        extracted: Dict[str, Any] = {
++            "x_client_transaction_id": None,
++            "ct0": None,
++            "auth_token": None,
++            "all_cookies": {},
++            "query_ids": {},
++        }
++
++        logger.info("Launching Playwright for full interactive login...")
++
++        try:
++            with sync_playwright() as pw:
++                browser = pw.chromium.launch(headless=False)  # visible browser
++                ctx = browser.new_context()
++
++                if pw_cookies:
++                    ctx.add_cookies(pw_cookies)  # help pre-fill session
++
++                page = ctx.new_page()
++
++                def _on_request(req: Request) -> None:
++                    url = req.url
++                    headers = req.headers
++
++                    if (
++                        self._graphql_indicator in url
++                        and "x-client-transaction-id" in headers
++                        and not extracted["x_client_transaction_id"]
++                    ):
++                        extracted["x_client_transaction_id"] = headers[
++                            "x-client-transaction-id"
++                        ]
++                        logger.debug("Intercepted x-client-transaction-id")
++
++                    if self._graphql_indicator in url:
++                        result = self._extract_query_id_from_url(url)
++                        if result:
++                            endpoint, query_id = result
++                            key = ENDPOINT_KEY_MAP.get(endpoint)
++                            if key:
++                                extracted["query_ids"][key] = query_id
++
++                page.on("request", _on_request)
++
++                # ---------------------------------------------------------- #
++                #  Interactive login prompt
++                # ---------------------------------------------------------- #
++                print("\n" + "=" * 60)
++                print("  Browser window will open shortly.")
++                print("  Please log in to your X (Twitter) account.")
++                print("=" * 60)
++                print()
++                print("After logging in:")
++                print("  1. Navigate to x.com/home (or any page)")
++                print("  2. Wait for the page to fully load")
++                print("  3. Do NOT close the browser yet")
++                print()
++                print("Waiting up to 120 seconds for you to log in...")
++                print("(Press Ctrl+C at any time to cancel)\n")
++
++                page.goto(self._target_url, wait_until="domcontentloaded", timeout=60000)
++
++                # Poll for home page to confirm session is active
++                login_timeout = 120
++                start = time.time()
++                while time.time() - start < login_timeout:
++                    try:
++                        url = page.url
++                        if "home" in url.lower() or "x.com" in url.lower():
++                            time.sleep(3)  # let initial requests fire
++                            break
++                    except Exception:
++                        pass
++                    time.sleep(2)
++
++                # Extra wait for all network activity
++                print("Session active. Waiting for data extraction...")
++                time.sleep(10)
++
++                # Read ALL fresh cookies
++                for cookie in ctx.cookies():
++                    extracted["all_cookies"][cookie["name"]] = cookie["value"]
++
++                browser.close()
++
++        except KeyboardInterrupt:
++            logger.info("Full login cancelled by user.")
++            print("\nCancelled.\n")
++            return False
++        except Exception as exc:
++            logger.error("Full login failed: %s", exc)
++            print(f"\nFull login failed: {exc}\n")
++            return False
++
++        # ---------------------------------------------------------- #
++        #  Apply extracted data to config
++        # ---------------------------------------------------------- #
++        if not extracted["all_cookies"]:
++            logger.error("Full login captured no cookies.")
++            print("\nNo cookies captured. Try again.\n")
++            return False
++
++        critical_missing = [
++            key
++            for key in ("auth_token", "ct0")
++            if key not in extracted["all_cookies"]
++        ]
++        if critical_missing:
++            logger.warning(
++                "Full login captured cookies but missing critical keys: %s",
++                critical_missing,
++            )
++            print(
++                f"\nWarning: captured cookies are missing critical keys:"
++                f" {', '.join(critical_missing)}."
++                f"\nThe session may not work. Saving anyway.\n"
++            )
++
++        # Replace all cookies
++        cfg["api_cookies"] = extracted["all_cookies"]
++
++        if extracted["x_client_transaction_id"]:
++            cfg.setdefault("api_headers", {})
++            cfg["api_headers"]["x-client-transaction-id"] = extracted[
++                "x_client_transaction_id"
++            ]
++
++        if extracted["query_ids"]:
++            api_config = cfg.setdefault("api_config", {})
++            api_config.update(extracted["query_ids"])
++
++        self._save_config(cfg)
++
++        report = {}
++        report["cookies"] = str(len(extracted["all_cookies"]))
++        report["x-client-transaction-id"] = (
++            "fresh" if extracted["x_client_transaction_id"] else "not captured"
++        )
++        report["query_ids"] = str(len(extracted["query_ids"]))
++
++        print("\n" + "=" * 60)
++        print("  Full login refresh completed successfully!")
++        print("=" * 60)
++        print(f"\n  Cookies updated:           {report['cookies']}")
++        print(f"  x-client-transaction-id:   [{report['x-client-transaction-id']}]")
++        print(f"  Query IDs extracted:       {report['query_ids']}")
++
++        if extracted["query_ids"]:
++            for key, val in extracted["query_ids"].items():
++                print(f"    - {key}: {val}")
++
++        print(f"\n  Config saved to: {self.config_path}\n")
++        return True
++
++    # ------------------------------------------------------------------ #
++    #  CLI entry point
++    # ------------------------------------------------------------------ #
++
++    def run(self) -> None:
++        """Interactive CLI: choose quick refresh or full login mode."""
++        print("\n" + "=" * 60)
++        print("  Twitter Session Updater")
++        print("=" * 60)
++        print()
++        print("Choose a refresh mode:")
++        print()
++        print("  1. Quick Refresh")
++        print("     - Uses existing cookies from config.json")
++        print("     - Works only if your session is still active")
++        print("     - Faster, no manual login needed")
++        print()
++        print("  2. Full Login  (recommended)")
++        print("     - Opens a visible browser window")
++        print("     - Log in manually to X/Twitter")
++        print("     - Extracts all fresh parameters:")
++        print("       cookies, x-client-transaction-id, query IDs")
++        print("     - Use when quick refresh fails")
++        print()
++
++        try:
++            choice = input("Choose (1/2, default 2): ").strip() or "2"
++        except EOFError:
++            choice = "2"
++
++        try:
++            cfg = self._load_config()
++        except FileNotFoundError as exc:
++            print(f"\nError: {exc}")
++            print("Run setup_api_cookies.py first to create a config file.")
++            sys.exit(1)
++
++        if choice == "1":
++            success = self.quick_refresh(cfg)
++        elif choice == "2":
++            success = self.full_login(cfg)
++        else:
++            print(f"\nInvalid choice: {choice}. Use 1 or 2.")
++            sys.exit(1)
++
++        if success:
++            print("\nYou can now run your scripts:")
++            print("  python3 historical_scripts/historical_runner.py")
++            print("  python3 live_scripts/live_runner.py")
++            print("  python3 search_scripts/search_runner.py --once")
++        else:
++            print(
++                "\nRefresh failed. Ensure you have an active internet"
++                " connection and valid X/Twitter credentials.\n"
++            )
++            sys.exit(1)
++
++
++def main() -> None:
++    """Entry point for the session updater."""
++    logging.basicConfig(
++        level=logging.INFO,
++        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
++    )
+     updater = SessionUpdater()
+-    updater.update_session()
++    updater.run()
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/TWEETER DATA FETCHING 4.0/shared/config/config.json b/TWEETER DATA FETCHING 4.0/shared/config/config.json
+index 46c34a5..293dd58 100644
+--- a/TWEETER DATA FETCHING 4.0/shared/config/config.json	
++++ b/TWEETER DATA FETCHING 4.0/shared/config/config.json	
+@@ -27,7 +27,7 @@
+     "cursor_error_max_retries": 3,
+     "default_timeout_seconds": 20,
+     "tweet_detail_query_id": "",
+-    "search_timeline_query_id": "099UqLkXma7fhT81Jv4n9g",
++    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
+     "search_warmup_seconds": 2,
+     "first_request_warmup_seconds": 15,
+     "pagination_safety_cap_pages": 50
+
 ```
+
+## Git Diffs Staged
+```diff
+
+```
+
+
+# Git Logs
+
+## Commit: 2026-06-22 15:40:47 +0330
+**Message:** Update parent: .gitignore, search_config.json, and remove structure.txt
+
+**Files:**
+- .gitignore
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/search_config.json
+- structure.txt
+
+## Commit: 2026-06-22 15:36:44 +0330
+**Message:** Add AGENTS.md, repomix-output.md, and refactor search subsystem isolation
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/AGENTS.md
+- TWEETER DATA FETCHING 4.0/repomix-output.md
+- TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py
+- TWEETER DATA FETCHING 4.0/shared/data_pipeline/storage_manager.py
+
+## Commit: 2026-06-14 16:43:11 +0330
+**Message:** Normalize fetcher subsystem state paths
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/shared/core/fetcher_engine.py
+
+## Commit: 2026-06-14 16:38:43 +0330
+**Message:** Fix storage manager exporter import
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/shared/data_pipeline/storage_manager.py
+
+## Commit: 2026-06-14 16:33:16 +0330
+**Message:** Update auth configuration helpers
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py
+- TWEETER DATA FETCHING 4.0/shared/auth/setup_api_cookies.py
+
+## Commit: 2026-06-14 16:32:52 +0330
+**Message:** Move runners and diagnostics into project layout
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/historical_scripts/historical_runner.py
+- TWEETER DATA FETCHING 4.0/live_scripts/live_runner.py
+- TWEETER DATA FETCHING 4.0/live_scripts/viral_detector.py
+- TWEETER DATA FETCHING 4.0/search_scripts/search_runner.py
+- TWEETER DATA FETCHING 4.0/shared/tools/check_replies_parity.py
+- TWEETER DATA FETCHING 4.0/shared/tools/diagnose_replies_only.py
+
+## Commit: 2026-06-14 16:32:14 +0330
+**Message:** Reorganize shared core and storage paths
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/live_scripts/live_storage.py
+- TWEETER DATA FETCHING 4.0/shared/config/tier_config.py
+- TWEETER DATA FETCHING 4.0/shared/core/api_manager.py
+- TWEETER DATA FETCHING 4.0/shared/core/fetcher_engine.py
+- TWEETER DATA FETCHING 4.0/shared/core/set_operations.py
+- TWEETER DATA FETCHING 4.0/shared/core/windowing.py
+- TWEETER DATA FETCHING 4.0/shared/data_pipeline/storage_manager.py
+- shared/data_pipeline/storage_manager.py
+
+## Commit: 2026-06-12 01:15:07 +0330
+**Message:** Restructuring the code base : Deleting the old and keeping the new
+
+**Files:**
+- .vscode/settings.json
+- TWEETER DATA FETCHING 4.0/historical_scripts/historical_runner.py
+- TWEETER DATA FETCHING 4.0/live_scripts/live_storage.py
+- TWEETER DATA FETCHING 4.0/live_scripts/viral_detector.py
+- TWEETER DATA FETCHING 4.0/main.py
+- TWEETER DATA FETCHING 4.0/orchestrators/live_storage.py
+- TWEETER DATA FETCHING 4.0/orchestrators/viral_detector.py
+- TWEETER DATA FETCHING 4.0/shared/__init__.py
+- TWEETER DATA FETCHING 4.0/shared/auth/session_updater.py
+- TWEETER DATA FETCHING 4.0/shared/auth/setup_api_cookies.py
+- TWEETER DATA FETCHING 4.0/shared/core/windowing.py
+- TWEETER DATA FETCHING 4.0/shared/data_pipeline/storage_manager.py
+- TWEETER DATA FETCHING 4.0/shared/exporters/__init__.py
+- TWEETER DATA FETCHING 4.0/shared/exporters/text_export_helper.py
+- TWEETER DATA FETCHING 4.0/structure.txt
+- config/__init__.py
+- config/tier_config.py
+- core/__init__.py
+- core/api_manager.py
+- core/fetcher_engine.py
+- core/set_operations.py
+- core/windowing.py
+- data_pipeline/__init__.py
+- data_pipeline/storage_manager.py
+- exporters/__init__.py
+- exporters/text_export_helper.py
+- full_project_context.txt
+- main.py
+- orchestrators/search_runner.py
+- poetry.lock
+- poetry.toml
+- pyproject.toml
+- shared/auth/__init__.py
+- shared/config/__init__.py
+- shared/core/__init__.py
+- shared/data_pipeline/__init__.py
+- structure.txt
+
+## Commit: 2026-06-11 19:16:05 +0330
+**Message:** refactor: in-place V4 migration — shared/, orchestrators/, search/ hard wall, main.py entry point, imports repaired, smoke tests pass
+
+**Files:**
+- .vscode/settings.json
+- TWEETER DATA FETCHING 3.0/project_structure.py
+- TWEETER DATA FETCHING 4.0/main.py
+- TWEETER DATA FETCHING 4.0/orchestrators/live_storage.py
+- TWEETER DATA FETCHING 4.0/orchestrators/viral_detector.py
+- TWEETER DATA FETCHING 4.0/shared/__init__.py
+- TWEETER DATA FETCHING 4.0/shared/auth/__init__.py
+- TWEETER DATA FETCHING 4.0/shared/config/__init__.py
+- TWEETER DATA FETCHING 4.0/shared/config/config.json
+- TWEETER DATA FETCHING 4.0/shared/config/search_config.json
+- TWEETER DATA FETCHING 4.0/shared/core/__init__.py
+- TWEETER DATA FETCHING 4.0/shared/data_pipeline/__init__.py
+- TWEETER DATA FETCHING 4.0/tools/diagnose_replies_only.py
+- capture_x_requests.py
+- config/__init__.py
+- config/tier_config.py
+- core/__init__.py
+- core/api_manager.py
+- core/fetcher_engine.py
+- core/set_operations.py
+- core/windowing.py
+- data_pipeline/__init__.py
+- data_pipeline/storage_manager.py
+- exporters/__init__.py
+- exporters/text_export_helper.py
+- full_project_context.txt
+- main.py
+- orchestrators/historical_runner.py
+- orchestrators/live_runner.py
+- orchestrators/live_storage.py
+- orchestrators/search_runner.py
+- orchestrators/viral_detector.py
+- poetry.lock
+- poetry.toml
+- pyproject.toml
+- search/search_runner.py
+- shared/auth/__init__.py
+- shared/auth/session_updater.py
+- shared/auth/setup_api_cookies.py
+- shared/config/__init__.py
+- shared/config/tier_config.py
+- shared/core/__init__.py
+- shared/core/api_manager.py
+- shared/core/fetcher_engine.py
+- shared/core/set_operations.py
+- shared/core/windowing.py
+- shared/data_pipeline/__init__.py
+- shared/data_pipeline/storage_manager.py
+- structure.txt
+
+## Commit: 2026-06-07 18:22:25 +0330
+**Message:** Checkpoint stable v4 historical fetch pipeline
+
+**Files:**
+- TWEETER DATA FETCHING 4.0/config/tier_config.py
+- TWEETER DATA FETCHING 4.0/core/api_manager.py
+- TWEETER DATA FETCHING 4.0/core/fetcher_engine.py
+- TWEETER DATA FETCHING 4.0/core/set_operations.py
+- TWEETER DATA FETCHING 4.0/data_pipeline/storage_manager.py
+- TWEETER DATA FETCHING 4.0/exporters/text_export_helper.py
+- TWEETER DATA FETCHING 4.0/main_orchestrator.py
+- TWEETER DATA FETCHING 4.0/tools/check_replies_parity.py
+
+## Commit: 2026-06-05 17:33:19 +0330
+**Message:** Initial commit: multi-version Twitter/X data fetching toolkit
+
+**Files:**
+- .gitignore
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/00_START_HERE.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/01_SETUP_GUIDE.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/02_USAGE_GUIDE.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/03_FEATURES.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/04_TROUBLESHOOTING.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/05_API_REFERENCE.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/06_LIVE_MONITORING.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/IMPLEMENTATION_SUMMARY.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/QUICK_START.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/README.md
+- TWEETER DATA FETCHING 1.0/MARKDOWN FILES/REORGANIZATION_SUMMARY.md
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_TweetDetail.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_TweetDetail_2.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_TweetDetail_3.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_TweetDetail_4.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_UserByScreenName.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_UserTweets.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Elon_musk_UserTweetsAndReplies_2.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Real_Donald_Trump_TweetDetail.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Real_Donald_Trump_UserTweets.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Whale_Alert_TweetDetail.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Whale_Alert_UserTweets.txt
+- TWEETER DATA FETCHING 1.0/REFRENCES FILES/Whale_alert_UserByScreenName.txt
+- TWEETER DATA FETCHING 1.0/config.json
+- TWEETER DATA FETCHING 1.0/fetch_historical_tweets.py
+- TWEETER DATA FETCHING 1.0/monitor_live_tweets.py
+- TWEETER DATA FETCHING 1.0/setup_api_cookies.py
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/00_START_HERE_V2.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/01_SETUP_AND_RUN.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/02_MINIMAL_SCRIPTS_GUIDE.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/03_OUTPUT_FORMAT_STANDARD.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/04_TROUBLESHOOTING_V2.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/05_FETCHING_PIPELINE.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/06_STORAGE_ENDPOINTS_DEDUPE.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/07_LIVE_MONITORING_AND_VIRAL.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/08_EXTENSION_GUIDE.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/09_USERTWEETSANDREPLIES_QUERY_IDS_AND_CURSOR_LIFECYCLE.md
+- TWEETER DATA FETCHING 2.0/MARKDOWN FILES/TRANSPORT_RULES_AND_BEHAVIORAL_INVARIANTS.md
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_TweetDetail.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_TweetDetail_2.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_TweetDetail_3.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_TweetDetail_4.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_UserByScreenName.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_UserTweets.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Elon_musk_UserTweetsAndReplies_2.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Real_Donald_Trump_TweetDetail.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Real_Donald_Trump_UserTweets.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Whale_Alert_TweetDetail.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Whale_Alert_UserTweets.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/Whale_alert_UserByScreenName.txt
+- TWEETER DATA FETCHING 2.0/REFRENCES FILES/dudiamsalem_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 2.0/api_manager.py
+- TWEETER DATA FETCHING 2.0/config.json
+- TWEETER DATA FETCHING 2.0/fetch_historical_tweets_hybrid.py
+- TWEETER DATA FETCHING 2.0/monitor_live_tweets_hybrid.py
+- TWEETER DATA FETCHING 2.0/setup_api_cookies.py
+- TWEETER DATA FETCHING 2.0/storage_manager.py
+- TWEETER DATA FETCHING 2.0/tier_config.py
+- TWEETER DATA FETCHING 2.0/viral_detector.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/DEBUG/04_TROUBLESHOOTING_V2.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/DEBUG/DEBUG_LOGGING_SUMMARY.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/00_START_HERE_V2.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/01_SETUP_AND_RUN.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/02_MINIMAL_SCRIPTS_GUIDE.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/03_OUTPUT_FORMAT_STANDARD.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/05_FETCHING_PIPELINE.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/06_STORAGE_ENDPOINTS_DEDUPE.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/07_LIVE_MONITORING_AND_VIRAL.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/08_EXTENSION_GUIDE.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/09_USERTWEETSANDREPLIES_QUERY_IDS_AND_CURSOR_LIFECYCLE.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/RATE_LIMIT_OPERATIONS.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/README.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/SESSION_CONTINUITY_NOTES.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/GUIDES/TRANSPORT_RULES_AND_BEHAVIORAL_INVARIANTS.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/REPORTS/SEARCHTIMELINE_ENDPOINT_PARITY_NOTES.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/MARKDOWN_FILES/REPORTS/SEARCHTIMELINE_EXECUTION_AND_VALIDATION.md
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_TweetDetail_2.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_TweetDetail_3.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_TweetDetail_4.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_UserByScreenName.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Elon_musk_UserTweetsAndReplies_2.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Real_Donald_Trump_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Real_Donald_Trump_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/SearchTimeline.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Whale_Alert_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Whale_Alert_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/Whale_alert_UserByScreenName.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/REFERENCE_FILES/dudiamsalem_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/api_manager.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/config.json
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/debug_logger.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/fetch_historical_tweets_hybrid.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/monitor_search_timeline.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/monitor_search_timeline_exact_replay.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/monitor_search_timeline_exact_replay.py.bak
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/search_config.json
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/setup_api_cookies.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/storage_manager.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/test_logging_integration.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/text_export_helper.py
+- TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/tier_config.py
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/DEBUG/04_TROUBLESHOOTING_V2.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/DEBUG/DEBUG_LOGGING_SUMMARY.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/00_START_HERE_V2.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/01_SETUP_AND_RUN.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/02_MINIMAL_SCRIPTS_GUIDE.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/03_OUTPUT_FORMAT_STANDARD.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/05_FETCHING_PIPELINE.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/06_STORAGE_ENDPOINTS_DEDUPE.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/07_LIVE_MONITORING_AND_VIRAL.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/08_EXTENSION_GUIDE.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/09_USERTWEETSANDREPLIES_QUERY_IDS_AND_CURSOR_LIFECYCLE.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/RATE_LIMIT_OPERATIONS.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/README.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/SESSION_CONTINUITY_NOTES.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/GUIDES/TRANSPORT_RULES_AND_BEHAVIORAL_INVARIANTS.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/REPORTS/SEARCHTIMELINE_ENDPOINT_PARITY_NOTES.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/MARKDOWN_FILES/REPORTS/SEARCHTIMELINE_EXECUTION_AND_VALIDATION.md
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_TweetDetail_2.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_TweetDetail_3.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_TweetDetail_4.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_UserByScreenName.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Elon_musk_UserTweetsAndReplies_2.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Real_Donald_Trump_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Real_Donald_Trump_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/SearchTimeline.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Whale_Alert_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Whale_Alert_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/Whale_alert_UserByScreenName.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/REFERENCE_FILES/dudiamsalem_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/api_manager.py
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/config.json
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/fetch_historical_tweets_hybrid.py
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/setup_api_cookies.py
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/storage_manager.py
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/text_export_helper.py
+- TWEETER DATA FETCHING 3.0/HISTORICAL DATA/tier_config.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/DEBUG/04_TROUBLESHOOTING_V2.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/DEBUG/DEBUG_LOGGING_SUMMARY.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/00_START_HERE_V2.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/01_SETUP_AND_RUN.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/02_MINIMAL_SCRIPTS_GUIDE.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/03_OUTPUT_FORMAT_STANDARD.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/05_FETCHING_PIPELINE.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/06_STORAGE_ENDPOINTS_DEDUPE.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/07_LIVE_MONITORING_AND_VIRAL.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/08_EXTENSION_GUIDE.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/09_USERTWEETSANDREPLIES_QUERY_IDS_AND_CURSOR_LIFECYCLE.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/RATE_LIMIT_OPERATIONS.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/README.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/SESSION_CONTINUITY_NOTES.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/GUIDES/TRANSPORT_RULES_AND_BEHAVIORAL_INVARIANTS.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/REPORTS/SEARCHTIMELINE_ENDPOINT_PARITY_NOTES.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/MARKDOWN_FILES/REPORTS/SEARCHTIMELINE_EXECUTION_AND_VALIDATION.md
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_TweetDetail_2.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_TweetDetail_3.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_TweetDetail_4.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_UserByScreenName.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Elon_musk_UserTweetsAndReplies_2.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Real_Donald_Trump_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Real_Donald_Trump_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/SearchTimeline.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Whale_Alert_TweetDetail.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Whale_Alert_UserTweets.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/Whale_alert_UserByScreenName.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/REFERENCE_FILES/dudiamsalem_UserTweetsAndReplies.txt
+- TWEETER DATA FETCHING 3.0/LIVE DATA/api_manager.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/config.json
+- TWEETER DATA FETCHING 3.0/LIVE DATA/fetch_historical_tweets_hybrid.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/monitor_live_tweets_hybrid.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/setup_api_cookies.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/storage_manager.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/text_export_helper.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/tier_config.py
+- TWEETER DATA FETCHING 3.0/LIVE DATA/viral_detector.py
+- TWEETER DATA FETCHING 4.0/.gitignore
+- TWEETER DATA FETCHING 4.0/auth/__init__.py
+- TWEETER DATA FETCHING 4.0/auth/session_updater.py
+- TWEETER DATA FETCHING 4.0/auth/setup_api_cookies.py
+- TWEETER DATA FETCHING 4.0/config/__init__.py
+- TWEETER DATA FETCHING 4.0/config/tier_config.py
+- TWEETER DATA FETCHING 4.0/core/__init__.py
+- TWEETER DATA FETCHING 4.0/core/api_manager.py
+- TWEETER DATA FETCHING 4.0/core/fetcher_engine.py
+- TWEETER DATA FETCHING 4.0/core/set_operations.py
+- TWEETER DATA FETCHING 4.0/data_pipeline/__init__.py
+- TWEETER DATA FETCHING 4.0/data_pipeline/storage_manager.py
+- TWEETER DATA FETCHING 4.0/exporters/__init__.py
+- TWEETER DATA FETCHING 4.0/exporters/text_export_helper.py
+- TWEETER DATA FETCHING 4.0/main_orchestrator.py
+- capture_x_requests.py
+- requirements.txt
