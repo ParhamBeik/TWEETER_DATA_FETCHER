@@ -10,6 +10,11 @@
 | **Shared Core** | API manager, fetcher engine, utilities | `shared/core/*` |
 | **Shared Storage** | Data persistence and state management | `shared/data_pipeline/storage_manager.py` |
 | **Shared Config** | API keys, endpoints, tier configs | `shared/config/*` |
+| **Auth & Sniffer** | Cookie setup, query-id refresh, traffic capture | `shared/auth/*` (incl. `graphql_sniffer.py`, `session_updater.py`) |
+
+> **Knowledge graph:** a graphify graph lives at `../graphify-out/` (repo root). For codebase questions run
+> `graphify query "<question>"`, `graphify path "<A>" "<B>"` for relationships, or `graphify explain "<concept>"`.
+> After modifying code, refresh it from the repo root with `graphify update .` (AST-only, no API cost).
 
 ## Data Storage Layout
 
@@ -47,6 +52,10 @@ data/
 ```
 
 > **Note:** Search data is isolated. It does NOT create `1_user_tweets/`, `2_user_tweets_and_replies/`, etc. These folders belong exclusively to historical/live processing.
+
+> **Unified root (historical + live):** Both `subsystem="historical"` and `subsystem="live"` collapse to the **same** `data/historical_live/` root (`storage_manager.py` subsystem normalization: `live`/`historical` → `historical_live`). They write the same `raw/UserTweets/`, `raw/UserTweetsAndReplies/`, and the same five `processed/` set folders. Tweet-level dedup is **by tweet id, last-write-wins** (`merge_processed_items`), so a tweet fetched by either subsystem lands exactly once per set. Live-only additive artifacts (`state/live_state.json`, `state/seen_tweets.json`, `state/snapshot_index.json`, `viral/`) never collide with historical.
+
+> **Sniffer runs:** Headful-capture output from `shared/auth/graphql_sniffer.py` lands in `sniffer_runs/<jalali_batch>/` at the v4 root (gitignored — contains full request/response headers incl. `authorization` and `ct0`). See [Sniffer-Derived GraphQL Request Contract](#sniffer-derived-graphql-request-contract).
 
 ---
 
@@ -100,6 +109,49 @@ data/
    ```
    Or manually edit `shared/config/config.json` under the `api_cookies` key.
 5. **Important:** Cookies expire. If you see persistent 401/403 errors, refresh them.
+
+### Capturing Live Traffic (GraphQL Sniffer)
+
+`shared/auth/graphql_sniffer.py` is a **headful Selenium** capture tool that records the **real** Twitter/X
+GraphQL request shape the browser sends — including the per-request JavaScript-generated auth headers
+(`x-client-transaction-id`, `query-id`) — so you can keep the fetchers aligned with what the live site
+actually does. It is **read-only/diagnostic**: it never writes `config.json`. Applying captured query-ids is
+[`session_updater.py`](#auth--sniffer)'s job.
+
+```bash
+# Capture a profile's timeline traffic (headful Chrome opens; close it or wait for --timeout)
+python -m shared.auth.graphql_sniffer elonmusk --timeout 120
+
+# Point it at an arbitrary URL (search, with_replies, etc.)
+python -m shared.auth.graphql_sniffer "https://x.com/search?q=Iran&f=live" --timeout 120
+
+# Override the output directory (default: sniffer_runs/<jalali_batch>/)
+python -m shared.auth.graphql_sniffer elonmusk --output-dir ./my_capture
+```
+
+Each run emits **four artifacts** into `sniffer_runs/<jalali_batch>/`:
+
+| Artifact | What it is |
+|---|---|
+| `timeline.jsonl` | Arrival-ordered request/response events (URL, method, full headers, body, status). |
+| `timeline.html` | Human-readable waterfall; columns surface `x-client-transaction-id`, `x-csrf-token`, `x-twitter-auth-type`, rate-limit headers. |
+| `contract.json` | Per-endpoint structured contract: `{query_id, method, url_template, variables_sample, features, fieldToggles, request_headers_seen, dynamic header notes, referer_sample, response_status_codes, sample_rate_limit}`. |
+| `playbook.md` | Paste-ready markdown for this file/README: endpoint table, per-endpoint detail, static-vs-dynamic header split, and the `x-client-transaction-id` algorithm note. |
+
+**How capture works:** a small fetch/XHR interceptor is injected into the page via Chrome DevTools
+(`Page.addScriptToEvaluateOnNewDocument`) **before** any page script runs, so it sees exactly the headers
+the site's own JS sets — including ones a plain HTTP proxy would not synthesize. Captured tokens are surfaced
+from the recorded headers; nothing is replayed or generated.
+
+**Keeping the contract current:** when Twitter rotates query-ids, run the sniffer, then apply the new ids with
+`python shared/auth/session_updater.py` (or paste them into `api_config` in `shared/config/config.json`). The
+sniffer deliberately stops at observation — it does not auto-write config.
+
+**Caveat:** requires a working Chrome + chromedriver. Selenium's built-in `selenium-manager` normally fetches
+the matching driver; if that download is blocked (e.g. offline sandbox), install it manually:
+`brew install --cask chromedriver` (macOS) or download from chrome-for-testing. The captured run contains
+**live credentials** (auth tokens/cookies in headers) — `sniffer_runs/` is gitignored; do not share raw
+captures. The `playbook.md` masks secret values.
 
 ---
 
@@ -251,12 +303,16 @@ self.storage = StorageManager(
 | `pytz` | Timezone handling (Asia/Tehran is the default) |
 | `jdatetime` | Jalali calendar conversion (optional, fallback is built-in) |
 | `rich` | Optional — provides terminal UI formatting |
+| `selenium` | Required only by the GraphQL sniffer (`shared/auth/graphql_sniffer.py`) for headful capture |
+| `playwright` | Required only by `shared/auth/session_updater.py` (query-id refresh). Install browsers with `playwright install chromium`. |
 
 Install dependencies:
 ```bash
 pip3 install pytz
 pip3 install jdatetime    # optional, improves Jalali formatting
 pip3 install rich          # optional, improves terminal output
+pip3 install selenium      # only for the GraphQL sniffer
+pip3 install playwright    # only for session_updater (query-id refresh)
 ```
 
 ### Virtual Environment
@@ -320,6 +376,76 @@ Each runner instantiates `FetcherEngine` → `APIManager` → `StorageManager` i
 
 Endpoint-specific query IDs (e.g., `UserTweets`, `SearchTimeline`) are looked up via `APIManager.get_query_id(endpoint)` from the `api_config` section of `config.json`. If missing, the runner raises `RuntimeError`.
 
+### Core Rule: Strict YAGNI
+
+Use the simplest correct implementation for the current Twitter/X request patterns:
+
+- Do not add abstractions, layers, interfaces, config knobs, or generalized designs unless they are required by the current working code.
+- Prefer direct endpoint-specific code when only one caller needs the behavior.
+- Do not add transaction-ID pools, rotation systems, or guessed anti-bot mechanics unless captured logs prove they are required and the runtime uses them now.
+- Do not generalize untargeted endpoints while fixing `UserTweets`, `UserTweetsAndReplies`, or `SearchTimeline`.
+- If existing complexity can be replaced by a simpler structure without losing behavior, propose or make that simplification.
+- Store only request-shape data that the code actually reads now; document observations separately instead of adding unused config.
+
+### Sniffer-Derived GraphQL Request Contract (July 2026)
+
+`shared/auth/graphql_sniffer.py` (headful Selenium + CDP-injected interceptor) captures the **real**
+browser request shape and emits four artifacts per run — `timeline.jsonl`, `timeline.html`,
+`contract.json`, and a paste-ready `playbook.md` into `sniffer_runs/<jalali_batch>/` (see
+[Capturing Live Traffic](#capturing-live-traffic-graphql-sniffer)). The table below is the contract the
+sniffer is designed to verify; the query-ids are the **last values seen live** and must be re-captured
+when Twitter rotates them. The project state is intentionally minimal: keep the query-ids and exact
+payload shape aligned with the live site, but do not add generalized request builders. Keep
+`shared/config/config.json`, `shared/core/api_manager.py`, `shared/core/fetcher_engine.py`, and
+`search_scripts/search_runner.py` aligned with these invariants.
+
+| Endpoint | Query ID | Referer Pattern | Variables |
+|---|---|---|---|
+| `UserTweets` | `hr4gzZONlq23okjU8fIe_A` | `https://x.com/{username}` | `userId`, `count: 20`, optional `cursor`, `includePromotedContent: true`, `withQuickPromoteEligibilityTweetFields: true`, `withVoice: true` |
+| `UserTweetsAndReplies` | `FIFgycIi-CNJcV0R-135Uw` | `https://x.com/{username}/with_replies` | `userId`, `count: 20`, optional `cursor`, `includePromotedContent: true`, `withCommunity: true`, `withVoice: true` |
+| `SearchTimeline` | `Bcw3RzK-PatNAmbnw54hFw` | `https://x.com/search?...&src=typed_query` or trend URL | `rawQuery`, `count: 20`, optional `cursor`, `querySource`, `product`, `withGrokTranslatedBio: true`, `withQuickPromoteEligibilityTweetFields: false` |
+
+Common request details:
+- Method is `GET` against `https://x.com/i/api/graphql/{query_id}/{endpoint}`.
+- Query string includes compact JSON `variables` and `features`.
+- `UserTweets` and `UserTweetsAndReplies` include `fieldToggles={"withArticlePlainText":false}`; `SearchTimeline` omits `fieldToggles`.
+- Shared feature flags match the sniffer payloads, including `post_ctas_fetch_enabled: false`.
+- `UserByScreenName` remains on its existing simple lookup path unless that endpoint is explicitly being refreshed from a sniffer run.
+
+**Static vs. per-request dynamic headers** (the split the `playbook.md` calls out):
+
+| Header | Class | How to source it |
+|---|---|---|
+| `authorization` | **Static** | Public web Bearer token — constant across all web clients; same value for every request/session. |
+| `x-twitter-auth-type: OAuth2Session` | **Static** | Constant while authenticated. |
+| `x-csrf-token` | **Session-bound** | Equals the `ct0` cookie value for this session. Set by `APIManager` from `api_cookies.ct0`. |
+| `x-twitter-active-user: yes`, `x-twitter-client-language: en`, `content-type`, `user-agent`, `sec-ch-ua*` | **Static** | Constant; set by `APIManager`. |
+| `referer` | **Page-dependent** | Derived from the endpoint / page (`x.com/{user}`, `…/with_replies`, `…/search?…`). |
+| `x-client-transaction-id` | **Dynamic (per-request)** | Generated client-side by the page JS — see algorithm note below. |
+
+**`x-client-transaction-id` algorithm (observed, documented — not reimplemented):**
+
+1. The value is **generated in the browser per request** by Twitter's web JS, derived from the request
+   method + path plus an animation-frame / timing-derived seed. It **rotates every request**; it is **not**
+   a fixed pool of valid ids and is **not** validated strictly server-side.
+2. The project does **not** reimplement this generator in Python. `api_headers.x-client-transaction-id`
+   may be left blank; `APIManager` synthesizes a stable **fallback session transaction id** so requests
+   still carry the header. This is sufficient for the endpoints the fetchers use today.
+3. **Do not** hardcode captured transaction ids into a pool/rotation list — that contradicts (1) and the
+   [Strict YAGNI](#core-rule-strict-yagni) rule. Capture is for understanding, not replay.
+4. If a future anti-bot change makes a *real* rotating tx-id mandatory, the source of truth is the page JS;
+   the sniffer (`timeline.jsonl` + `contract.json`) is how you'd confirm the new shape before building
+   anything. Until then, the fallback is correct.
+
+**Keeping the contract current:** run `python -m shared.auth.graphql_sniffer <profile> --timeout 120`,
+read the emitted `contract.json` / `playbook.md`, then apply refreshed query-ids with
+`python shared/auth/session_updater.py` (or edit `api_config` in `shared/config/config.json` directly).
+The sniffer never writes config; `session_updater.py` owns the apply step.
+
+> **Archive note:** the older response-only capture lives at the repo root in `graphql_sniffer.py` and
+> `graphql_logs/` (26-file archive). It is **superseded** by the v4 Selenium sniffer and kept only as a
+> historical reference — do not run it for new captures.
+
 ---
 
 ## Key Files Reference
@@ -365,6 +491,16 @@ Endpoint-specific query IDs (e.g., `UserTweets`, `SearchTimeline`) are looked up
 
 > **Warning:** `config.json` contains sensitive credentials (auth tokens, cookies). Do not commit to version control.
 
+### Auth & Sniffer
+
+| File | Purpose | Key Classes/Functions |
+|------|---------|----------------------|
+| `shared/auth/graphql_sniffer.py` | Headful Selenium capture of live GraphQL traffic + JS-generated auth headers; emits `timeline.jsonl`, `timeline.html`, `contract.json`, `playbook.md` | `observe(target, timeout_seconds, output_dir)`, `_extract_contract`, `_write_playbook` |
+| `shared/auth/session_updater.py` | Applies captured query-ids into `config.json` (atomic save w/ backup); Playwright-based | `SessionUpdater`, `_apply_extracted`, `ENDPOINT_KEY_MAP` |
+| `shared/auth/setup_api_cookies.py` | Interactive cookie harvest → `api_cookies` in `config.json` | — |
+
+> The sniffer is **read-only** (no config writes). `session_updater.py` owns the write/apply step.
+
 ---
 
 ## Running the Project
@@ -391,6 +527,9 @@ python search_scripts/search_runner.py --check-interval 60
 
 # Search monitor (specific queries only)
 python search_scripts/search_runner.py --once --only "My Search Name"
+
+# GraphQL sniffer — capture live request shape (read-only; needs selenium + chromedriver)
+python -m shared.auth.graphql_sniffer elonmusk --timeout 120
 ```
 
 ---
@@ -410,7 +549,8 @@ python search_scripts/search_runner.py --once --only "My Search Name"
 ├── shared/
 │   ├── auth/
 │   │   ├── __init__.py
-│   │   ├── session_updater.py
+│   │   ├── graphql_sniffer.py   # headful Selenium capture → contract/playbook
+│   │   ├── session_updater.py    # applies captured query-ids to config.json
 │   │   └── setup_api_cookies.py
 │   ├── config/
 │   │   ├── __init__.py
@@ -432,10 +572,10 @@ python search_scripts/search_runner.py --once --only "My Search Name"
 │   └── tools/
 │       ├── check_replies_parity.py
 │       └── diagnose_replies_only.py
-├── data/                     # Generated data (not committed)
-├── logs/                     # Generated logs (not committed)
-├── structure.txt             # Legacy project structure doc
-└── repomix-output.md         # Packed repo output
+├── data/                     # Generated data (not committed; see Data Storage Layout)
+├── sniffer_runs/             # GraphQL sniffer captures (not committed — contains live creds)
+├── structure.txt             # Auto-generated runtime tree snapshot (data/ + source modules)
+└── repomix-output.md         # One-off packed repo export (reference only)
 ```
 
 ---
@@ -464,4 +604,3 @@ The search subsystem was refactored to fix three architectural flaws:
 
 - `shared/data_pipeline/storage_manager.py` — Added `manage_sync_state`, `create_folders` parameters; added `save_search_result_page()` method
 - `search_scripts/search_runner.py` — Updated `StorageManager` instantiation; replaced `save_raw_page` with `save_search_result_page`
-
