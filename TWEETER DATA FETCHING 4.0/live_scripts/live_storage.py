@@ -108,15 +108,12 @@ class LiveStorageManager:
         }
         self._save_json(self.seen_tweets_file, self.seen_tweets)
 
-    def save_processed_set(self, username: str, set_name: str, tweets: List[Dict[str, Any]]) -> Dict[str, Path]:
-        folder = self.storage.SET_FOLDER_MAP.get(set_name, self.storage.SET_FOLDER_MAP.get(str(set_name).upper(), set_name))
-        target = self.processed_root / folder / self.safe_slug(username.lower())
-        target.mkdir(parents=True, exist_ok=True)
-        output_json = target / f"{folder}.json"
-        self._save_json(output_json, tweets or [])
-        output_txt = target / f"{folder}.txt"
-        self.storage.save_processed_txt(tweets or [], output_txt)
-        return {"json": output_json, "txt": output_txt}
+    def save_processed_set(self, username: str, set_name: str, tweets: List[Dict[str, Any]]) -> List[Path]:
+        # Merge into the shared historical_live store (same writer historical uses),
+        # producing {folder}.json (merged by tweet id) + per-Jalali-date .txt files.
+        # This unifies live with historical so a live run accumulates instead of
+        # overwriting the previously-merged historical set.
+        return self.storage.save_processed_set_merged(tweets or [], set_name, username)
 
     def should_save_snapshot(self, tweet_id: str, metrics: Dict[str, Any], min_delta: int, min_minutes: int) -> Tuple[bool, str]:
         snapshots = self.load_snapshots(tweet_id)
