@@ -1,51 +1,86 @@
-📁 TWEETER DATA FETCHING 4.0/
-├── 📁 data/
-│   ├── 📁 historical_live/
-│   │   ├── 📁 logs/
-│   │   ├── 📁 processed/
-│   │   │   ├── 📁 1_user_tweets/
-│   │   │   ├── 📁 2_user_tweets_and_replies/
-│   │   │   ├── 📁 3_intersection/
-│   │   │   ├── 📁 4_union/
-│   │   │   └── 📁 5_replies_only/
-│   │   ├── 📁 raw/
-│   │   │   ├── 📁 UserTweets/
-│   │   │   └── 📁 UserTweetsAndReplies/
-│   │   ├── 📁 reports/
-│   │   └── 📁 state/
-│   └── 📁 search/
-│       ├── 📁 raw/
-│       └── 📁 state/
-├── 📁 historical_scripts/
-│   └── 📄 historical_runner.py
-├── 📁 live_scripts/
-│   ├── 📄 live_runner.py
-│   ├── 📄 live_storage.py
-│   └── 📄 viral_detector.py
-├── 📁 search_scripts/
-│   └── 📄 search_runner.py
-└── 📁 shared/
-    ├── 📁 auth/
-    │   ├── 📄 __init__.py
-    │   ├── 📄 session_updater.py
-    │   └── 📄 setup_api_cookies.py
-    ├── 📁 config/
-    │   ├── 📄 __init__.py
-    │   ├── 📄 config.json
-    │   ├── 📄 search_config.json
-    │   └── 📄 tier_config.py
-    ├── 📁 core/
-    │   ├── 📄 __init__.py
-    │   ├── 📄 api_manager.py
-    │   ├── 📄 fetcher_engine.py
-    │   ├── 📄 set_operations.py
-    │   └── 📄 windowing.py
-    ├── 📁 data_pipeline/
-    │   ├── 📄 __init__.py
-    │   └── 📄 storage_manager.py
-    ├── 📁 exporters/
-    │   ├── 📄 __init__.py
-    │   └── 📄 text_export_helper.py
-    └── 📁 tools/
-        ├── 📄 check_replies_parity.py
-        └── 📄 diagnose_replies_only.py
+# TWEETER DATA FETCHING 4.0 — Project Structure
+#
+# Auto-generated source-module map ( regenerated from on-disk tree ).
+# `data/` and `sniffer_runs/` are runtime-generated and gitignored; only their
+# high-level layout is shown. For full prose see AGENTS.md and README.md.
+#
+# Generated: 2026-07-04
+
+TWEETER DATA FETCHING 4.0/
+├── AGENTS.md                          # Deep project index & guide (canonical docs)
+├── README.md                          # Project overview + quickstart
+├── repomix-output.md                  # One-off packed repo export (reference only)
+├── structure.txt                      # This file
+│
+├── historical_scripts/
+│   └── historical_runner.py           # Historical fetch pipeline (UserTweets + UserTweetsAndReplies)
+│
+├── live_scripts/
+│   ├── live_runner.py                 # Continuous live monitor
+│   ├── live_storage.py                # LiveStorageManager (live_state/seen_tweets/snapshot_index)
+│   └── viral_detector.py              # Viral tweet detection
+│
+├── search_scripts/
+│   └── search_runner.py               # SearchTimeline monitor (isolated subsystem)
+│
+├── shared/
+│   ├── auth/
+│   │   ├── __init__.py
+│   │   ├── graphql_sniffer.py         # Headful Selenium capture → contract.json + playbook.md (read-only)
+│   │   ├── session_updater.py         # Applies captured query-ids into config.json (Playwright)
+│   │   └── setup_api_cookies.py       # Interactive cookie harvest → api_cookies
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── config.json                # API cookies, tokens, query-ids, features (gitignored: secrets)
+│   │   ├── search_config.json         # Search query definitions
+│   │   └── tier_config.py             # Account tiers + priority/pagination policy
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── api_manager.py             # APIManager — session, rate limit, auth headers, tx-id fallback
+│   │   ├── fetcher_engine.py          # FetcherEngine — pagination, windowing
+│   │   ├── set_operations.py          # TweetSetProcessor — intersection/union/diff for the 5 sets
+│   │   └── windowing.py               # RollingWindowEvaluator
+│   ├── data_pipeline/
+│   │   ├── __init__.py
+│   │   └── storage_manager.py         # StorageManager — raw/processed/state I/O + subsystem normalization
+│   ├── exporters/
+│   │   ├── __init__.py
+│   │   └── text_export_helper.py      # Plain-text export
+│   └── tools/
+│       ├── check_replies_parity.py    # Diagnostics
+│       └── diagnose_replies_only.py   # Diagnostics
+│
+├── data/                              # [gitignored] runtime data — layout below
+│   ├── historical_live/               #   historical + live share this root (subsystem → historical_live)
+│   │   ├── raw/
+│   │   │   ├── UserTweets/
+│   │   │   └── UserTweetsAndReplies/
+│   │   ├── processed/
+│   │   │   ├── 1_user_tweets/         #   set A
+│   │   │   ├── 2_user_tweets_and_replies/  #  set B
+│   │   │   ├── 3_intersection/        #   A ∩ B
+│   │   │   ├── 4_union/               #   A ∪ B (dedup by tweet id)
+│   │   │   └── 5_replies_only/        #   B − A
+│   │   ├── logs/                      #   historical/live fetch logs
+│   │   ├── reports/                   #   per-run report JSON
+│   │   ├── state/                     #   sync_state.json, live_state.json, seen_tweets.json, snapshot_index.json
+│   │   └── viral/                     #   snapshots/, reports/  (live-only)
+│   └── search/                        #   search subsystem (isolated; never creates the 5 sets)
+│       ├── raw/{slug}/{product}/{batch}/page_{i}.json
+│       ├── processed/{slug}/{product}/{slug}.{json,txt}
+│       ├── debug/{slug}/{product}/{slug}__debug_first_page_*.json
+│       ├── logs/
+│       ├── reports/
+│       └── state/search_state.json
+│
+├── sniffer_runs/                      # [gitignored] GraphQL sniffer captures (contains live creds)
+│   └── {jalali_batch}/
+│       ├── timeline.jsonl
+│       ├── timeline.html
+│       ├── contract.json
+│       └── playbook.md
+│
+└── graphify-out/                      # [v4 stub] canonical graph is at repo root (../graphify-out/)
+
+# Legacy archive (repo root, OUTSIDE v4): graphql_sniffer.py + graphql_logs/
+#   — superseded response-only capture; kept as historical reference, do not run.
