@@ -17,9 +17,11 @@ import time
 import uuid
 import base64
 import random
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     import requests
@@ -139,8 +141,8 @@ class APIManager:
         
         tx_id = configured_headers.get("x-client-transaction-id") or self._generate_transaction_id()
 
-        # Stable browser/session headers copied from the original reliable
-        # fetcher. Route-specific requests override only referer/active-user.
+        # Stable browser/session headers copied from the GraphQL sniffer logs.
+        # Route-specific requests override only referer/active-user.
         self.session.headers.update({
             "authorization": f"Bearer {bearer}",
             "x-csrf-token": csrf_token,
@@ -149,21 +151,15 @@ class APIManager:
             "x-twitter-client-language": "en",
             "x-client-transaction-id": tx_id,
             "user-agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/147.0.0.0 Safari/537.36"
+                "Chrome/120.0.0.0 Safari/537.36"
             ),
             "referer": "https://x.com/",
-            "accept": "*/*",
             "content-type": "application/json",
-            "dnt": "1",
-            "priority": "u=1, i",
-            "sec-ch-ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+            "sec-ch-ua": '"Not/A)Brand";v="99", "Chromium";v="148"',
             "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"macOS"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
+            "sec-ch-ua-platform": '"Windows"',
         })
         if configured_headers:
             self.session.headers.update({k: str(v) for k, v in configured_headers.items() if v})
@@ -220,7 +216,7 @@ class APIManager:
             ]
 
         if endpoint == "UserTweets":
-            return [RequestContext("user_profile", endpoint, f"https://x.com/i/user/{username}" if username else profile_url, "yes", ())]
+            return [RequestContext("user_profile", endpoint, profile_url, "yes", (profile_url,))]
 
         if endpoint == "UserByScreenName":
             return [
@@ -279,53 +275,6 @@ class APIManager:
         headers["x-twitter-active-user"] = ctx.active_user
         if extra_headers:
             headers.update({k: str(v) for k, v in extra_headers.items() if v})
-        if endpoint == "UserTweetsAndReplies":
-            headers = self._apply_replies_request_profile(headers, username)
-        return headers
-
-    def _apply_replies_request_profile(self, headers: Dict, username: Optional[str]) -> Dict:
-        """Match the standalone UserTweetsAndReplies diagnostic request shape."""
-        cookies = self.config.get("api_cookies", {})
-        bearer = self.config.get("api_auth", {}).get("bearer_token", "")
-        csrf_token = cookies.get("ct0", "")
-        configured_headers = self.config.get("api_headers", {})
-        tx_id = configured_headers.get("x-client-transaction-id") or headers.get("x-client-transaction-id")
-        referer = f"https://x.com/{username}/with_replies" if username else "https://x.com/"
-
-        cookie_bits = []
-        for key in ["auth_token", "ct0", "lang"]:
-            value = cookies.get(key)
-            if value:
-                cookie_bits.append(f"{key}={value}")
-
-        headers.update({
-            "accept": "*/*",
-            "accept-encoding": "gzip, deflate, br, zstd",
-            "accept-language": "en-GB,en;q=0.9,es-ES;q=0.8,es;q=0.7,en-US;q=0.6",
-            "authorization": f"Bearer {bearer}",
-            "content-type": "application/json",
-            "cookie": "; ".join(cookie_bits),
-            "dnt": "1",
-            "priority": "u=1, i",
-            "referer": referer,
-            "sec-ch-ua": '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"macOS"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
-            "user-agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/148.0.0.0 Safari/537.36"
-            ),
-            "x-csrf-token": csrf_token,
-            "x-twitter-active-user": "yes",
-            "x-twitter-auth-type": "OAuth2Session",
-            "x-twitter-client-language": "en",
-        })
-        if tx_id:
-            headers["x-client-transaction-id"] = str(tx_id)
         return headers
 
     def _human_delay(self, stage: str = "between_requests"):
@@ -464,6 +413,45 @@ class APIManager:
         self.session.close()
         self.session = requests.Session()
         self._setup_session()
+
+    def _save_config(self) -> None:
+        """Persist current config atomically with one simple backup."""
+        if self.config_path.exists():
+            shutil.copy2(self.config_path, self.config_path.with_suffix(".json.bak"))
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=self.config_path.parent, suffix=".tmp")
+        try:
+            with open(tmp_fd, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+            Path(tmp_path).replace(self.config_path)
+        except BaseException:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
+
+    def hot_swap_auth(self, updates: Dict[str, Any]) -> bool:
+        """Apply fresh browser auth/query parameters to config and active session."""
+        if not isinstance(updates, dict) or not updates:
+            return False
+
+        cookies = updates.get("api_cookies")
+        if isinstance(cookies, dict) and cookies:
+            self.config.setdefault("api_cookies", {}).update({k: str(v) for k, v in cookies.items() if v})
+
+        headers = updates.get("api_headers")
+        if isinstance(headers, dict) and headers:
+            self.config.setdefault("api_headers", {}).update({k: str(v) for k, v in headers.items() if v})
+
+        api_config = updates.get("api_config")
+        if isinstance(api_config, dict) and api_config:
+            self.config.setdefault("api_config", {}).update({k: str(v) for k, v in api_config.items() if v})
+
+        bearer = updates.get("bearer_token")
+        if bearer:
+            self.config.setdefault("api_auth", {})["bearer_token"] = str(bearer)
+
+        self._save_config()
+        self.refresh_session()
+        self.refresh_config_and_query_ids()
+        return True
     
     def _load_rate_limits(self) -> Dict[str, Dict]:
         """Load rate limit state from disk or initialize"""
@@ -520,9 +508,9 @@ class APIManager:
         """Load query IDs from config"""
         api_config = self.config.get("api_config", {})
         return {
-            "UserByScreenName": api_config.get("user_by_screen_name_query_id", "sLVLhk0bGj3MVFEKTdax1w"),
-            "UserTweets": api_config.get("user_tweets_query_id", "pQHADmT91zIY83UbK0x4Lw"),
-            "UserTweetsAndReplies": api_config.get("user_tweets_and_replies_query_id", "6eh3huj6fJnA3Naupj4w0Q"),
+            "UserByScreenName": api_config.get("user_by_screen_name_query_id", "2qvSHpkWTMS9i0zJAwDNiA"),
+            "UserTweets": api_config.get("user_tweets_query_id", "hr4gzZONlq23okjU8fIe_A"),
+            "UserTweetsAndReplies": api_config.get("user_tweets_and_replies_query_id", "FIFgycIi-CNJcV0R-135Uw"),
             "TweetDetail": api_config.get("tweet_detail_query_id", ""),
             "SearchTimeline": api_config.get("search_timeline_query_id", ""),
         }

@@ -164,17 +164,9 @@ class LiveMonitor:
         query_id = self.api_manager.get_query_id(endpoint)
         if not query_id:
             raise RuntimeError("Missing query ID for UserByScreenName")
-        variables = {"screen_name": username, "withSafetyModeUserFields": True}
-        features = {
-            "hidden_profile_subscriptions_enabled": True,
-            "rweb_tipjar_consumption_enabled": True,
-        }
-        request_url = self.fetcher._build_graphql_url(
-            endpoint=endpoint,
-            query_id=query_id,
-            variables=variables,
-            features=features,
-        )
+        # Reuse the engine's config-driven payload so live + historical issue the
+        # exact same UserByScreenName request shape captured by the sniffer.
+        request_url, _ = self.fetcher.build_user_by_screen_name_url(username, query_id)
         response = self.api_manager.perform_get(endpoint=endpoint, url=request_url, username=username)
         response.raise_for_status()
         payload = response.json()
