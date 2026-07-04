@@ -28,3 +28,14 @@ graphify-out/
 
 # Legacy capture archive (repo root, secret-bearing); superseded by v4 sniffer
 graphql_logs/
+
+# Credentials (v1-v3) — live session tokens; never commit. v4's config is
+# ignored in TWEETER DATA FETCHING 4.0/.gitignore.
+TWEETER DATA FETCHING 1.0/config.json
+TWEETER DATA FETCHING 2.0/config.json
+TWEETER DATA FETCHING 3.0/ADVANCED SEARCH/config.json
+TWEETER DATA FETCHING 3.0/HISTORICAL DATA/config.json
+TWEETER DATA FETCHING 3.0/LIVE DATA/config.json
+
+# Generated repomix context dumps (large; embed captured secrets)
+**/repomix-output.md
