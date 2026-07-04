@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -122,11 +123,11 @@ def _process_account(
     list_replies_only = processor.get_difference_b_minus_a(set_a, set_b)
 
     txt_outputs = {
-        "1_user_tweets": storage.save_processed_txt_set(list_a, "1_user_tweets", username),
-        "2_user_tweets_and_replies": storage.save_processed_txt_set(list_b, "2_user_tweets_and_replies", username),
-        "3_intersection": storage.save_processed_txt_set(list_intersection, "3_intersection", username),
-        "4_union": storage.save_processed_txt_set(list_union, "4_union", username),
-        "5_replies_only": storage.save_processed_txt_set(list_replies_only, "5_replies_only", username),
+        "1_user_tweets": storage.save_processed_set_merged(list_a, "1_user_tweets", username),
+        "2_user_tweets_and_replies": storage.save_processed_set_merged(list_b, "2_user_tweets_and_replies", username),
+        "3_intersection": storage.save_processed_set_merged(list_intersection, "3_intersection", username),
+        "4_union": storage.save_processed_set_merged(list_union, "4_union", username),
+        "5_replies_only": storage.save_processed_set_merged(list_replies_only, "5_replies_only", username),
     }
     verified = all(_verify_txt_files(username, set_name, paths) for set_name, paths in txt_outputs.items())
 
@@ -161,7 +162,7 @@ def _save_endpoint_processed_txt(
         username=username,
         source_endpoint=endpoint,
     )
-    paths = storage.save_processed_txt_set(list(extracted.values()), set_name, username)
+    paths = storage.save_processed_set_merged(list(extracted.values()), set_name, username)
     print(f"[V4] @{username} {endpoint} TXT updated: {len(extracted)} item(s)")
     raw_ok = _verify_raw_pages(
         storage=storage,
@@ -233,7 +234,78 @@ def _print_report_summary(report: Dict[str, Any], json_path: Path, txt_path: Pat
     print(f"[V4] Report TXT: {txt_path}")
 
 
-def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
+def _disabled_endpoint_result(username: str, endpoint: str) -> Dict[str, Any]:
+    return {
+        "account": username,
+        "endpoint": endpoint,
+        "status": "skipped",
+        "outcome": "skipped_disabled_by_cli",
+        "reason": "Endpoint disabled by historical runner toggle",
+        "pages": [],
+        "pages_fetched": 0,
+        "raw_batch_path": "",
+        "last_cursor": None,
+        "last_http_status": None,
+        "attempts": 0,
+        "error_samples": [],
+        "started_at": datetime.utcnow().isoformat() + "Z",
+        "finished_at": datetime.utcnow().isoformat() + "Z",
+        "window_coverage": None,
+    }
+
+
+def _fetch_or_skip_endpoint(
+    *,
+    engine: FetcherEngine,
+    evaluator: RollingWindowEvaluator,
+    storage: StorageManager,
+    username: str,
+    user_id: str,
+    endpoint: str,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    window_days = _historical_window_days_for(engine, username)
+    window_complete, window_coverage, existing_pages = _endpoint_window_coverage(
+        evaluator=evaluator,
+        storage=storage,
+        username=username,
+        endpoint=endpoint,
+        window_days=window_days,
+    )
+    if window_complete:
+        return {
+            "account": username,
+            "endpoint": endpoint,
+            "status": "completed",
+            "outcome": "skipped_window_complete",
+            "reason": "Existing data satisfies rolling window",
+            "pages": existing_pages,
+            "pages_fetched": len(existing_pages),
+            "raw_batch_path": str(_endpoint_raw_batch_path(storage, username, endpoint) or ""),
+            "last_cursor": "__WINDOW_COMPLETE__",
+            "last_http_status": None,
+            "attempts": 0,
+            "error_samples": [],
+            "started_at": datetime.utcnow().isoformat() + "Z",
+            "finished_at": datetime.utcnow().isoformat() + "Z",
+            "window_coverage": window_coverage,
+        }, window_coverage
+
+    return engine._fetch_endpoint_result(
+        account=username,
+        user_id=user_id,
+        endpoint=endpoint,
+        max_pages=engine.pagination_safety_cap_pages,
+        window_days=window_days,
+        force_refetch=True,
+    ), window_coverage
+
+
+def run_v4(
+    selected_accounts: Optional[List[str]] = None,
+    *,
+    enable_user_tweets: bool = True,
+    enable_user_tweets_and_replies: bool = True,
+) -> None:
     project_root = Path(__file__).resolve().parent.parent
     engine = FetcherEngine(config_path="shared/config/config.json")
     storage = StorageManager(project_root=project_root, subsystem="historical_live")
@@ -254,6 +326,14 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
         "started_at": datetime.utcnow().isoformat() + "Z",
         "config": {
             "endpoint_order": ["UserTweetsAndReplies", "UserTweets"],
+            "enabled_endpoints": [
+                endpoint
+                for endpoint, enabled in (
+                    ("UserTweetsAndReplies", enable_user_tweets_and_replies),
+                    ("UserTweets", enable_user_tweets),
+                )
+                if enabled
+            ],
             "accounts_requested": len(accounts),
             "completion_rule": "tehran_jalali_rolling_window",
             "pagination_safety_cap_pages": engine.pagination_safety_cap_pages,
@@ -302,129 +382,56 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
         _print_report_summary(report, json_path, txt_path)
         return
 
-    print("[V4] Phase 2/4: fetching UserTweetsAndReplies for all accounts")
-    for idx, username in enumerate(active_accounts):
-        window_days = _historical_window_days_for(engine, username)
-        window_complete, window_coverage, existing_pages = _endpoint_window_coverage(
-            evaluator=evaluator,
-            storage=storage,
-            username=username,
-            endpoint="UserTweetsAndReplies",
-            window_days=window_days,
+    enabled_endpoints = [
+        endpoint
+        for endpoint, enabled in (
+            ("UserTweetsAndReplies", enable_user_tweets_and_replies),
+            ("UserTweets", enable_user_tweets),
         )
-        if window_complete:
-            result = {
-                "account": username,
-                "endpoint": "UserTweetsAndReplies",
-                "status": "completed",
-                "outcome": "skipped_window_complete",
-                "reason": "Existing data satisfies rolling window",
-                "pages": existing_pages,
-                "pages_fetched": len(existing_pages),
-                "raw_batch_path": str(_endpoint_raw_batch_path(storage, username, "UserTweetsAndReplies") or ""),
-                "last_cursor": "__WINDOW_COMPLETE__",
-                "last_http_status": None,
-                "attempts": 0,
-                "error_samples": [],
-                "started_at": datetime.utcnow().isoformat() + "Z",
-                "finished_at": datetime.utcnow().isoformat() + "Z",
-                "window_coverage": window_coverage,
-            }
-        else:
-            result = engine._fetch_endpoint_result(
-                account=username,
-                user_id=user_ids[username],
-                endpoint="UserTweetsAndReplies",
-                max_pages=engine.pagination_safety_cap_pages,
-                window_days=window_days,
-                force_refetch=True,
-            )
-        fetched_pages[username]["UserTweetsAndReplies"] = result.get("pages", [])
-        endpoint_verified = _save_endpoint_processed_txt(
-            storage=storage,
-            processor=processor,
-            username=username,
-            endpoint="UserTweetsAndReplies",
-            raw_pages=fetched_pages[username]["UserTweetsAndReplies"],
-        )
-        endpoint_report = _safe_endpoint_report(result)
-        endpoint_report["processed_txt_verified"] = endpoint_verified
-        report["accounts"][username]["endpoints"]["UserTweetsAndReplies"] = endpoint_report
-        storage.update_endpoint_state(
-            username,
-            "UserTweetsAndReplies",
-            meta={
-                "processed_txt_verified": endpoint_verified,
-                "run_id": run_id,
-                "outcome": result.get("outcome"),
-                "pages_fetched": result.get("pages_fetched", 0),
-                "window_coverage": result.get("window_coverage") or window_coverage,
-            },
-        )
-        if idx < len(active_accounts) - 1:
-            engine.api_manager.human_delay("between_accounts")
+        if enabled
+    ]
+    disabled_endpoints = [endpoint for endpoint in ENDPOINTS if endpoint not in enabled_endpoints]
 
-    print("[V4] Phase 3/4: fetching UserTweets for all accounts")
-    for idx, username in enumerate(active_accounts):
-        window_days = _historical_window_days_for(engine, username)
-        window_complete, window_coverage, existing_pages = _endpoint_window_coverage(
-            evaluator=evaluator,
-            storage=storage,
-            username=username,
-            endpoint="UserTweets",
-            window_days=window_days,
-        )
-        if window_complete:
-            result = {
-                "account": username,
-                "endpoint": "UserTweets",
-                "status": "completed",
-                "outcome": "skipped_window_complete",
-                "reason": "Existing data satisfies rolling window",
-                "pages": existing_pages,
-                "pages_fetched": len(existing_pages),
-                "raw_batch_path": str(_endpoint_raw_batch_path(storage, username, "UserTweets") or ""),
-                "last_cursor": "__WINDOW_COMPLETE__",
-                "last_http_status": None,
-                "attempts": 0,
-                "error_samples": [],
-                "started_at": datetime.utcnow().isoformat() + "Z",
-                "finished_at": datetime.utcnow().isoformat() + "Z",
-                "window_coverage": window_coverage,
-            }
-        else:
-            result = engine._fetch_endpoint_result(
-                account=username,
+    for endpoint in disabled_endpoints:
+        for username in active_accounts:
+            result = _disabled_endpoint_result(username, endpoint)
+            report["accounts"][username]["endpoints"][endpoint] = _safe_endpoint_report(result)
+
+    for phase_number, endpoint in enumerate(enabled_endpoints, start=2):
+        print(f"[V4] Phase {phase_number}/4: fetching {endpoint} for all accounts")
+        for idx, username in enumerate(active_accounts):
+            result, window_coverage = _fetch_or_skip_endpoint(
+                engine=engine,
+                evaluator=evaluator,
+                storage=storage,
+                username=username,
                 user_id=user_ids[username],
-                endpoint="UserTweets",
-                max_pages=engine.pagination_safety_cap_pages,
-                window_days=window_days,
-                force_refetch=True,
+                endpoint=endpoint,
             )
-        fetched_pages[username]["UserTweets"] = result.get("pages", [])
-        endpoint_verified = _save_endpoint_processed_txt(
-            storage=storage,
-            processor=processor,
-            username=username,
-            endpoint="UserTweets",
-            raw_pages=fetched_pages[username]["UserTweets"],
-        )
-        endpoint_report = _safe_endpoint_report(result)
-        endpoint_report["processed_txt_verified"] = endpoint_verified
-        report["accounts"][username]["endpoints"]["UserTweets"] = endpoint_report
-        storage.update_endpoint_state(
-            username,
-            "UserTweets",
-            meta={
-                "processed_txt_verified": endpoint_verified,
-                "run_id": run_id,
-                "outcome": result.get("outcome"),
-                "pages_fetched": result.get("pages_fetched", 0),
-                "window_coverage": result.get("window_coverage") or window_coverage,
-            },
-        )
-        if idx < len(active_accounts) - 1:
-            engine.api_manager.human_delay("between_accounts")
+            fetched_pages[username][endpoint] = result.get("pages", [])
+            endpoint_verified = _save_endpoint_processed_txt(
+                storage=storage,
+                processor=processor,
+                username=username,
+                endpoint=endpoint,
+                raw_pages=fetched_pages[username][endpoint],
+            )
+            endpoint_report = _safe_endpoint_report(result)
+            endpoint_report["processed_txt_verified"] = endpoint_verified
+            report["accounts"][username]["endpoints"][endpoint] = endpoint_report
+            storage.update_endpoint_state(
+                username,
+                endpoint,
+                meta={
+                    "processed_txt_verified": endpoint_verified,
+                    "run_id": run_id,
+                    "outcome": result.get("outcome"),
+                    "pages_fetched": result.get("pages_fetched", 0),
+                    "window_coverage": result.get("window_coverage") or window_coverage,
+                },
+            )
+            if idx < len(active_accounts) - 1:
+                engine.api_manager.human_delay("between_accounts")
 
     print("[V4] Phase 4/4: generating processed TXT sets")
     for username in active_accounts:
@@ -455,5 +462,29 @@ def run_v4(selected_accounts: Optional[List[str]] = None) -> None:
     print("[V4] Replies-first pipeline complete.")
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the historical v4 fetch pipeline.")
+    parser.add_argument("--only", action="append", default=[], help="Account username to fetch; may be repeated or comma-separated.")
+    parser.add_argument("--only-account", action="append", default=[], help="Alias for --only.")
+    parser.add_argument("--user-tweets", dest="enable_user_tweets", action="store_true", default=True)
+    parser.add_argument("--no-user-tweets", dest="enable_user_tweets", action="store_false")
+    parser.add_argument("--with-replies", dest="enable_user_tweets_and_replies", action="store_true", default=True)
+    parser.add_argument("--no-with-replies", dest="enable_user_tweets_and_replies", action="store_false")
+    return parser.parse_args()
+
+
+def _selected_accounts_from_args(args: argparse.Namespace) -> Optional[List[str]]:
+    values = list(args.only or []) + list(args.only_account or [])
+    selected: List[str] = []
+    for value in values:
+        selected.extend(part.strip().lstrip("@") for part in str(value).split(",") if part.strip())
+    return selected or None
+
+
 if __name__ == "__main__":
-    run_v4()
+    cli_args = _parse_args()
+    run_v4(
+        selected_accounts=_selected_accounts_from_args(cli_args),
+        enable_user_tweets=cli_args.enable_user_tweets,
+        enable_user_tweets_and_replies=cli_args.enable_user_tweets_and_replies,
+    )

@@ -118,16 +118,16 @@ class RollingWindowEvaluator:
         sorted_dates = sorted(dates)
         oldest = sorted_dates[0] if sorted_dates else None
         newest = sorted_dates[-1] if sorted_dates else None
-        crossed = bool(oldest and oldest <= window_start)
+        crossed = bool(oldest and oldest < window_start)
         covered = [date for date in targets if date in dates]
         missing = [date for date in targets if date not in dates]
 
         if not item_count:
             return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "no_items")
         if not crossed:
-            return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "window_start_not_crossed")
+            return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "window_start_not_fully_crossed")
         
-        return WindowCoverage(True, targets, covered, missing, oldest, newest, True, item_count, "window_crossed")
+        return WindowCoverage(True, targets, covered, missing, oldest, newest, True, item_count, "window_fully_crossed")
 
     def evaluate_raw_pages(
         self,
