@@ -137,6 +137,9 @@ class FetcherEngine:
             self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50)
         )
         self.backoff_schedule_seconds = [15, 30, 60]
+        self.max_404_recoveries = int(
+            self.config.get("api_config", {}).get("pagination_404_recovery_attempts", 1)
+        )
 
         self.logger.show_startup_config(self.config, self.account_map, self.priority_policies)
 
@@ -184,7 +187,7 @@ class FetcherEngine:
             "content_disclosure_ai_generated_indicator_enabled": True,
             "responsive_web_grok_show_grok_translated_post": True,
             "responsive_web_grok_analysis_button_from_backend": True,
-            "post_ctas_fetch_enabled": True,
+            "post_ctas_fetch_enabled": False,
             "freedom_of_speech_not_reach_fetch_enabled": True,
             "standardized_nudges_misinfo": True,
             "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
@@ -196,10 +199,12 @@ class FetcherEngine:
             "responsive_web_enhance_cards_enabled": False,
         }
 
-    def _timeline_field_toggles(self, endpoint: str) -> Dict[str, Any]:
+    def _timeline_field_toggles(self, endpoint: str) -> Optional[Dict[str, Any]]:
         configured = self._endpoint_payload_config(endpoint).get("fieldToggles")
         if isinstance(configured, dict):
-            return dict(configured)
+            return dict(configured) if configured else None
+        if endpoint == "SearchTimeline":
+            return None
         return {"withArticlePlainText": False}
 
     def _timeline_variables(self, endpoint: str, user_id: str, cursor: Optional[str]) -> Dict[str, Any]:
@@ -346,6 +351,37 @@ class FetcherEngine:
         }
         body = json.dumps(block, indent=2, ensure_ascii=False)
         self.logger.banner(title, body)
+
+    def _recover_404_context(
+        self,
+        *,
+        account: str,
+        endpoint: str,
+        cursor: Optional[str],
+        batch_dir: Path,
+        pages_fetched: int,
+    ) -> bool:
+        self.storage_manager.update_endpoint_state(
+            account,
+            endpoint,
+            last_cursor=cursor if cursor else "__START__",
+            status="running",
+            meta={
+                "raw_batch_path": str(batch_dir),
+                "pages_fetched": pages_fetched,
+                "recovery_started_at": datetime.utcnow().isoformat() + "Z",
+                "recovery_reason": "pagination_404_context_rejected",
+            },
+        )
+        # Automatic auth recovery via a headless sniffer has been retired
+        # (YAGNI: it was the least-reliable part of the auth path). The v4
+        # sniffer is now a pure diagnostic tool. Refresh auth/query-ids manually
+        # via shared/auth/session_updater.py or shared/auth/setup_api_cookies.py.
+        self.logger.warning(
+            f"@{account} {endpoint} 404/context-rejected; automatic auth recovery is disabled "
+            "(run session_updater.py / setup_api_cookies.py manually to refresh)."
+        )
+        return False
 
     def _build_graphql_url(
         self,
@@ -593,6 +629,7 @@ class FetcherEngine:
         all_items: List[Dict[str, Any]] = list(existing_pages)
 
         policy = self.api_manager.retry_policy()
+        recovery_counts: Dict[str, int] = {}
 
         while page <= safety_cap:
             variables = self._timeline_variables(endpoint, user_id, cursor)
@@ -623,7 +660,7 @@ class FetcherEngine:
                 int(policy.get("client_error_attempts", self.max_cursor_error_retries)),
                 int(policy.get("server_error_attempts", self.max_cursor_error_retries)),
                 int(policy.get("request_error_attempts", self.max_cursor_error_retries)),
-            )
+            ) + max(0, self.max_404_recoveries)
 
             for attempt in range(max_attempts):
                 attempts += 1
@@ -696,6 +733,33 @@ class FetcherEngine:
                                 f"(attempt {attempt + 1}/{client_attempts})"
                             )
                             continue
+
+                        cursor_key = cursor or "__START__"
+                        if (
+                            response.status_code == 404
+                            and recovery_counts.get(cursor_key, 0) < self.max_404_recoveries
+                        ):
+                            recovery_counts[cursor_key] = recovery_counts.get(cursor_key, 0) + 1
+                            self.logger.warning(
+                                f"@{account} {endpoint} repeated HTTP 404 at cursor={cursor_key}; "
+                                "saving cursor and refreshing browser parameters"
+                            )
+                            if self._recover_404_context(
+                                account=account,
+                                endpoint=endpoint,
+                                cursor=cursor,
+                                batch_dir=batch_dir,
+                                pages_fetched=len(all_items),
+                            ):
+                                query_id = self.api_manager.get_query_id(endpoint) or query_id
+                                request_url = self._build_graphql_url(
+                                    endpoint=endpoint,
+                                    query_id=query_id,
+                                    variables=variables,
+                                    features=features,
+                                    field_toggles=field_toggles,
+                                )
+                                continue
 
                         status, outcome, reason = classify_http_failure(
                             int(response.status_code), bool(all_items), cursor

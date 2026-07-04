@@ -55,7 +55,7 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = {
     "longform_notetweets_consumption_enabled": True,
     "longform_notetweets_inline_media_enabled": False,
     "longform_notetweets_rich_text_read_enabled": True,
-    "post_ctas_fetch_enabled": True,
+    "post_ctas_fetch_enabled": False,
     "premium_content_api_read_enabled": False,
     "profile_label_improvements_pcf_label_in_post_enabled": True,
     "responsive_web_edit_tweet_api_enabled": True,
