@@ -18,3 +18,13 @@ TWEETER DATA FETCHING 3.0/LIVE DATA/data/
 TWEETER DATA FETCHING 3.0/LIVE DATA/logs/
 TWEETER DATA FETCHING 4.0/data/
 TWEETER DATA FETCHING 4.0/logs/
+
+# Local tooling / IDE
+.claude/
+.vscode/
+
+# Generated knowledge graph (regenerable via `graphify update .`)
+graphify-out/
+
+# Legacy capture archive (repo root, secret-bearing); superseded by v4 sniffer
+graphql_logs/
