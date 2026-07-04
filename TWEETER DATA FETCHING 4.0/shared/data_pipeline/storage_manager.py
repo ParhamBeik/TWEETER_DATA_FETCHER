@@ -559,6 +559,40 @@ class StorageManager:
         self.save_processed_txt(data_list if isinstance(data_list, list) else [], output_file.with_suffix(".txt"))
         return output_file
 
+    def load_processed_set(self, set_name: str, username: str) -> List[Dict[str, Any]]:
+        normalized = str(set_name).strip()
+        folder = self.SET_FOLDER_MAP.get(normalized, self.SET_FOLDER_MAP.get(normalized.upper()))
+        if not folder:
+            raise ValueError(f"Unsupported set_name: {set_name}")
+
+        path = self.processed_root / folder / self._normalize_username(username) / f"{folder}.json"
+        if not path.exists():
+            return []
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+            return payload if isinstance(payload, list) else []
+        except Exception:
+            return []
+
+    def merge_processed_items(self, existing: List[Dict[str, Any]], incoming: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        merged: Dict[str, Dict[str, Any]] = {}
+        anonymous: List[Dict[str, Any]] = []
+        for item in list(existing or []) + list(incoming or []):
+            if not isinstance(item, dict):
+                continue
+            tweet_id = str(item.get("id") or item.get("tweet_id") or "").strip()
+            if tweet_id:
+                merged[tweet_id] = item
+            else:
+                anonymous.append(item)
+        return list(merged.values()) + anonymous
+
+    def save_processed_set_merged(self, data_list: List[Dict[str, Any]], set_name: str, username: str) -> List[Path]:
+        existing = self.load_processed_set(set_name, username)
+        merged = self.merge_processed_items(existing, data_list if isinstance(data_list, list) else [])
+        return self.save_processed_txt_set(merged, set_name, username)
+
     def save_processed_txt_set(self, data_list: List[Dict[str, Any]], set_name: str, username: str) -> List[Path]:
         """Save canonical v4 processed output as JSON plus v3-style dated TXT files."""
         normalized = str(set_name).strip()
