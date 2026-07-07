@@ -29,6 +29,10 @@ graphify-out/
 # Legacy capture archive (repo root, secret-bearing); superseded by v4 sniffer
 graphql_logs/
 
+# Current v4 sniffer output is written at repo root and contains live auth/CSRF
+# headers plus full response bodies. Keep the entire evidence bundle local.
+sniffer_runs/
+
 # Credentials (v1-v3) — live session tokens; never commit. v4's config is
 # ignored in TWEETER DATA FETCHING 4.0/.gitignore.
 TWEETER DATA FETCHING 1.0/config.json
@@ -39,3 +43,13 @@ TWEETER DATA FETCHING 3.0/LIVE DATA/config.json
 
 # Generated repomix context dumps (large; embed captured secrets)
 **/repomix-output.md
+
+# V4 specific ignores (merged from TWEETER DATA FETCHING 4.0/.gitignore)
+TWEETER DATA FETCHING 4.0/shared/config/config.json
+TWEETER DATA FETCHING 4.0/shared/config/config.json.backup
+.env
+
+# Probe/test run output — contains live API responses; keep local
+TWEETER DATA FETCHING 4.0/tests/probe_runs/
+TWEETER DATA FETCHING 4.0/tests/sniffer_runs/
+TWEETER DATA FETCHING 4.0/tests/graphql_logs/
