@@ -1,5 +1,0 @@
-data/
-shared/config/config.json
-sniffer_runs/
-__pycache__/
-.env
