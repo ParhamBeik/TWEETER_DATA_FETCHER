@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""
-Phase 2 Fetcher Engine
-
-Implements:
-- Human-like session warm-up before account fetching
-- Strict sequential endpoint processing per account
-- Hard-stop 4xx diagnostics with high-visibility debug output
-- Cursor-aware pagination with explicit transitions
-- Enhanced observability with rich (fallback to std logging)
-"""
-
 from __future__ import annotations
+"""
+Fetch profile timeline pages from Twitter/X.
+
+Code map:
+- EngineLogger keeps console output readable.
+- FetcherEngine loads config, resolves user IDs, paginates endpoints, and saves raw pages.
+- The bottom cursor is the only pagination value that may be reused.
+- Storage and tweet-set processing happen in other modules.
+"""
+
 
 import json
 import sys
@@ -20,10 +19,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
-from shared.core.api_manager import APIManager
-from shared.core.windowing import RollingWindowEvaluator
+from shared.core.twitter_http_client import APIManager
+from shared.core.tweet_processing_utils import (
+    extract_bottom_cursor,
+    timeline_field_toggles,
+    timeline_variables,
+    user_by_screen_name_contract,
+    validate_graphql_payload,
+)
+from shared.auth.browser_context import BrowserBootstrap, BrowserBootstrapResult
+from shared.core.tweet_processing_utils import RollingWindowEvaluator
 from shared.data_pipeline.storage_manager import StorageManager
-from shared.config.tier_config import get_priority_policy, load_tier_config, ordered_accounts
+from shared.config.account_tiers import get_priority_policy, load_tier_config, ordered_accounts
 
 try:
     import pytz
@@ -44,6 +51,9 @@ except Exception:  # pragma: no cover - fallback path
 TIMEZONE = "Asia/Tehran"
 DEFAULT_HISTORICAL_MAX_PAGES = 15
 SEP = "═" * 90
+
+
+# Console output helpers -----------------------------------------------------
 
 
 class EngineLogger:
@@ -112,16 +122,35 @@ class EngineLogger:
         self.info(f"Account: @{account} | Endpoint: {endpoint} | Page: {page} | Next Cursor: {cursor_text}")
 
 
+# Timeline fetching ---------------------------------------------------------
+
+
 class FetcherEngine:
     """Phase 2 sequential fetcher with strict failure visibility."""
 
-    def __init__(self, config_path: str = "shared/config/config.json", subsystem: str = "historical"):
+    def __init__(
+        self,
+        config_path: str = "shared/config/config.json",
+        subsystem: str = "historical",
+        validation_run_id: Optional[str] = None,
+    ):
         self.project_root = Path(__file__).resolve().parents[2]
         raw_subsystem = str(subsystem or "historical").strip().lower()
         self.subsystem = "historical_live" if raw_subsystem in {"historical", "live"} else raw_subsystem
+        self.validation_run_id = validation_run_id
+        self.data_root = (
+            self.project_root / "data" / "validation" / validation_run_id
+            if validation_run_id
+            else self.project_root / "data"
+        )
         self.logger = EngineLogger()
-        self.api_manager = APIManager(config_path=config_path, state_dir=self.project_root / "data" / self.subsystem / "state")
-        self.storage_manager = StorageManager(base_dir=self.project_root, timezone=TIMEZONE, subsystem=self.subsystem)
+        self.api_manager = APIManager(config_path=config_path, state_dir=self.data_root / self.subsystem / "state")
+        self.storage_manager = StorageManager(
+            base_dir=self.project_root,
+            timezone=TIMEZONE,
+            subsystem=self.subsystem,
+            data_root_override=self.data_root,
+        )
         self.window_evaluator = RollingWindowEvaluator()
 
         self.config = self.api_manager.config
@@ -140,6 +169,13 @@ class FetcherEngine:
         self.max_404_recoveries = int(
             self.config.get("api_config", {}).get("pagination_404_recovery_attempts", 1)
         )
+        browser_cfg = self.config.get("browser_bootstrap", {}) or {}
+        self.browser_bootstrap = BrowserBootstrap(
+            self.config,
+            headless=bool(browser_cfg.get("headless", True)),
+            timeout_ms=int(browser_cfg.get("timeout_ms", 60000)),
+        )
+        self.last_bootstrap: Optional[BrowserBootstrapResult] = None
 
         self.logger.show_startup_config(self.config, self.account_map, self.priority_policies)
 
@@ -203,9 +239,7 @@ class FetcherEngine:
         configured = self._endpoint_payload_config(endpoint).get("fieldToggles")
         if isinstance(configured, dict):
             return dict(configured) if configured else None
-        if endpoint == "SearchTimeline":
-            return None
-        return {"withArticlePlainText": False}
+        return timeline_field_toggles(endpoint)
 
     def _timeline_variables(self, endpoint: str, user_id: str, cursor: Optional[str]) -> Dict[str, Any]:
         variables_config = self._endpoint_payload_config(endpoint).get("variables")
@@ -221,42 +255,35 @@ class FetcherEngine:
                     variables.pop("cursor", None)
                 return variables
 
-        variables: Dict[str, Any] = {
-            "userId": user_id,
-            "count": 20,
-            "includePromotedContent": True,
-        }
-        if endpoint == "UserTweetsAndReplies":
-            variables["withCommunity"] = True
-            variables["withVoice"] = True
-        else:
-            variables["withQuickPromoteEligibilityTweetFields"] = True
-            variables["withVoice"] = True
-
-        if cursor:
-            variables["cursor"] = cursor
-        return variables
+        return timeline_variables(endpoint, user_id, cursor)
 
     def _extract_bottom_cursor(self, payload: Dict[str, Any]) -> Optional[str]:
-        instructions = (
-            payload.get("data", {})
-            .get("user", {})
-            .get("result", {})
-            .get("timeline", {})
-            .get("timeline", {})
-            .get("instructions", [])
-        )
+        return extract_bottom_cursor(payload)
 
-        for inst in instructions:
-            if inst.get("type") != "TimelineAddEntries":
-                continue
-            for entry in inst.get("entries", []):
-                entry_id = str(entry.get("entryId", ""))
-                if "cursor-bottom" in entry_id:
-                    value = entry.get("content", {}).get("value")
-                    if value:
-                        return str(value)
-        return None
+    def bootstrap_browser_context(
+        self,
+        *,
+        username: Optional[str] = None,
+        search_url: Optional[str] = None,
+        capture_endpoint: Optional[str] = None,
+        max_pages: int = 2,
+    ) -> BrowserBootstrapResult:
+        result = self.browser_bootstrap.run(
+            username=username,
+            search_url=search_url,
+            capture_endpoint=capture_endpoint,
+            max_pages=max_pages,
+        )
+        self.last_bootstrap = result
+        if result.ok:
+            self.api_manager.apply_browser_context(
+                cookies=result.cookies,
+                query_ids=result.query_ids,
+                request_headers=result.request_headers,
+            )
+        else:
+            self.logger.warning(f"Browser bootstrap unavailable/failed: {result.error}")
+        return result
 
     def _extract_timeline_items(self, payload: Dict[str, Any], username: str) -> List[Dict[str, Any]]:
         instructions = (
@@ -376,10 +403,10 @@ class FetcherEngine:
         # Automatic auth recovery via a headless sniffer has been retired
         # (YAGNI: it was the least-reliable part of the auth path). The v4
         # sniffer is now a pure diagnostic tool. Refresh auth/query-ids manually
-        # via shared/auth/session_updater.py or shared/auth/setup_api_cookies.py.
+        # via shared/auth/query_ids_updater.py or shared/auth/cookie_generator.py.
         self.logger.warning(
             f"@{account} {endpoint} 404/context-rejected; automatic auth recovery is disabled "
-            "(run session_updater.py / setup_api_cookies.py manually to refresh)."
+            "(run query_ids_updater.py / cookie_generator.py manually to refresh)."
         )
         return False
 
@@ -401,6 +428,22 @@ class FetcherEngine:
             query_params["fieldToggles"] = self._compact_json(field_toggles)
         return f"{base_url}?{urlencode(query_params, quote_via=quote)}"
 
+    def build_user_by_screen_name_url(
+        self,
+        username: str,
+        query_id: str,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Build the browser-verified UserByScreenName request contract."""
+        request_contract = user_by_screen_name_contract(username)
+        request_url = self._build_graphql_url(
+            endpoint="UserByScreenName",
+            query_id=query_id,
+            variables=request_contract["variables"],
+            features=request_contract["features"],
+            field_toggles=request_contract["fieldToggles"],
+        )
+        return request_url, request_contract
+
     def _get_user_id(self, username: str) -> str:
         cached_user_id = self.storage_manager.get_user_id(username)
         if cached_user_id:
@@ -411,33 +454,30 @@ class FetcherEngine:
             raise RuntimeError("Missing query ID for UserByScreenName")
 
         endpoint = "UserByScreenName"
-        variables = {"screen_name": username, "withSafetyModeUserFields": True}
-        features = {
-            "hidden_profile_subscriptions_enabled": True,
-            "rweb_tipjar_consumption_enabled": True,
-        }
-
-        request_url = self._build_graphql_url(
-            endpoint=endpoint,
-            query_id=query_id,
-            variables=variables,
-            features=features,
-        )
+        request_url, request_contract = self.build_user_by_screen_name_url(username, query_id)
         response = self.api_manager.perform_get(endpoint=endpoint, url=request_url, username=username)
 
         if response.status_code in {400, 401, 403, 404}:
-            self._log_4xx_and_exit(
+            self._log_4xx_details(
                 account=username,
                 endpoint=endpoint,
                 response=response,
                 request_url=request_url,
                 request_headers=dict(response.request.headers),
-                variables=variables,
+                variables=request_contract["variables"],
                 cursor=None,
+                title="USER LOOKUP 4xx ERROR",
             )
+            raise RuntimeError(f"{endpoint} returned HTTP {response.status_code}")
 
         response.raise_for_status()
-        payload = response.json()
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise RuntimeError(f"{endpoint} JSON parse failure: {str(exc)[:300]}") from exc
+        validation = validate_graphql_payload(endpoint, payload)
+        if not validation.ok:
+            raise RuntimeError(f"{endpoint} semantic failure: {validation.reason}")
         user_id = (
             payload.get("data", {})
             .get("user", {})
@@ -465,6 +505,9 @@ class FetcherEngine:
         error_samples: List[Dict[str, Any]] = []
         last_http_status: Optional[int] = None
         latest_window_coverage: Optional[Dict[str, Any]] = None
+        transport = "http"
+        cursor_termination_reason: Optional[str] = None
+        page_output_paths: List[str] = []
 
         def make_result(
             *,
@@ -485,12 +528,20 @@ class FetcherEngine:
                 "pages_fetched": len(pages),
                 "raw_batch_path": str(raw_batch),
                 "last_cursor": last_cursor,
+                "cursor_termination_reason": cursor_termination_reason,
                 "last_http_status": last_http_status,
                 "attempts": attempts,
                 "error_samples": error_samples[-5:],
+                "rate_headers": self.api_manager.rate_limits.get(endpoint, {}),
                 "started_at": started_at,
                 "finished_at": datetime.utcnow().isoformat() + "Z",
                 "window_coverage": latest_window_coverage,
+                "transport": transport,
+                "bootstrap_route": self.last_bootstrap.route if self.last_bootstrap else None,
+                "output_paths": {
+                    "raw_batch": str(raw_batch),
+                    "pages": list(page_output_paths),
+                },
             }
 
         def record_http_error(response, cursor_value: Optional[str], attempt_number: int) -> None:
@@ -546,6 +597,8 @@ class FetcherEngine:
                     "reason": reason,
                     "last_http_status": last_http_status,
                     "pages_fetched": len(pages),
+                    "transport": transport,
+                    "cursor_termination_reason": cursor_termination_reason,
                     "raw_batch_path": str(raw_batch),
                     "finished_at": datetime.utcnow().isoformat() + "Z",
                 },
@@ -596,17 +649,16 @@ class FetcherEngine:
                 f"Resuming @{account} {endpoint} from saved cursor: {cursor}"
             )
         if status_value == "completed" and existing_pages and window_days:
-            coverage = self.window_evaluator.evaluate_raw_pages(existing_pages, account, endpoint, window_days)
-            if coverage.complete:
-                self.logger.info(f"Skipping @{account} {endpoint}; rolling window already complete at {batch_dir}")
-                return make_result(
-                    status="completed",
-                    outcome="skipped_existing_window_complete",
-                    reason=f"Existing raw batch covers rolling window: {coverage.reason}",
-                    pages=existing_pages,
-                    last_cursor=str(existing_state.get("last_cursor") or "__END__"),
-                    raw_batch=batch_dir,
-                )
+            self.logger.info(
+                f"@{account} {endpoint} has completed stale pages, but current-cycle freshness is required; refetching initial page."
+            )
+            batch_dir = self.storage_manager.create_raw_batch_dir(endpoint, account)
+            cursor = None
+            page = 1
+            all_items = []
+        else:
+            page = len(existing_pages) + 1
+            all_items = list(existing_pages)
 
         self.api_manager.warmup_navigation_context(username=account, endpoint=endpoint)
         if self.first_request_warmup_seconds > 0 and not existing_pages:
@@ -625,13 +677,13 @@ class FetcherEngine:
             meta={"raw_batch_path": str(batch_dir)},
         )
 
-        page = len(existing_pages) + 1
-        all_items: List[Dict[str, Any]] = list(existing_pages)
-
         policy = self.api_manager.retry_policy()
         recovery_counts: Dict[str, int] = {}
+        auth_refreshed = False
+        context_refreshed = False
 
         while page <= safety_cap:
+            cursor_termination_reason = None
             variables = self._timeline_variables(endpoint, user_id, cursor)
 
             request_url = self._build_graphql_url(
@@ -722,7 +774,37 @@ class FetcherEngine:
                                 else "CURSOR ERROR (MAX RETRIES REACHED)"
                             ),
                         )
-                        if attempt < client_attempts - 1:
+                        if response.status_code == 400:
+                            cursor_termination_reason = "bad_request_contract"
+                            status, outcome, reason = classify_http_failure(400, bool(all_items), cursor)
+                            return finish_with_state(status=status, outcome=outcome, reason=reason, pages=all_items, cursor_value=cursor, raw_batch=batch_dir)
+                        if response.status_code in {401, 403} and not auth_refreshed:
+                            auth_refreshed = True
+                            refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
+                            if refreshed.ok:
+                                query_id = self.api_manager.get_query_id(endpoint) or query_id
+                                request_url = self._build_graphql_url(
+                                    endpoint=endpoint,
+                                    query_id=query_id,
+                                    variables=variables,
+                                    features=features,
+                                    field_toggles=field_toggles,
+                                )
+                                continue
+                        if response.status_code == 404 and not cursor and not all_items and not context_refreshed:
+                            context_refreshed = True
+                            refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
+                            if refreshed.ok:
+                                query_id = self.api_manager.get_query_id(endpoint) or query_id
+                                request_url = self._build_graphql_url(
+                                    endpoint=endpoint,
+                                    query_id=query_id,
+                                    variables=variables,
+                                    features=features,
+                                    field_toggles=field_toggles,
+                                )
+                                continue
+                        if response.status_code != 400 and attempt < client_attempts - 1:
                             wait = self.api_manager.jitter_sleep(
                                 float(policy.get("client_error_min_seconds", 10)),
                                 float(policy.get("client_error_max_seconds", 20)),
@@ -735,6 +817,32 @@ class FetcherEngine:
                             continue
 
                         cursor_key = cursor or "__START__"
+                        if response.status_code == 404 and not cursor and not all_items:
+                            fallback = self.bootstrap_browser_context(
+                                username=account,
+                                capture_endpoint=endpoint,
+                                max_pages=min(2, safety_cap),
+                            )
+                            fallback_pages = fallback.target_pages.get(endpoint, []) if fallback.ok else []
+                            valid_pages = [
+                                page_payload for page_payload in fallback_pages
+                                if validate_graphql_payload(endpoint, page_payload).ok
+                            ]
+                            if valid_pages:
+                                transport = "browser_fallback"
+                                for page_number, page_payload in enumerate(valid_pages, start=1):
+                                    output_path = self.storage_manager.save_raw_page(batch_dir, page_number, page_payload)
+                                    page_output_paths.append(str(output_path))
+                                last_cursor = extract_bottom_cursor(valid_pages[-1])
+                                cursor_termination_reason = "browser_fallback_initial_404"
+                                return finish_with_state(
+                                    status="completed",
+                                    outcome="verified_browser_fallback",
+                                    reason="Initial HTTP 404 recovered through target-only browser capture",
+                                    pages=valid_pages,
+                                    cursor_value=last_cursor or "__END__",
+                                    raw_batch=batch_dir,
+                                )
                         if (
                             response.status_code == 404
                             and recovery_counts.get(cursor_key, 0) < self.max_404_recoveries
@@ -764,6 +872,7 @@ class FetcherEngine:
                         status, outcome, reason = classify_http_failure(
                             int(response.status_code), bool(all_items), cursor
                         )
+                        cursor_termination_reason = outcome
                         self.logger.warning(
                             f"@{account} {endpoint} classified as {outcome}; moving to next account/endpoint."
                         )
@@ -873,8 +982,26 @@ class FetcherEngine:
                     raw_batch=batch_dir,
                 )
 
+            validation = validate_graphql_payload(endpoint, payload)
+            if not validation.ok:
+                error_samples.append({
+                    "cursor": cursor,
+                    "page": page,
+                    "semantic_error": validation.reason,
+                    "graphql_errors": validation.errors[:3],
+                })
+                return finish_with_state(
+                    status="partial" if all_items else "failed",
+                    outcome="partial_graphql_error" if all_items else "failed_initial_graphql_error",
+                    reason=validation.reason,
+                    pages=all_items,
+                    cursor_value=cursor,
+                    raw_batch=batch_dir,
+                )
+
             all_items.append(payload)
-            self.storage_manager.save_raw_page(batch_dir, page, payload)
+            output_path = self.storage_manager.save_raw_page(batch_dir, page, payload)
+            page_output_paths.append(str(output_path))
             next_cursor = self._extract_bottom_cursor(payload)
             coverage = (
                 self.window_evaluator.evaluate_raw_pages(all_items, account, endpoint, window_days)
@@ -897,6 +1024,7 @@ class FetcherEngine:
             )
 
             if coverage and coverage.complete:
+                cursor_termination_reason = "current_chain_window_crossed"
                 self.logger.info(
                     f"@{account} {endpoint} rolling window complete: "
                     f"oldest={coverage.oldest_date} targets={coverage.target_dates}"
@@ -923,6 +1051,7 @@ class FetcherEngine:
             self.logger.info(
                 f"Account: @{account} | Endpoint: {endpoint} | End of pagination reached"
             )
+            cursor_termination_reason = "no_bottom_cursor"
             return finish_with_state(
                 status="completed",
                 outcome="success_true_end",
@@ -933,6 +1062,7 @@ class FetcherEngine:
             )
 
         if page > safety_cap:
+            cursor_termination_reason = "safety_cap_reached"
             return finish_with_state(
                 status="partial",
                 outcome="partial_safety_cap_reached",
@@ -942,6 +1072,7 @@ class FetcherEngine:
                 raw_batch=batch_dir,
             )
 
+        cursor_termination_reason = "endpoint_loop_completed"
         return finish_with_state(
             status="completed",
             outcome="success_true_end",

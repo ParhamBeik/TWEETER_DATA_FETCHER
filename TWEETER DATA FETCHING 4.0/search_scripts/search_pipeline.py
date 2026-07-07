@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""
-V4 isolated Advanced SearchTimeline monitor.
-
-Raw pages are stored as data/search/raw/{search_slug}/{product}/{jalali_batch}/page_{i}.json.
-This script intentionally does not route through main_orchestrator.py.
-"""
-
 from __future__ import annotations
+"""
+Monitor Twitter/X SearchTimeline queries.
+
+Code map:
+- SearchQueryBuilder turns config entries into raw Twitter search strings.
+- SearchTimelineMonitor requests pages, parses tweets/cursors, and saves exports.
+- Search data stays isolated under data/search/.
+"""
+
 
 import argparse
 import json
@@ -34,59 +36,28 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from shared.config.tier_config import DEFAULT_PRIORITY_POLICIES
-from shared.core.fetcher_engine import FetcherEngine
-from shared.core.set_operations import TweetSetProcessor
-from shared.core.windowing import parse_twitter_timestamp
+from shared.config.account_tiers import DEFAULT_PRIORITY_POLICIES
+from shared.core.pagination_engine import FetcherEngine
+from shared.core.tweet_processing_utils import (
+    SEARCH_TIMELINE_FEATURES,
+    extract_bottom_cursor,
+    search_timeline_variables,
+    validate_graphql_payload,
+)
+from shared.core.tweet_processing_utils import TweetSetProcessor
+from shared.core.tweet_processing_utils import parse_twitter_timestamp
 from shared.data_pipeline.storage_manager import StorageManager
 
 
 VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
 
-FROZEN_SEARCH_FEATURES: Dict[str, object] = {
-    "articles_preview_enabled": True,
-    "c9s_tweet_anatomy_moderator_badge_enabled": True,
-    "communities_web_enable_tweet_community_results_fetch": True,
-    "content_disclosure_ai_generated_indicator_enabled": True,
-    "content_disclosure_indicator_enabled": True,
-    "creator_subscriptions_tweet_preview_api_enabled": True,
-    "freedom_of_speech_not_reach_fetch_enabled": True,
-    "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
-    "longform_notetweets_consumption_enabled": True,
-    "longform_notetweets_inline_media_enabled": False,
-    "longform_notetweets_rich_text_read_enabled": True,
-    "post_ctas_fetch_enabled": False,
-    "premium_content_api_read_enabled": False,
-    "profile_label_improvements_pcf_label_in_post_enabled": True,
-    "responsive_web_edit_tweet_api_enabled": True,
-    "responsive_web_enhance_cards_enabled": False,
-    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
-    "responsive_web_graphql_timeline_navigation_enabled": True,
-    "responsive_web_grok_analysis_button_from_backend": True,
-    "responsive_web_grok_analyze_button_fetch_trends_enabled": False,
-    "responsive_web_grok_analyze_post_followups_enabled": True,
-    "responsive_web_grok_annotations_enabled": True,
-    "responsive_web_grok_community_note_auto_translation_is_enabled": True,
-    "responsive_web_grok_image_annotation_enabled": True,
-    "responsive_web_grok_imagine_annotation_enabled": True,
-    "responsive_web_grok_share_attachment_enabled": True,
-    "responsive_web_grok_show_grok_translated_post": True,
-    "responsive_web_jetfuel_frame": True,
-    "responsive_web_profile_redirect_enabled": False,
-    "responsive_web_twitter_article_tweet_consumption_enabled": True,
-    "rweb_cashtags_composer_attachment_enabled": True,
-    "rweb_cashtags_enabled": True,
-    "rweb_conversational_replies_downvote_enabled": False,
-    "rweb_tipjar_consumption_enabled": False,
-    "rweb_video_screen_enabled": False,
-    "standardized_nudges_misinfo": True,
-    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
-    "verified_phone_label_enabled": False,
-    "view_counts_everywhere_api_enabled": True,
-}
+FROZEN_SEARCH_FEATURES: Dict[str, object] = dict(SEARCH_TIMELINE_FEATURES)
 
 
 V4_PREFIX = "[V4]"
+
+
+# Console output helpers -----------------------------------------------------
 
 
 class SearchConsole:
@@ -163,6 +134,9 @@ class SearchConsole:
         outputs = report.get("outputs", {})
         if outputs:
             print(f"{V4_PREFIX}   Outputs: {', '.join(outputs.values())}")
+
+
+# Search query building ------------------------------------------------------
 
 
 class SearchQueryBuilder:
@@ -254,12 +228,21 @@ class SearchQueryBuilder:
         return re.sub(r"[^A-Za-z0-9_\\-]+", "_", raw).strip("_").lower() or "search_timeline"
 
 
+# Search fetching and saving -------------------------------------------------
+
+
 class SearchTimelineMonitor:
     """Continuous SearchTimeline monitor using v4 auth/rate-limit infrastructure."""
 
-    def __init__(self, config_path: str = "shared/config/config.json", search_config_path: str = "shared/config/search_config.json"):
+    def __init__(
+        self,
+        config_path: str = "shared/config/config.json",
+        search_config_path: str = "shared/config/search_config.json",
+        validation_run_id: Optional[str] = None,
+    ):
         self.project_root = Path(__file__).resolve().parents[1]
-        self.fetcher = FetcherEngine(config_path=config_path, subsystem="search")
+        self.validation_run_id = validation_run_id
+        self.fetcher = FetcherEngine(config_path=config_path, subsystem="search", validation_run_id=validation_run_id)
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
         self.storage = StorageManager(
@@ -267,10 +250,11 @@ class SearchTimelineMonitor:
             subsystem="search",
             create_folders=False,
             manage_sync_state=False,
+            data_root_override=self.fetcher.data_root,
         )
         self.processor = TweetSetProcessor()
         self.search_defs = self._load_search_config(search_config_path)
-        self.search_root = self.project_root / "data" / "search"
+        self.search_root = self.fetcher.data_root / "search"
         self.raw_root = self.search_root / "raw"
         self.processed_root = self.search_root / "processed"
         self.debug_root = self.search_root / "debug"
@@ -331,15 +315,14 @@ class SearchTimelineMonitor:
         return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
     def _build_base_variables(self, search_def: Dict[str, Any], raw_query: str, product: str) -> Dict[str, Any]:
-        count = max(1, min(int(search_def.get("count", 20)), 20))
-        return {
-            "rawQuery": raw_query,
-            "count": count,
-            "querySource": str(search_def.get("query_source", "typed_query")),
-            "product": product,
-            "withGrokTranslatedBio": bool(search_def.get("with_grok_translated_bio", True)),
-            "withQuickPromoteEligibilityTweetFields": bool(search_def.get("with_quick_promote_eligibility_tweet_fields", False)),
-        }
+        return search_timeline_variables(
+            raw_query=raw_query,
+            product=product,
+            count=int(search_def.get("count", 20)),
+            query_source=str(search_def.get("query_source", "typed_query")),
+            with_grok_translated_bio=bool(search_def.get("with_grok_translated_bio", True)),
+            with_quick_promote_eligibility_tweet_fields=bool(search_def.get("with_quick_promote_eligibility_tweet_fields", False)),
+        )
 
     def _build_frozen_headers(self, search_url: str) -> Dict[str, str]:
         headers = dict(self.api_manager.session.headers)
@@ -535,6 +518,8 @@ class SearchTimelineMonitor:
         retries: int,
         *,
         has_pages: bool = False,
+        search_url: Optional[str] = None,
+        browser_fallback_pages: int = 2,
     ) -> Dict[str, Any]:
         endpoint = "SearchTimeline"
         retry_policy = self.api_manager.retry_policy()
@@ -546,6 +531,8 @@ class SearchTimelineMonitor:
         )
         errors: List[Dict[str, Any]] = []
         attempts = 0
+        auth_refreshed = False
+        context_refreshed = False
         for attempt in range(max_attempts):
             attempts += 1
             try:
@@ -556,14 +543,13 @@ class SearchTimelineMonitor:
                     "variables": self._compact_json(variables),
                     "features": features_json,
                 }
-                response = self.api_manager.session.get(
-                    graphql_url,
+                response = self.api_manager.perform_get(
+                    endpoint=endpoint,
+                    url=graphql_url,
+                    max_retries=1,
                     params=params,
                     headers=frozen_headers,
-                    timeout=self.api_manager.default_timeout,
                 )
-                self.api_manager.last_status_by_endpoint[endpoint] = response.status_code
-                self.api_manager.update_rate_limit(endpoint, response.headers)
                 if response.status_code == 200:
                     try:
                         payload = response.json()
@@ -573,6 +559,19 @@ class SearchTimelineMonitor:
                             "_status": response.status_code,
                             "_attempts": attempts,
                             "_error_samples": [{"cursor": cursor, "attempt": attempt + 1, "exception": f"JSON parse error: {str(exc)[:500]}"}],
+                        }
+                    validation = validate_graphql_payload(endpoint, payload)
+                    if not validation.ok:
+                        return {
+                            "_failure": "partial_graphql_error" if has_pages else "failed_initial_graphql_error",
+                            "_status": response.status_code,
+                            "_attempts": attempts,
+                            "_error_samples": [{
+                                "cursor": cursor,
+                                "attempt": attempt + 1,
+                                "semantic_error": validation.reason,
+                                "graphql_errors": validation.errors[:3],
+                            }],
                         }
                     payload["_attempts"] = attempts
                     payload["_error_samples"] = errors[-5:]
@@ -589,6 +588,24 @@ class SearchTimelineMonitor:
                     continue
                 if response.status_code in {400, 401, 403, 404}:
                     errors.append({"status_code": int(response.status_code), "cursor": cursor, "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
+                    if response.status_code == 400:
+                        return {"_failure": self._classify_http_failure(400, has_pages, cursor), "_status": 400, "_attempts": attempts, "_error_samples": errors[-5:]}
+                    if response.status_code in {401, 403} and not auth_refreshed:
+                        auth_refreshed = True
+                        refreshed = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
+                        if refreshed.ok:
+                            query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
+                            if query_id:
+                                graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
+                            continue
+                    if response.status_code == 404 and not cursor and not has_pages and not context_refreshed:
+                        context_refreshed = True
+                        refreshed = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
+                        if refreshed.ok:
+                            query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
+                            if query_id:
+                                graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
+                            continue
                     client_attempts = int(retry_policy.get("client_error_attempts", self.fetcher.max_cursor_error_retries))
                     if attempt < client_attempts - 1:
                         self.api_manager.jitter_sleep(
@@ -597,6 +614,26 @@ class SearchTimelineMonitor:
                             reason=f"SearchTimeline HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
                         )
                         continue
+                    if response.status_code == 404 and not cursor and not has_pages and search_url:
+                        fallback = self.fetcher.bootstrap_browser_context(
+                            search_url=search_url,
+                            capture_endpoint=endpoint,
+                            max_pages=max(1, browser_fallback_pages),
+                        )
+                        fallback_pages = fallback.target_pages.get(endpoint, []) if fallback.ok else []
+                        valid_pages = [
+                            page_payload for page_payload in fallback_pages
+                            if validate_graphql_payload(endpoint, page_payload).ok
+                        ]
+                        if valid_pages:
+                            return {
+                                "_browser_pages": valid_pages,
+                                "_failure": None,
+                                "_status": 200,
+                                "_attempts": attempts,
+                                "_error_samples": errors[-5:],
+                                "_transport": "browser_fallback",
+                            }
                     return {"_failure": self._classify_http_failure(int(response.status_code), has_pages, cursor), "_status": int(response.status_code), "_attempts": attempts, "_error_samples": errors[-5:]}
                 if 500 <= response.status_code < 600:
                     errors.append({"status_code": int(response.status_code), "cursor": cursor, "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
@@ -689,15 +726,23 @@ class SearchTimelineMonitor:
         error_samples: List[Dict[str, Any]] = []
         last_http_status: Optional[int] = None
         exhausted_reason = "unknown"
+        transport = "http"
+        page_output_paths: List[str] = []
         rolling_hours = int(policy["rolling_hours"])
         window_start = datetime.utcnow() - timedelta(hours=max(1, rolling_hours))
+        variables_template = self._build_base_variables(search_def, raw_query, product)
+        search_features = (
+            self.config.get("graphql_endpoint_payloads", {})
+            .get("SearchTimeline", {})
+            .get("features", FROZEN_SEARCH_FEATURES)
+        )
+        features_json = self._compact_json(dict(search_features))
+
+        bootstrap = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
         query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
         if not query_id:
             raise RuntimeError("Missing api_config.search_timeline_query_id")
         graphql_url = f"https://x.com/i/api/graphql/{query_id}/SearchTimeline"
-        variables_template = self._build_base_variables(search_def, raw_query, product)
-        features_json = self._compact_json(dict(FROZEN_SEARCH_FEATURES))
-
         self.api_manager.warmup_url(search_url, timeout=int(self.config.get("api_config", {}).get("search_warmup_seconds", 30)))
         if self.fetcher.first_request_warmup_seconds > 0:
             time.sleep(self.fetcher.first_request_warmup_seconds)
@@ -711,10 +756,27 @@ class SearchTimelineMonitor:
                 cursor,
                 int(policy["max_retries"]),
                 has_pages=bool(tweets),
+                search_url=search_url,
+                browser_fallback_pages=min(2, int(policy["pagination_safety_cap_pages"])),
             )
             attempts += int(payload.get("_attempts", 0) or 0)
             last_http_status = payload.get("_status", last_http_status)
             error_samples.extend(payload.get("_error_samples", []) if isinstance(payload.get("_error_samples"), list) else [])
+            browser_pages = payload.pop("_browser_pages", None)
+            if browser_pages:
+                transport = "browser_fallback"
+                for fallback_index, fallback_payload in enumerate(browser_pages, start=page):
+                    jalali_batch = self.storage._jalali_batch_name()
+                    output_path = self.storage.save_search_result_page(slug, product, jalali_batch, fallback_index, fallback_payload)
+                    page_output_paths.append(str(output_path))
+                    page_result = self._parse_search_page(fallback_payload, seen_ids, capture_debug=(fallback_index == 1))
+                    tweets.extend(page_result["tweets"])
+                    if fallback_index == 1:
+                        debug = {key: page_result.get(key) for key in ["entry_type_counts", "cursor_candidates", "skipped_entries", "processed_entries", "selected_cursor_source"]}
+                    next_cursor = page_result.get("next_cursor") or extract_bottom_cursor(fallback_payload)
+                    cursor = str(next_cursor) if next_cursor else None
+                exhausted_reason = "verified_browser_fallback"
+                break
             if payload.get("_failure"):
                 exhausted_reason = str(payload["_failure"])
                 break
@@ -724,7 +786,8 @@ class SearchTimelineMonitor:
             jalali_batch = self.storage._jalali_batch_name()
             if page <= 3:
                 self.console.info(f"  Page {page} fetched")
-            self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
+            output_path = self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
+            page_output_paths.append(str(output_path))
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
             tweets.extend(page_result["tweets"])
             if page == 1:
@@ -760,16 +823,38 @@ class SearchTimelineMonitor:
             "attempts": attempts,
             "last_http_status": last_http_status,
             "error_samples": error_samples[-5:],
+            "transport": transport,
+            "bootstrap_route": bootstrap.route,
+            "browser_bootstrap": {
+                "ok": bootstrap.ok,
+                "support_request_count": bootstrap.support_request_count,
+                "error": bootstrap.error,
+            },
+            "rate_headers": self.api_manager.rate_limits.get("SearchTimeline", {}),
+            "output_paths": {"raw_pages": page_output_paths},
         }
         outputs = self._save_exports(slug, product, raw_query, tweets, debug, metadata)
-        report = {"search": search_def.get("name", slug), "slug": slug, "product": product, "raw_query": raw_query, "metadata": metadata, "counts": {"tweets": len(tweets)}, "outputs": outputs}
+        successful_reasons = {"success_search_window_crossed", "no_bottom_cursor", "verified_browser_fallback"}
+        status = "completed" if exhausted_reason in successful_reasons else ("partial" if tweets else "failed")
+        endpoint_status = "verified_browser_fallback" if transport == "browser_fallback" and status == "completed" else ("verified_http" if status == "completed" else "failed")
+        report = {
+            "search": search_def.get("name", slug),
+            "slug": slug,
+            "product": product,
+            "raw_query": raw_query,
+            "status": status,
+            "endpoint_status": endpoint_status,
+            "metadata": metadata,
+            "counts": {"tweets": len(tweets)},
+            "outputs": outputs,
+        }
         
         # ------------- تغییرات جدید سیستم State -------------
         state_key = self._state_key(search_def, product)
         current_state = self.search_state.get(state_key, {})
         
         # تشخیص اینکه آیا چرخه واقعاً موفق بوده یا به خاطر ارور متوقف شده (مثل 401، 403، 404)
-        is_success = last_http_status in (200, None)
+        is_success = status == "completed"
         
         new_state = {
             "last_status": exhausted_reason if is_success else f"error_http_{last_http_status}",
@@ -802,7 +887,12 @@ class SearchTimelineMonitor:
             policy = self._policy_for_search(search_def)
             
             # پارامتر force_run اینجا به تابع چک‌کننده پاس داده می‌شود
-            if not self.should_fetch_search(search_def, product, int(policy["poll_interval_seconds"]), force_run=force_run):
+            if not self.should_fetch_search(
+                search_def,
+                product,
+                int(policy["poll_interval_seconds"]),
+                force_run=force_run or bool(self.validation_run_id),
+            ):
                 continue
                 
             reports.append(self.monitor_search(search_def))
@@ -833,12 +923,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--only", action="append", help="Limit to search name/slug; can be repeated.")
     parser.add_argument("--once", action="store_true", help="Run one validation cycle instead of continuous mode.")
     parser.add_argument("--check-interval", type=int, default=60)
+    parser.add_argument("--validation-run-id", help="Write isolated output under data/validation/<run_id>/ and bypass polling state.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    monitor = SearchTimelineMonitor(config_path=args.config, search_config_path=args.search_config)
+    monitor = SearchTimelineMonitor(
+        config_path=args.config,
+        search_config_path=args.search_config,
+        validation_run_id=args.validation_run_id,
+    )
     only = set(args.only or []) or None
     if args.once:
         reports = monitor.run_cycle(only_names=only)
