@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Tier and rolling-window policy configuration.
 
@@ -6,7 +7,6 @@ This module keeps account priority metadata and per-priority policies in one
 place so historical and live pipelines can share the same scheduling rules.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path

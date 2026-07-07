@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Tweet set extraction and mathematical set operations.
 """
 
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from shared.exporters.text_export_helper import extract_translation_meta
+from shared.data_pipeline.storage_manager import extract_translation_meta
 
 try:
     import jdatetime
@@ -343,3 +343,350 @@ class TweetSetProcessor:
     def get_difference_b_minus_a(self, set_a: Dict[str, Dict[str, Any]], set_b: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         keys = set((set_b or {}).keys()) - set((set_a or {}).keys())
         return [set_b[k] for k in keys if k in set_b]
+
+
+#!/usr/bin/env python3
+"""
+Rolling-window coverage helpers for v4 subsystems.
+"""
+
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Dict, Iterable, List, Optional, Set
+
+from shared.core.tweet_processing_utils import TweetSetProcessor
+from shared.data_pipeline.storage_manager import _format_jalali
+
+try:
+    import pytz
+except ImportError:  # pragma: no cover
+    pytz = None
+
+
+TIMEZONE = "Asia/Tehran"
+
+
+@dataclass(frozen=True)
+class WindowCoverage:
+    complete: bool
+    target_dates: List[str]
+    covered_dates: List[str]
+    missing_dates: List[str]
+    oldest_date: Optional[str]
+    newest_date: Optional[str]
+    crossed_window_start: bool
+    item_count: int
+    reason: str
+
+
+def tehran_now() -> datetime:
+    if pytz:
+        return datetime.now(pytz.timezone(TIMEZONE))
+    return datetime.utcnow()
+
+
+def jalali_date(dt: datetime) -> str:
+    if pytz and dt.tzinfo is None:
+        dt = pytz.utc.localize(dt).astimezone(pytz.timezone(TIMEZONE))
+    elif pytz:
+        dt = dt.astimezone(pytz.timezone(TIMEZONE))
+    return _format_jalali(dt, "%Y-%m-%d")
+
+
+def target_jalali_dates(days: int, now_dt: Optional[datetime] = None) -> List[str]:
+    current = now_dt or tehran_now()
+    return [jalali_date(current - timedelta(days=offset)) for offset in range(max(1, int(days)))]
+
+
+def parse_twitter_timestamp(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
+        if pytz:
+            return parsed.astimezone(pytz.timezone(TIMEZONE))
+        return parsed
+    except Exception:
+        return None
+
+
+def tweet_jalali_date(tweet: Dict[str, Any]) -> Optional[str]:
+    for key in ("raw_timestamp", "created_at"):
+        parsed = parse_twitter_timestamp(tweet.get(key) if isinstance(tweet, dict) else None)
+        if parsed:
+            return jalali_date(parsed)
+    timestamp = str(tweet.get("timestamp") or "" if isinstance(tweet, dict) else "")
+    if len(timestamp) >= 10 and timestamp[:4].isdigit():
+        return timestamp[:10]
+    return None
+
+
+def tweet_is_older_than_jalali(tweet: Dict[str, Any], cutoff_jalali: str) -> bool:
+    date_value = tweet_jalali_date(tweet)
+    return bool(date_value and date_value < cutoff_jalali)
+
+
+class RollingWindowEvaluator:
+    """Evaluate whether raw pages prove a Tehran/Jalali rolling window."""
+
+    def __init__(self):
+        self.processor = TweetSetProcessor()
+
+    def extract_endpoint_tweets(
+        self,
+        raw_pages: List[Dict[str, Any]],
+        username: str,
+        endpoint: str,
+    ) -> List[Dict[str, Any]]:
+        extracted = self.processor.extract_tweets_from_raw(raw_pages, username=username, source_endpoint=endpoint)
+        return list(extracted.values())
+
+    def evaluate_tweets(
+        self,
+        tweets: Iterable[Dict[str, Any]],
+        window_days: int,
+        now_dt: Optional[datetime] = None,
+    ) -> WindowCoverage:
+        targets = target_jalali_dates(window_days, now_dt=now_dt)
+        if not targets:
+            targets = target_jalali_dates(1, now_dt=now_dt)
+        window_start = targets[-1]
+        dates: Set[str] = set()
+        item_count = 0
+        for tweet in tweets:
+            item_count += 1
+            date_value = tweet_jalali_date(tweet)
+            if date_value:
+                dates.add(date_value)
+
+        sorted_dates = sorted(dates)
+        oldest = sorted_dates[0] if sorted_dates else None
+        newest = sorted_dates[-1] if sorted_dates else None
+        crossed = bool(oldest and oldest < window_start)
+        covered = [date for date in targets if date in dates]
+        missing = [date for date in targets if date not in dates]
+
+        if not item_count:
+            return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "no_items")
+        if not crossed:
+            return WindowCoverage(False, targets, covered, missing, oldest, newest, False, item_count, "window_start_not_fully_crossed")
+        
+        return WindowCoverage(True, targets, covered, missing, oldest, newest, True, item_count, "window_fully_crossed")
+
+    def evaluate_raw_pages(
+        self,
+        raw_pages: List[Dict[str, Any]],
+        username: str,
+        endpoint: str,
+        window_days: int,
+        now_dt: Optional[datetime] = None,
+    ) -> WindowCoverage:
+        tweets = self.extract_endpoint_tweets(raw_pages, username=username, endpoint=endpoint)
+        return self.evaluate_tweets(tweets, window_days=window_days, now_dt=now_dt)
+
+
+"""Shared X GraphQL request/response contracts and semantic validation."""
+
+
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+
+TARGET_ENDPOINTS = {"UserTweets", "UserTweetsAndReplies", "SearchTimeline"}
+
+DATA_PATHS: Dict[str, Tuple[str, ...]] = {
+    "UserByScreenName": ("data", "user", "result"),
+    "UserTweets": ("data", "user", "result", "timeline", "timeline"),
+    "UserTweetsAndReplies": ("data", "user", "result", "timeline", "timeline"),
+    "SearchTimeline": ("data", "search_by_raw_query", "search_timeline", "timeline"),
+}
+
+USER_BY_SCREEN_NAME_FEATURES: Dict[str, Any] = {
+    "hidden_profile_subscriptions_enabled": True,
+    "profile_label_improvements_pcf_label_in_post_enabled": True,
+    "responsive_web_profile_redirect_enabled": False,
+    "rweb_tipjar_consumption_enabled": False,
+    "verified_phone_label_enabled": False,
+    "subscriptions_verification_info_is_identity_verified_enabled": True,
+    "subscriptions_verification_info_verified_since_enabled": True,
+    "highlights_tweets_tab_ui_enabled": True,
+    "responsive_web_twitter_article_notes_tab_enabled": True,
+    "subscriptions_feature_can_gift_premium": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+}
+
+USER_BY_SCREEN_NAME_FIELD_TOGGLES: Dict[str, Any] = {
+    "withPayments": False,
+    "withAuxiliaryUserLabels": True,
+}
+
+SEARCH_TIMELINE_FEATURES: Dict[str, Any] = {
+    "articles_preview_enabled": True,
+    "c9s_tweet_anatomy_moderator_badge_enabled": True,
+    "communities_web_enable_tweet_community_results_fetch": True,
+    "content_disclosure_ai_generated_indicator_enabled": True,
+    "content_disclosure_indicator_enabled": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+    "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+    "longform_notetweets_consumption_enabled": True,
+    "longform_notetweets_inline_media_enabled": False,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "post_ctas_fetch_enabled": False,
+    "premium_content_api_read_enabled": False,
+    "profile_label_improvements_pcf_label_in_post_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True,
+    "responsive_web_enhance_cards_enabled": False,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_grok_analysis_button_from_backend": True,
+    "responsive_web_grok_analyze_button_fetch_trends_enabled": False,
+    "responsive_web_grok_analyze_post_followups_enabled": True,
+    "responsive_web_grok_annotations_enabled": True,
+    "responsive_web_grok_community_note_auto_translation_is_enabled": True,
+    "responsive_web_grok_image_annotation_enabled": True,
+    "responsive_web_grok_imagine_annotation_enabled": True,
+    "responsive_web_grok_share_attachment_enabled": True,
+    "responsive_web_grok_show_grok_translated_post": True,
+    "responsive_web_jetfuel_frame": True,
+    "responsive_web_profile_redirect_enabled": False,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True,
+    "rweb_cashtags_composer_attachment_enabled": True,
+    "rweb_cashtags_enabled": True,
+    "rweb_conversational_replies_downvote_enabled": False,
+    "rweb_tipjar_consumption_enabled": False,
+    "rweb_video_screen_enabled": False,
+    "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "verified_phone_label_enabled": False,
+    "view_counts_everywhere_api_enabled": True,
+}
+
+
+@dataclass(frozen=True)
+class GraphQLValidation:
+    ok: bool
+    endpoint: str
+    reason: str
+    errors: List[Any]
+    data: Optional[Dict[str, Any]]
+    instructions: List[Dict[str, Any]]
+
+
+def user_by_screen_name_contract(username: str) -> Dict[str, Any]:
+    return {
+        "variables": {"screen_name": username, "withGrokTranslatedBio": True},
+        "features": dict(USER_BY_SCREEN_NAME_FEATURES),
+        "fieldToggles": dict(USER_BY_SCREEN_NAME_FIELD_TOGGLES),
+    }
+
+
+def timeline_variables(endpoint: str, user_id: str, cursor: Optional[str] = None) -> Dict[str, Any]:
+    variables: Dict[str, Any] = {
+        "userId": user_id,
+        "count": 20,
+        "includePromotedContent": True,
+    }
+    if endpoint == "UserTweetsAndReplies":
+        variables["withCommunity"] = True
+        variables["withVoice"] = True
+    elif endpoint == "UserTweets":
+        variables["withQuickPromoteEligibilityTweetFields"] = True
+        variables["withVoice"] = True
+    else:
+        raise ValueError(f"Unsupported timeline endpoint: {endpoint}")
+    if cursor:
+        variables["cursor"] = cursor
+    return variables
+
+
+def timeline_field_toggles(endpoint: str) -> Optional[Dict[str, Any]]:
+    if endpoint == "SearchTimeline":
+        return None
+    if endpoint in {"UserTweets", "UserTweetsAndReplies"}:
+        return {"withArticlePlainText": False}
+    return None
+
+
+def search_timeline_variables(
+    *,
+    raw_query: str,
+    product: str,
+    count: int = 20,
+    query_source: str = "typed_query",
+    cursor: Optional[str] = None,
+    with_grok_translated_bio: bool = True,
+    with_quick_promote_eligibility_tweet_fields: bool = False,
+) -> Dict[str, Any]:
+    variables: Dict[str, Any] = {
+        "rawQuery": raw_query,
+        "count": max(1, min(int(count), 20)),
+        "querySource": query_source,
+        "product": product,
+        "withGrokTranslatedBio": with_grok_translated_bio,
+        "withQuickPromoteEligibilityTweetFields": with_quick_promote_eligibility_tweet_fields,
+    }
+    if cursor:
+        variables["cursor"] = cursor
+    return variables
+
+
+def value_at_path(payload: Any, path: Tuple[str, ...]) -> Any:
+    value = payload
+    for key in path:
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value[key]
+    return value
+
+
+def validate_graphql_payload(endpoint: str, payload: Any) -> GraphQLValidation:
+    """Reject HTTP-200 GraphQL failures before they reach storage/parsers."""
+    if not isinstance(payload, dict):
+        return GraphQLValidation(False, endpoint, "payload_not_object", [], None, [])
+    errors = payload.get("errors")
+    if errors:
+        values = errors if isinstance(errors, list) else [errors]
+        return GraphQLValidation(False, endpoint, "graphql_errors", values, None, [])
+    path = DATA_PATHS.get(endpoint)
+    if not path:
+        return GraphQLValidation(False, endpoint, "unknown_endpoint_contract", [], None, [])
+    data = value_at_path(payload, path)
+    if not isinstance(data, dict):
+        return GraphQLValidation(False, endpoint, "expected_data_missing", [], None, [])
+    if endpoint == "UserByScreenName":
+        if not data.get("rest_id"):
+            return GraphQLValidation(False, endpoint, "user_rest_id_missing", [], data, [])
+        return GraphQLValidation(True, endpoint, "ok", [], data, [])
+    instructions = data.get("instructions")
+    if not isinstance(instructions, list):
+        return GraphQLValidation(False, endpoint, "instructions_missing", [], data, [])
+    supported = {
+        "TimelineAddEntries", "TimelineReplaceEntry", "TimelinePinEntry",
+        "TimelineClearCache", "TimelineGeneralContext",
+    }
+    typed = [item for item in instructions if isinstance(item, dict)]
+    if typed and not any(str(item.get("type")) in supported for item in typed):
+        return GraphQLValidation(False, endpoint, "unsupported_instruction_set", [], data, typed)
+    return GraphQLValidation(True, endpoint, "ok", [], data, typed)
+
+
+def extract_bottom_cursor(payload: Any) -> Optional[str]:
+    """Find the opaque Bottom cursor in direct or nested timeline entries."""
+    stack = [payload]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            cursor = value.get("value")
+            cursor_type = str(value.get("cursorType", "")).lower()
+            entry_id = str(value.get("entryId", "")).lower()
+            if cursor and (cursor_type == "bottom" or entry_id.startswith("cursor-bottom-")):
+                return str(cursor)
+            stack.extend(reversed(list(value.values())))
+        elif isinstance(value, list):
+            stack.extend(reversed(value))
+    return None

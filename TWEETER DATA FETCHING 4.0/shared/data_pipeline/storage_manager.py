@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
-Storage manager for Phase 3 raw/processed persistence.
+Save raw pages, processed tweet sets, reports, and state files.
+
+Code map:
+- Path setup decides whether data belongs to historical/live or search.
+- Raw helpers save and reload GraphQL response pages.
+- Processed helpers merge tweet sets by tweet id.
+- Text helpers format readable .txt exports for people.
 """
 
-from __future__ import annotations
 
 import json
 import re
@@ -23,9 +29,6 @@ try:
     import pytz
 except ImportError:
     pytz = None
-
-from shared.exporters.text_export_helper import choose_export_text
-
 
 def extract_metrics(tweet_obj: Dict[str, Any]) -> Dict[str, Any]:
     """Compatibility helper for legacy callers expecting metric extraction."""
@@ -88,6 +91,9 @@ def _format_jalali(dt: datetime, fmt: str) -> str:
     )
 
 
+# Storage paths and state ----------------------------------------------------
+
+
 class StorageManager:
     """Manage raw GraphQL pages and processed tweet set outputs."""
 
@@ -117,20 +123,19 @@ class StorageManager:
         subsystem: str = "historical",
         create_folders: bool = True,
         manage_sync_state: bool = True,
+        data_root_override: Optional[Path] = None,
     ):
-        # اصلاح سطح دسترسی به ریشه پروژه (parents[2])
         self.project_root = project_root or base_dir or Path(__file__).resolve().parents[2]
         self.timezone = timezone
         self.tz = pytz.timezone(timezone) if pytz else None
         
-        # نگاشت دقیق به ساختار جدید فولدرها
         raw_sub = str(subsystem or "historical").strip().lower()
         if raw_sub in ["historical", "live"]:
             self.subsystem = "historical_live"
         else:
             self.subsystem = raw_sub  # برای حالت "search"
 
-        self.global_data_root = self.project_root / "data"
+        self.global_data_root = data_root_override or (self.project_root / "data")
         self.data_root = self.global_data_root / self.subsystem
         
         # مسیرهای اصلی بر اساس ساختار جدید
@@ -1045,3 +1050,130 @@ class StorageManager:
         """Compatibility datetime helper with Jalali output when available."""
         target = dt or datetime.utcnow()
         return _format_jalali(target, "%Y-%m-%d %H:%M:%S")
+
+
+#!/usr/bin/env python3
+"""
+Translation-aware TXT export helpers.
+
+This module is intentionally storage/output oriented. It does not mutate raw
+payloads and does not change transport behavior.
+"""
+
+
+from typing import Any, Dict, Optional
+
+
+ALLOWED_ORIGINAL_LANGS = {"en", "fa"}
+
+
+def _normalize_lang(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return text
+
+
+def _normalize_translation_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
+    source_language = _normalize_lang(data.get("source_language"))
+    destination_language = _normalize_lang(data.get("destination_language")) or "en"
+    full_translation = _clean_text(data.get("translation"))
+    preview_translation = _clean_text(data.get("preview_translation"))
+    is_available = bool(payload.get("is_available", False))
+
+    return {
+        "source_language": source_language,
+        "destination_language": destination_language,
+        "translation": full_translation,
+        "preview_translation": preview_translation,
+        "is_available": is_available,
+        "has_translation": bool(full_translation or preview_translation),
+    }
+
+
+def extract_translation_meta(raw_obj: Any, scan_limit: int = 500) -> Dict[str, Any]:
+    """
+    Extract grok translation payload from nested tweet-like objects.
+
+    The payload can appear at different wrapper depths, so this uses a bounded
+    graph scan and returns the first valid translation object found.
+    """
+    stack = [raw_obj]
+    scanned = 0
+
+    while stack and scanned < scan_limit:
+        node = stack.pop()
+        scanned += 1
+
+        if isinstance(node, dict):
+            if "grok_translated_post_with_availability" in node:
+                payload = node.get("grok_translated_post_with_availability")
+                if isinstance(payload, dict):
+                    return _normalize_translation_payload(payload)
+
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    stack.append(value)
+        elif isinstance(node, list):
+            for item in node:
+                if isinstance(item, (dict, list)):
+                    stack.append(item)
+
+    return {
+        "source_language": None,
+        "destination_language": "en",
+        "translation": "",
+        "preview_translation": "",
+        "is_available": False,
+        "has_translation": False,
+    }
+
+
+def choose_export_text(
+    original_text: Any,
+    source_language: Optional[str],
+    translation_meta: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Choose display text for TXT export:
+    - Keep original text for en/fa.
+    - Otherwise prefer full translation, then preview translation.
+    - If translation missing, keep original + UNKNOWN marker.
+    """
+    original = _clean_text(original_text)
+    src_lang = _normalize_lang(source_language)
+    meta = translation_meta if isinstance(translation_meta, dict) else {}
+    meta_src_lang = _normalize_lang(meta.get("source_language"))
+    effective_src_lang = src_lang or meta_src_lang
+
+    full_translation = _clean_text(meta.get("translation"))
+    preview_translation = _clean_text(meta.get("preview_translation"))
+    translated_text = full_translation or preview_translation
+
+    if effective_src_lang in ALLOWED_ORIGINAL_LANGS:
+        return {"text": original, "note": None, "used_translation": False}
+
+    if translated_text:
+        src = effective_src_lang or "unknown"
+        return {
+            "text": translated_text,
+            "note": f"[Translated from {src} -> en]",
+            "used_translation": True,
+        }
+
+    if effective_src_lang and effective_src_lang not in ALLOWED_ORIGINAL_LANGS:
+        return {
+            "text": original,
+            "note": f"[Translation from {effective_src_lang} -> en : UNKNOWN]",
+            "used_translation": False,
+        }
+
+    return {"text": original, "note": None, "used_translation": False}

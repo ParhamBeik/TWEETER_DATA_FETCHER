@@ -372,7 +372,7 @@ def setup_cookies():
     print("\n" + "=" * 70)
     print("Next steps:")
     print("=" * 70)
-    print("  1. Run: python3 historical_runner.py (or live_runner.py / search_runner.py)")
+    print("  1. Run: python3 historical_pipeline.py (or live_pipeline.py / search_pipeline.py)")
     print("  2. If you get errors, see CONFIG_GUIDE.md")
     print("  3. Update cookies when they expire (every 30-90 days)")
     print()
@@ -409,7 +409,7 @@ def update_cookies_only(config, config_file):
     
     print(f"\n✓ Updated {len(cookies_dict)} cookies")
     print(f"✓ Saved to: {config_file}")
-    print("\n✅ Ready to run your runner scripts (e.g., historical_runner.py)")
+    print("\n✅ Ready to run your runner scripts (e.g., historical_pipeline.py)")
 
 if __name__ == "__main__":
     try:

@@ -8,7 +8,7 @@ log in. Uses Playwright to intercept fresh parameters from the live
 Twitter session.
 
 Usage:
-    python3 session_updater.py
+    python3 query_ids_updater.py
 
 Options:
     1. Quick refresh  - Inject existing cookies, hope they still work
@@ -67,6 +67,7 @@ class SessionUpdater:
         )
         self._target_url = "https://x.com/home"
         self._graphql_indicator = "/graphql/"
+        self.intercepted_tx_ids: Dict[str, List[str]] = {}
 
     # ------------------------------------------------------------------ #
     #  Config I/O
@@ -165,6 +166,14 @@ class SessionUpdater:
             api_config.update(extracted["query_ids"])
             report["query_ids"] = str(len(extracted["query_ids"]))
 
+        if extracted.get("transaction_ids"):
+            cfg["real_transaction_ids"] = extracted["transaction_ids"]
+            report["transaction_ids"] = str(len(extracted["transaction_ids"]))
+
+        if extracted.get("transaction_ids_by_endpoint"):
+            cfg["real_transaction_ids_by_endpoint"] = extracted["transaction_ids_by_endpoint"]
+            report["transaction_ids"] = str(len(extracted["transaction_ids"]))
+
         return report
 
     # ------------------------------------------------------------------ #
@@ -224,6 +233,17 @@ class SessionUpdater:
                         ]
                         logger.debug("Intercepted x-client-transaction-id")
 
+                    if self._graphql_indicator in url and "x-client-transaction-id" in headers:
+                        tx_val = headers["x-client-transaction-id"]
+                        if tx_val and len(tx_val) == 94:
+                            result = self._extract_query_id_from_url(url)
+                            if result:
+                                endpoint, _ = result
+                                if endpoint not in self.intercepted_tx_ids:
+                                    self.intercepted_tx_ids[endpoint] = []
+                                if tx_val not in self.intercepted_tx_ids[endpoint]:
+                                    self.intercepted_tx_ids[endpoint].append(tx_val)
+
                     # Extract query IDs
                     if self._graphql_indicator in url:
                         result = self._extract_query_id_from_url(url)
@@ -257,6 +277,11 @@ class SessionUpdater:
             return False
 
         if extracted["x_client_transaction_id"] or extracted["ct0"] != old_ct0 or extracted["query_ids"]:
+            if self.intercepted_tx_ids:
+                # Flatten for quick_refresh
+                all_tx = [tx for txs in self.intercepted_tx_ids.values() for tx in txs]
+                extracted["transaction_ids"] = all_tx[:20]
+                extracted["transaction_ids_by_endpoint"] = {k: v[:10] for k, v in self.intercepted_tx_ids.items()}
             report = self._apply_extracted(cfg, extracted, old_txid, current_cookies)
             self._save_config(cfg)
 
@@ -264,6 +289,8 @@ class SessionUpdater:
             print(f"  x-client-transaction-id: [{report.get('x-client-transaction-id', 'unchanged')}]")
             print(f"  ct0:                     [{report.get('ct0', 'unchanged')}]")
             print(f"  Query IDs extracted:     {report.get('query_ids', '0')}")
+            if report.get("transaction_ids"):
+                print(f"  Transaction IDs pool:    {report['transaction_ids']}")
             return True
 
         logger.error("Quick refresh returned no fresh parameters. Session expired.")
@@ -320,6 +347,17 @@ class SessionUpdater:
                             "x-client-transaction-id"
                         ]
                         logger.debug("Intercepted x-client-transaction-id")
+
+                    if self._graphql_indicator in url and "x-client-transaction-id" in headers:
+                        tx_val = headers["x-client-transaction-id"]
+                        if tx_val and len(tx_val) == 94:
+                            result = self._extract_query_id_from_url(url)
+                            if result:
+                                endpoint, _ = result
+                                if endpoint not in self.intercepted_tx_ids:
+                                    self.intercepted_tx_ids[endpoint] = []
+                                if tx_val not in self.intercepted_tx_ids[endpoint]:
+                                    self.intercepted_tx_ids[endpoint].append(tx_val)
 
                     if self._graphql_indicator in url:
                         result = self._extract_query_id_from_url(url)
@@ -418,6 +456,16 @@ class SessionUpdater:
             api_config = cfg.setdefault("api_config", {})
             api_config.update(extracted["query_ids"])
 
+        if self.intercepted_tx_ids:
+            # Build endpoint-specific tx-id dict, keep top 5-10 per endpoint
+            tx_by_endpoint = {}
+            for endpoint, tx_list in self.intercepted_tx_ids.items():
+                tx_by_endpoint[endpoint] = tx_list[:10]
+            cfg["real_transaction_ids_by_endpoint"] = tx_by_endpoint
+            # Also keep flat list for backward compatibility
+            all_tx = [tx for txs in self.intercepted_tx_ids.values() for tx in txs]
+            cfg["real_transaction_ids"] = all_tx[:20]
+
         self._save_config(cfg)
 
         report = {}
@@ -433,6 +481,11 @@ class SessionUpdater:
         print(f"\n  Cookies updated:           {report['cookies']}")
         print(f"  x-client-transaction-id:   [{report['x-client-transaction-id']}]")
         print(f"  Query IDs extracted:       {report['query_ids']}")
+        if self.intercepted_tx_ids:
+            total_tx = sum(len(txs) for txs in self.intercepted_tx_ids.values())
+            print(f"  Transaction IDs pool:      {total_tx} collected across {len(self.intercepted_tx_ids)} endpoints")
+            for ep, txs in self.intercepted_tx_ids.items():
+                print(f"    - {ep}: {len(txs)} tx-ids")
 
         if extracted["query_ids"]:
             for key, val in extracted["query_ids"].items():
@@ -475,7 +528,7 @@ class SessionUpdater:
             cfg = self._load_config()
         except FileNotFoundError as exc:
             print(f"\nError: {exc}")
-            print("Run setup_api_cookies.py first to create a config file.")
+            print("Run cookie_generator.py first to create a config file.")
             sys.exit(1)
 
         if choice == "1":
@@ -488,9 +541,9 @@ class SessionUpdater:
 
         if success:
             print("\nYou can now run your scripts:")
-            print("  python3 historical_scripts/historical_runner.py")
-            print("  python3 live_scripts/live_runner.py")
-            print("  python3 search_scripts/search_runner.py --once")
+            print("  python3 historical_scripts/historical_pipeline.py")
+            print("  python3 live_scripts/live_pipeline.py")
+            print("  python3 search_scripts/search_pipeline.py --once")
         else:
             print(
                 "\nRefresh failed. Ensure you have an active internet"
