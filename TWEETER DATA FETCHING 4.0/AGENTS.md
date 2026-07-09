@@ -12,7 +12,7 @@
 | **Shared Core** | API manager, fetcher engine, utilities | `shared/core/*` |
 | **Shared Storage** | Data persistence and state management | `shared/data_pipeline/storage_manager.py` |
 | **Shared Config** | API keys, endpoints, tier configs | `shared/config/*` |
-| **Auth & Sniffer** | Cookie setup, query-id refresh, traffic capture | `shared/auth/*` (incl. `graphql_traffic_sniffer.py`, `query_ids_updater.py`) |
+| **Auth & Sniffer** | Cookie setup, query-id refresh, traffic capture | `shared/auth/*` (includes `auto_refresh.py`, `browser_context.py`) |
 
 
 ---
@@ -98,7 +98,7 @@ The system tracks health status for each tx-id:
 **Files modified:**
 - `shared/auth/auto_refresh.py` — New module (headless browser automation)
 - `shared/core/twitter_http_client.py` — Auto-refresh trigger logic
-- `shared/auth/query_ids_updater.py` — Enhanced to collect endpoint-specific tx-ids
+- `shared/auth/auto_refresh.py` — Enhanced to collect endpoint-specific tx-ids
 
 ### Testing & Validation
 
@@ -143,7 +143,7 @@ If auto-refresh fails or you want to pre-populate fresh tx-ids:
 
 ```bash
 # Full browser-based refresh (captures tx-ids + query-ids + cookies)
-python shared/auth/query_ids_updater.py
+python shared/auth/auto_refresh.py --interactive
 
 # Headless auto-refresh standalone test
 python -c "from shared.auth.auto_refresh import auto_refresh_transaction_ids; auto_refresh_transaction_ids()"
@@ -250,7 +250,7 @@ data/
 3. Export these cookie values: `auth_token`, `ct0`, `guest_id`, `kdt`, `twid`.
 4. Run:
    ```bash
-   python shared/auth/cookie_generator.py
+   python shared/auth/auto_refresh.py --interactive
    ```
    Or manually edit `shared/config/config.json` under the `api_cookies` key.
 5. **Important:** Cookies expire. If you see persistent 401/403 errors, refresh them.
@@ -261,7 +261,7 @@ data/
 GraphQL request shape the browser sends — including the per-request JavaScript-generated auth headers
 (`x-client-transaction-id`, `query-id`) — so you can keep the fetchers aligned with what the live site
 actually does. It is **read-only/diagnostic**: it never writes `config.json`. Applying captured query-ids is
-[`query_ids_updater.py`](#auth--sniffer)'s job.
+#auth--sniffer(#auth--sniffer)'s job.
 
 ```bash
 # Capture a profile's timeline traffic (headful Chrome opens; close it or wait for --timeout)
@@ -292,7 +292,7 @@ the site's own JS sets — including ones a plain HTTP proxy would not synthesiz
 from the recorded headers; nothing is replayed or generated.
 
 **Keeping the contract current:** when Twitter rotates query-ids, run the sniffer, then apply the new ids with
-`python shared/auth/query_ids_updater.py` (or paste them into `api_config` in `shared/config/config.json`). The
+`python shared/auth/auto_refresh.py --interactive` (or paste them into `api_config` in `shared/config/config.json`). The
 sniffer deliberately stops at observation — it does not auto-write config.
 
 **Caveat:** requires a working Chrome + chromedriver. Selenium's built-in `selenium-manager` normally fetches
@@ -452,7 +452,7 @@ self.storage = StorageManager(
 | `jdatetime` | Jalali calendar conversion (optional, fallback is built-in) |
 | `rich` | Optional — provides terminal UI formatting |
 | `selenium` | Required only by the GraphQL sniffer (`shared/auth/graphql_traffic_sniffer.py`) for headful capture |
-| `playwright` | Required only by `shared/auth/query_ids_updater.py` (query-id refresh). Install browsers with `playwright install chromium`. |
+| `playwright` | Required only by `shared/auth/auto_refresh.py` (query-id refresh). Install browsers with `playwright install chromium`. |
 
 Install dependencies:
 ```bash
@@ -657,8 +657,8 @@ inference. The interceptor did not record DOM state or navigation events.
 
 **Keeping the contract current:** run `python -m shared.auth.graphql_traffic_sniffer <profile> --timeout 120`,
 read the emitted `contract.json` / `playbook.md`, then apply refreshed query-ids with
-`python shared/auth/query_ids_updater.py` (or edit `api_config` in `shared/config/config.json` directly).
-The sniffer never writes config; `query_ids_updater.py` owns the apply step.
+`python shared/auth/auto_refresh.py --interactive` (or edit `api_config` in `shared/config/config.json` directly).
+The sniffer never writes config; `auto_refresh.py` owns the apply step.
 
 > **Archive note:** the older response-only capture lives at the repo root in `graphql_sniffer.py` and
 > `graphql_logs/` (26-file archive). It is **superseded** by the v4 Selenium sniffer and kept only as a
@@ -714,10 +714,10 @@ The sniffer never writes config; `query_ids_updater.py` owns the apply step.
 | File | Purpose | Key Classes/Functions |
 |------|---------|----------------------|
 | `shared/auth/graphql_traffic_sniffer.py` | Headful Selenium capture of live GraphQL traffic + JS-generated auth headers; emits `timeline.jsonl`, `timeline.html`, `contract.json`, `playbook.md` | `observe(target, timeout_seconds, output_dir)`, `_extract_contract`, `_write_playbook` |
-| `shared/auth/query_ids_updater.py` | Applies captured query-ids into `config.json` (atomic save w/ backup); Playwright-based | `SessionUpdater`, `_apply_extracted`, `ENDPOINT_KEY_MAP` |
-| `shared/auth/cookie_generator.py` | Interactive cookie harvest → `api_cookies` in `config.json` | — |
+| `shared/auth/auto_refresh.py` | Applies captured query-ids into `config.json` (atomic save w/ backup); Playwright-based | `SessionUpdater`, `_apply_extracted`, `ENDPOINT_KEY_MAP` |
+| `shared/auth/auto_refresh.py` | Interactive cookie harvest → `api_cookies` in `config.json` | — |
 
-> The sniffer is **read-only** (no config writes). `query_ids_updater.py` owns the write/apply step.
+> The sniffer is **read-only** (no config writes). `auto_refresh.py` owns the write/apply step.
 
 ---
 
@@ -726,7 +726,7 @@ The sniffer never writes config; `query_ids_updater.py` owns the apply step.
 ### Prerequisites
 - Python 3.11+
 - `pytz` installed (`pip3 install pytz`)
-- Valid API cookies (configure via `shared/auth/cookie_generator.py`)
+- Valid API cookies (configure via `shared/auth/auto_refresh.py`)
 
 ### Running Each Component
 
@@ -851,9 +851,7 @@ lower-bound crossing or a genuine no-cursor end.
 │   │   ├── __init__.py
 │   │   ├── auto_refresh.py
 │   │   ├── browser_context.py
-│   │   ├── cookie_generator.py
 │   │   ├── graphql_traffic_sniffer.py
-│   │   └── query_ids_updater.py
 │   ├── config
 │   │   ├── __init__.py
 │   │   ├── account_tiers.py

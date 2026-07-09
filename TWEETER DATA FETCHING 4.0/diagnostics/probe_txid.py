@@ -195,7 +195,7 @@ def _verdict(recs: dict) -> str:
             "UserTweets ALSO 404'd from the cold probe -> this is a session/warmup "
             "issue, not endpoint-specific. Likely stale cookies or a required "
             "UserByScreenName/warmup call before profile timelines. Refresh cookies "
-            "(query_ids_updater.py) and/or warm up first, then re-probe."
+            "(auto_refresh.py --interactive) and/or warm up first, then re-probe."
         )
     if utar_br["ok"] and not utar_min["ok"]:
         return (

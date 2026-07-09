@@ -32,8 +32,6 @@ TWEETER DATA FETCHING 4.0/
 │
 ├── 🔐 AUTH TOOLS (run once or on demand)
 │   └── shared/auth/
-│       ├── cookie_generator.py           ← interactive cookie harvest → config.json
-│       ├── query_ids_updater.py          ← Playwright: refresh query-ids + tx-ids
 │       ├── auto_refresh.py               ← headless Playwright: triggered on 404s
 │       ├── graphql_traffic_sniffer.py    ← Selenium: capture live browser traffic
 │       └── browser_context.py            ← warmup/bootstrap context helper
@@ -260,19 +258,19 @@ flowchart LR
 
 ## Part 4 — The Supporting Tool Scripts
 
-### `shared/auth/cookie_generator.py` — Cookie Setup
+### `shared/auth/auto_refresh.py` — Cookie Setup
 Run **once** when your session expires.
 ```
-python shared/auth/cookie_generator.py
+python shared/auth/auto_refresh.py --interactive
 ```
 - Prompts you for cookies from browser DevTools
 - Writes `auth_token`, `ct0`, `guest_id`, `kdt`, `twid` into `config.json`
 - **Trigger:** you see HTTP 401/403 errors
 
-### `shared/auth/query_ids_updater.py` — Query ID + TX-ID Refresh
+### `shared/auth/auto_refresh.py` — Query ID + TX-ID Refresh
 Run **when Twitter rotates its GraphQL query IDs** (you'll see 400 errors).
 ```
-python shared/auth/query_ids_updater.py
+python shared/auth/auto_refresh.py --interactive
 ```
 - Opens interactive Playwright browser
 - Navigates Twitter, intercepts GraphQL requests
@@ -355,7 +353,7 @@ flowchart TD
 | `snapshot_index.json` | `data/historical_live/state/` | `LiveStorageManager` | Live pipeline | Index of viral snapshots |
 | `tx_id_state.json` | `data/historical_live/state/` | `APIManager` | `auto_refresh.py` | Health status of tx-ids per endpoint |
 | `search_state.json` | `data/search/state/` | `SearchTimelineMonitor` | Search pipeline | Last check time + tweet count per query |
-| `config.json` | `shared/config/` | `cookie_generator.py`, `query_ids_updater.py`, `auto_refresh.py` | All pipelines | 🔑 Cookies, query IDs, tx-id pools |
+| `config.json` | `shared/config/` | `auto_refresh.py` | All pipelines | 🔑 Cookies, query IDs, tx-id pools |
 
 ---
 
@@ -367,7 +365,7 @@ Every single `perform_get()` call in all three pipelines follows this exact tabl
 |---|---|---|
 | **200** | Success | Validate GraphQL shape. If `errors` key present or data path is null → treat as failure. |
 | **400** | Bad request shape | Query ID wrong, variables/features/fieldToggles mismatch. **Do not retry**. Compare against `contract.json`. |
-| **401** / **403** | Auth failure | Cookies expired or `x-csrf-token ≠ ct0`. Run `cookie_generator.py`. |
+| **401** / **403** | Auth failure | Cookies expired or `x-csrf-token ≠ ct0`. Run `auto_refresh.py --interactive`. |
 | **404 (first page)** | Route rejected | Stale query ID, bad context. `auto_refresh.py` triggered if tx-ids are all stale. |
 | **404 (mid-cursor)** | Cursor invalid | Cursor is dead. Save collected pages, mark `partial_cursor_404`, stop chain. |
 | **429** | Rate limited | Read `x-rate-limit-reset` header. Sleep until that epoch + buffer. Retry same request. |
