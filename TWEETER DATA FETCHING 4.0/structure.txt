@@ -74,9 +74,7 @@
 │   │   ├── __init__.py
 │   │   ├── auto_refresh.py
 │   │   ├── browser_context.py
-│   │   ├── cookie_generator.py
 │   │   ├── graphql_traffic_sniffer.py
-│   │   └── query_ids_updater.py
 │   ├── config
 │   │   ├── __init__.py
 │   │   ├── account_tiers.py
