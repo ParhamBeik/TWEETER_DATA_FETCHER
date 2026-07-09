@@ -403,10 +403,10 @@ class FetcherEngine:
         # Automatic auth recovery via a headless sniffer has been retired
         # (YAGNI: it was the least-reliable part of the auth path). The v4
         # sniffer is now a pure diagnostic tool. Refresh auth/query-ids manually
-        # via shared/auth/query_ids_updater.py or shared/auth/cookie_generator.py.
+        # via shared/auth/auto_refresh.py.
         self.logger.warning(
             f"@{account} {endpoint} 404/context-rejected; automatic auth recovery is disabled "
-            "(run query_ids_updater.py / cookie_generator.py manually to refresh)."
+            "(run auto_refresh.py --interactive manually to refresh)."
         )
         return False
 

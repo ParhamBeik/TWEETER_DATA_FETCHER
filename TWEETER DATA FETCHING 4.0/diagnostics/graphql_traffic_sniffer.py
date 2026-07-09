@@ -32,18 +32,18 @@ drains the captured pairs each second.
 
 It does NOT drive the fetcher and does NOT write ``config.json``. To bake
 captured query-ids / transaction-ids into config, use
-``shared/auth/query_ids_updater.py`` (it owns the apply step).
+``shared/auth/auto_refresh.py`` (it owns the apply step).
 
 For normal use, edit the ``USER SETTINGS`` section near the top of this file,
 then run it without arguments:
 
-    python -m shared.auth.graphql_traffic_sniffer
+    python -m diagnostics.graphql_traffic_sniffer
 
 Command-line arguments remain available as optional one-off overrides:
 
-    python -m shared.auth.graphql_traffic_sniffer elonmusk --timeout 90
-    python -m shared.auth.graphql_traffic_sniffer https://x.com/elonmusk/with_replies
-    python -m shared.auth.graphql_traffic_sniffer https://x.com/home --timeout 300 --include-all-graphql
+    python -m diagnostics.graphql_traffic_sniffer elonmusk --timeout 90
+    python -m diagnostics.graphql_traffic_sniffer https://x.com/elonmusk/with_replies
+    python -m diagnostics.graphql_traffic_sniffer https://x.com/home --timeout 300 --include-all-graphql
 
 Dependencies (only needed to actually capture — ``--help`` works without them):
 
@@ -694,7 +694,7 @@ def _write_diagnostics(
     lines.append("")
     lines.append("- For `historical_pipeline.py` and `live_pipeline.py`, compare `endpoint_contracts/UserTweets*.json` against `FetcherEngine._timeline_variables`, `_timeline_features`, and `_timeline_field_toggles`.")
     lines.append("- For `search_pipeline.py`, compare `endpoint_contracts/SearchTimeline.json` against `_build_base_variables`, `FROZEN_SEARCH_FEATURES`, `_build_frozen_headers`, and the configured query ID.")
-    lines.append("- If query IDs differ, refresh `shared/config/config.json` through `shared/auth/query_ids_updater.py` or a manual config update.")
+    lines.append("- If query IDs differ, refresh `shared/config/config.json` through `shared/auth/auto_refresh.py` or a manual config update.")
     lines.append("- If variables/features differ, update the project payload shape from the captured endpoint contract, not from guessed docs.")
     lines.append("- If statuses are `401`/`403`, refresh cookies and verify `ct0` equals `x-csrf-token`; if `429`, check the captured rate-limit headers.")
     lines.append("")
@@ -1152,7 +1152,7 @@ def _write_playbook(
     lines.append("")
     lines.append("1. Capture a fresh run:")
     lines.append("   ```")
-    lines.append("   python -m shared.auth.graphql_traffic_sniffer <target> --timeout 90")
+    lines.append("   python -m diagnostics.graphql_traffic_sniffer <target> --timeout 90")
     lines.append("   ```")
     lines.append(
         "2. Copy the **Endpoints** table above into the "
@@ -1164,7 +1164,7 @@ def _write_playbook(
     )
     lines.append(
         "4. To bake captured query-ids / transaction-id into `config.json`, run "
-        "`shared/auth/query_ids_updater.py` — the sniffer itself never writes config."
+        "`shared/auth/auto_refresh.py` — the sniffer itself never writes config."
     )
     lines.append("")
 

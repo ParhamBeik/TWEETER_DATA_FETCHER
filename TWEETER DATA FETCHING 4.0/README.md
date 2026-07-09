@@ -183,15 +183,15 @@ Twitter rotates GraphQL `query-id`s periodically. The fetchers read them from
 
 ```bash
 # 1) Harvest fresh cookies (auth_token, ct0, …) into config.json
-python shared/auth/cookie_generator.py
+python shared/auth/auto_refresh.py --interactive
 
 # 2) After a sniffer run, apply newly captured query-ids into config.json
-python shared/auth/query_ids_updater.py
+python shared/auth/auto_refresh.py --interactive
 ```
 
-`query_ids_updater.py` owns the config **write** step (atomic save with backup);
+`auto_refresh.py` owns the config **write** step (atomic save with backup);
 the sniffer only observes. If cookies expire you'll see persistent 401/403 —
-re-run `cookie_generator.py`.
+re-run `auto_refresh.py --interactive`.
 
 ### Automatic Transaction ID Refresh
 
@@ -209,7 +209,7 @@ from real browser sessions. When all transaction IDs for an endpoint become stal
 
 To manually refresh transaction IDs:
 ```bash
-python shared/auth/query_ids_updater.py  # Full refresh (cookies + query-ids + tx-ids)
+python shared/auth/auto_refresh.py --interactive  # Full refresh (cookies + query-ids + tx-ids)
 ```
 
 **Troubleshooting:** If you see persistent 404s on UserTweetsAndReplies or SearchTimeline
@@ -231,7 +231,7 @@ pip3 install selenium playwright        # only for sniffer / update_query_ids
 playwright install chromium             # only for update_query_ids
 
 # Configure auth (creates shared/config/config.json)
-python shared/auth/cookie_generator.py
+python shared/auth/auto_refresh.py --interactive
 
 # --- run a subsystem --------------------------------------------------------
 python historical_scripts/historical_pipeline.py                 # backfill timelines
@@ -265,7 +265,7 @@ Add accounts in `shared/config/account_tiers.py`; define searches in
 | `jdatetime` | optional — Jalali batch naming |
 | `rich` | optional — terminal UI |
 | `selenium` | the GraphQL sniffer (+ Chrome/chromedriver) |
-| `playwright` | `shared/auth/query_ids_updater.py` only |
+| `playwright` | `shared/auth/auto_refresh.py` only |
 
 ---
 
