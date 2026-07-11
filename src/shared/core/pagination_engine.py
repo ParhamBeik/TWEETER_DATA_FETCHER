@@ -389,19 +389,81 @@ class FetcherEngine:
         cursor: Optional[str],
         title: str = "CRITICAL 4xx ERROR",
     ) -> None:
-        """Non-exiting version for cursor error handling with resume support."""
+        """Non-exiting version for cursor error handling with resume support.
+
+        In addition to printing a banner, emit a structured 404/4xx event to
+        the subsystem logs for later analysis and increment an in-dir summary
+        counter. This creates:
+          - data/.../logs/404_events.jsonl  (line-delimited JSON events)
+          - data/.../logs/404_summary.json  (aggregated counters)
+        """
         block = {
-            "status_code": response.status_code,
+            "status_code": int(response.status_code),
             "account": account,
             "endpoint": endpoint,
             "request_url": request_url,
             "cursor": cursor,
             "headers": request_headers,
             "variables": variables,
-            "response_text": response.text[:4000],
+            "response_text": (response.text or "")[:4000],
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         }
         body = json.dumps(block, indent=2, ensure_ascii=False)
         self.logger.banner(title, body)
+
+        # Emit structured event and update summary counters for monitoring
+        try:
+            self._emit_404_metric(block)
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            self.logger.warning(f"Failed to write 4xx metric: {exc}")
+
+    def _emit_404_metric(self, event: Dict[str, Any]) -> None:
+        """Write a JSONL event and update aggregate summary counters.
+
+        Event is appended to logs/404_events.jsonl and the summary at
+        logs/404_summary.json is incremented by account/endpoint/status_code.
+        """
+        logs_dir = Path(self.storage_manager.logs_dir) if isinstance(self.storage_manager.logs_dir, (str, Path)) else self.storage_manager.logs_dir
+        # ensure path object
+        logs_dir = Path(logs_dir)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        events_file = logs_dir / "404_events.jsonl"
+        summary_file = logs_dir / "404_summary.json"
+
+        # Append event line
+        try:
+            with events_file.open("a", encoding="utf-8") as ef:
+                ef.write(json.dumps(event, ensure_ascii=False) + "\n")
+        except Exception:
+            # swallow; main banner is the authoritative console signal
+            pass
+
+        # Update summary counters
+        try:
+            summary = {}
+            if summary_file.exists():
+                try:
+                    with summary_file.open("r", encoding="utf-8") as sf:
+                        summary = json.load(sf) or {}
+                except Exception:
+                    summary = {}
+
+            date_key = datetime.utcnow().strftime("%Y-%m-%d")
+            acct = event.get("account") or "unknown"
+            ep = event.get("endpoint") or "unknown"
+            code = str(event.get("status_code") or "unknown")
+
+            summary.setdefault(date_key, {})
+            summary[date_key].setdefault(acct, {})
+            summary[date_key][acct].setdefault(ep, {})
+            summary[date_key][acct][ep].setdefault(code, 0)
+            summary[date_key][acct][ep][code] += 1
+
+            with summary_file.open("w", encoding="utf-8") as sf:
+                json.dump(summary, sf, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def _recover_404_context(
         self,
