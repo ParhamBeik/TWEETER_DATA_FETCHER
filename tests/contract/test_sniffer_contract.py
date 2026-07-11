@@ -16,7 +16,7 @@ except ImportError:
     pytz_stub.UTC = None
     sys.modules["pytz"] = pytz_stub
 
-from diagnostics import traffic_sniffer as sniff_graphql
+from tests.diagnostics import traffic_sniffer as sniff_graphql
 from src.shared.core.pagination_engine import FetcherEngine
 
 

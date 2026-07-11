@@ -13,9 +13,10 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = ROOT / "src" / "shared" / "config" / "config.json"
-PROBE_RUNS_DIR = Path(__file__).resolve().parent / "probe_runs"
+_DIAG_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _DIAG_DIR.parents[1]
+CONFIG_PATH = REPO_ROOT / "src" / "shared" / "config" / "config.json"
+PROBE_RUNS_DIR = _DIAG_DIR / "probe_runs"
 PROFILES = {
     "22703645": "tuckercarlson",
     "44196397": "elonmusk",

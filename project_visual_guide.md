@@ -27,15 +27,15 @@ This is the map view of the current root-level `src/` project.
       core/tweet_processing_utils.py
       core/twitter_http_client.py
       data_pipeline/storage_manager.py
-  diagnostics/
-    probe_sequence.py
-    probe_txid.py
-    traffic_sniffer.py
-    verify_contract.py
   tests/
     unit/
     integration/
     contract/
+    diagnostics/
+      probe_sequence.py
+      probe_txid.py
+      traffic_sniffer.py
+      verify_contract.py
   tools/
     parity_check.py
 ```
@@ -45,9 +45,9 @@ Ignored local/generated paths:
 ```text
 src/shared/config/config.json
 data/
-diagnostics/probe_runs/
-diagnostics/sniffer_runs/
-diagnostics/graphql_logs/
+tests/diagnostics/probe_runs/
+tests/diagnostics/sniffer_runs/
+tests/diagnostics/graphql_logs/
 graphify-out/
 ```
 

@@ -29,9 +29,10 @@ QUERY_ID_KEYS = {
 # keys the runner injects at request time; never compared for value/presence
 RUNTIME_KEYS = {"userId", "cursor", "rawQuery", "querySource"}
 
-_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = _ROOT / "src" / "shared" / "config" / "config.json"
-BASELINE_DIR = _ROOT / "src" / "shared" / "config" / "known_good_contracts" / "endpoint_contracts"
+_DIAG_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _DIAG_DIR.parents[1]
+CONFIG_PATH = REPO_ROOT / "src" / "shared" / "config" / "config.json"
+BASELINE_DIR = REPO_ROOT / "src" / "shared" / "config" / "known_good_contracts" / "endpoint_contracts"
 
 
 def _load(path: Path) -> Dict[str, Any]:

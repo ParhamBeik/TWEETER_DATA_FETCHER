@@ -1,20 +1,22 @@
-"""Regression guard for the reorg that moved the project to a top-level layout.
+"""Regression guard for diagnostic script path constants under tests/diagnostics/.
 
-The move to `src/` + top-level `diagnostics/` silently broke the diagnostic
-scripts' path constants: they computed run-output dirs *outside* the repo
-(`parents[3]/sniffer_runs` -> ~/Downloads/sniffer_runs) and read config from the
-pre-move `shared/config/` instead of `src/shared/config/`. These tests pin the
-constants so the same class of breakage can't slip back in.
+Diagnostic scripts live in ``tests/diagnostics/`` and must:
+- read config from ``src/shared/config/config.json`` (repo root, not ``tests/src/``)
+- write run output beside each script (``probe_runs/``, ``sniffer_runs/``)
+- never resolve paths outside the repo
+
+These tests pin those constants so the same class of breakage can\'t slip back in.
 """
 
 import shutil
 import unittest
 from pathlib import Path
 
-from diagnostics import probe_sequence, probe_txid, traffic_sniffer, verify_contract
+from tests.diagnostics import verify_contract
+from tests.diagnostics import probe_sequence, probe_txid, traffic_sniffer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DIAGNOSTICS = REPO_ROOT / "diagnostics"
+DIAGNOSTICS = REPO_ROOT / "tests" / "diagnostics"
 CONFIG_JSON = REPO_ROOT / "src" / "shared" / "config" / "config.json"
 
 
@@ -40,7 +42,7 @@ class ConfigPathTests(unittest.TestCase):
 
 
 class OutputDirTests(unittest.TestCase):
-    """Run outputs must land under diagnostics/, never escape the repo."""
+    """Run outputs must land under tests/diagnostics/, never escape the repo."""
 
     def test_probe_run_dirs_are_under_diagnostics(self):
         for mod in (probe_txid, probe_sequence):

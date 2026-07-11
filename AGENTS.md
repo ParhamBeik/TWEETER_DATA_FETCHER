@@ -36,7 +36,7 @@ Core outcome of the latest work:
 ## Non-Negotiables
 
 - Do not commit `src/shared/config/config.json`; it contains live cookies/tokens.
-- Do not commit `data/`, `diagnostics/probe_runs/`, `diagnostics/sniffer_runs/`, `diagnostics/graphql_logs/`, or `graphify-out/`.
+- Do not commit `data/`, `tests/diagnostics/probe_runs/`, `tests/diagnostics/sniffer_runs/`, `tests/diagnostics/graphql_logs/`, or `graphify-out/`.
 - Prefer root-cause fixes in shared code over one-off guards in pipeline runners.
 - Keep Twitter/X request-shape changes evidence-backed by sniffer/probe output.
 - Do not add generalized request abstractions unless multiple current callers require them.
@@ -252,9 +252,9 @@ python src/shared/auth/auto_refresh.py --interactive
 Probe endpoints:
 
 ```bash
-python diagnostics/probe_txid.py
-python diagnostics/probe_sequence.py
-python diagnostics/verify_contract.py
+python tests/diagnostics/probe_txid.py
+python tests/diagnostics/probe_sequence.py
+python tests/diagnostics/verify_contract.py
 ```
 
 Use graphify:
