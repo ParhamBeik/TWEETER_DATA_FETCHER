@@ -1,5 +1,7 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.shared.core.twitter_http_client import APIManager
 
@@ -30,6 +32,44 @@ class TransactionIdTests(unittest.TestCase):
         self.assertEqual(len(second["x-client-transaction-id"]), 94)
         self.assertNotEqual(first["x-client-transaction-id"], "old")
         self.assertNotEqual(first["x-client-transaction-id"], second["x-client-transaction-id"])
+
+
+class ConfigPathResolutionTests(unittest.TestCase):
+    def test_resolves_repo_relative_src_config_path(self):
+        expected = Path(__file__).resolve().parents[2] / "src" / "shared" / "config" / "config.example.json"
+        resolved = APIManager._resolve_config_path("src/shared/config/config.example.json")
+        self.assertEqual(resolved, expected)
+
+    def test_resolves_repo_relative_shared_config_path(self):
+        expected = Path(__file__).resolve().parents[2] / "src" / "shared" / "config" / "config.example.json"
+        resolved = APIManager._resolve_config_path("shared/config/config.example.json")
+        self.assertEqual(resolved, expected)
+
+
+class AutoRefreshTests(unittest.TestCase):
+    def test_auto_refresh_only_runs_once_per_endpoint_account(self):
+        manager = APIManager.__new__(APIManager)
+        manager.config_path = Path("/tmp/config.json")
+        manager.real_tx_ids = {"UserTweets": ["tx-1"]}
+        manager.tx_id_state = {"UserTweets": {"tx-1": {"status": "healthy", "failures": 0}}}
+        manager.query_id_pools = {"UserTweets": ["q-1"]}
+        manager.query_id_state = {"UserTweets": {"q-1": {"status": "healthy", "failures": 0}}}
+        manager.endpoint_health = {}
+        manager.consecutive_404s = {}
+        manager.auto_refresh_attempts = {}
+        manager.refresh_config_and_query_ids = lambda: None
+        manager._save_tx_id_state = lambda: None
+        manager._save_query_id_state = lambda: None
+        manager._mark_tx_id = lambda *args, **kwargs: None
+        manager._mark_query_id = lambda *args, **kwargs: None
+
+        with patch("src.shared.auth.auto_refresh.auto_refresh_session", return_value=True) as refresh_mock:
+            first = manager._auto_refresh_params("UserTweets", username="elonmusk")
+            second = manager._auto_refresh_params("UserTweets", username="elonmusk")
+
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertEqual(refresh_mock.call_count, 1)
 
 
 if __name__ == "__main__":

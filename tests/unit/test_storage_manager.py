@@ -77,6 +77,14 @@ class StorageManagerTests(unittest.TestCase):
         self.assertIn("test_run_001", str(paths.get("json", "")))
         self.assertIn("test_run_001", str(paths.get("txt", "")))
 
+    def test_search_subsystem_does_not_create_historical_processed_dirs(self):
+        """Search storage should not create historical processed set directories."""
+        search_storage = StorageManager(base_dir=Path(self.temp_dir), timezone="UTC", subsystem="search", create_folders=True)
+        self.assertTrue((Path(self.temp_dir) / "data" / "search" / "raw").exists())
+        self.assertFalse((Path(self.temp_dir) / "data" / "search" / "processed" / "1_user_tweets").exists())
+        self.assertFalse((Path(self.temp_dir) / "data" / "search" / "raw" / "UserTweets").exists())
+        self.assertFalse((Path(self.temp_dir) / "data" / "search" / "raw" / "UserTweetsAndReplies").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

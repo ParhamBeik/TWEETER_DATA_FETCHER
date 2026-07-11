@@ -91,14 +91,19 @@ class APIManager:
         "SearchTimeline": "search_timeline_query_id",
     }
 
-    # مسیر پیش‌فرض کانفیگ اصلاح شد
-    def __init__(self, config_path: str = "shared/config/config.json", state_dir: Optional[Path] = None):
-        # با فرض قرارگیری در shared/core/ یا shared/network/ استفاده از parents[2] صحیح است
-        project_root = Path(__file__).resolve().parents[2]
+    @staticmethod
+    def _resolve_config_path(config_path: str) -> Path:
+        project_root = Path(__file__).resolve().parents[3]
         path_obj = Path(config_path)
         if not path_obj.is_absolute():
+            if path_obj.parts and path_obj.parts[0] == "shared":
+                path_obj = Path("src") / path_obj
             path_obj = project_root / path_obj
-        self.config_path = path_obj
+        return path_obj.resolve()
+
+    # مسیر پیش‌فرض کانفیگ اصلاح شد
+    def __init__(self, config_path: str = "shared/config/config.json", state_dir: Optional[Path] = None):
+        self.config_path = self._resolve_config_path(config_path)
         self.config = self._load_config()
         self.simulation_config = self.config.get("anti_bot_simulation", {})
         self.default_timeout = int(
@@ -125,6 +130,7 @@ class APIManager:
         
         # 404 counter for auto-refresh trigger
         self.consecutive_404s: Dict[str, int] = {}
+        self.auto_refresh_attempts: Dict[Tuple[str, str], int] = {}
         
         # Session setup
         self.session = requests.Session()
@@ -422,27 +428,27 @@ class APIManager:
             return
 
         delay_map = self.simulation_config.get("delays_seconds", {
-            "before_request_min": 0.2,
-            "before_request_max": 1.2,
-            "between_requests_min": 0.5,
-            "between_requests_max": 2.5,
+            "before_request_min": 0.05,
+            "before_request_max": 0.2,
+            "between_requests_min": 0.1,
+            "between_requests_max": 0.4,
         })
 
         if stage == "before_request":
             min_d = float(delay_map.get("before_request_min", 0.2))
             max_d = float(delay_map.get("before_request_max", 1.2))
         elif stage == "between_pages":
-            min_d = float(delay_map.get("between_pages_min", 2))
-            max_d = float(delay_map.get("between_pages_max", 6))
+            min_d = float(delay_map.get("between_pages_min", 0.2))
+            max_d = float(delay_map.get("between_pages_max", 0.6))
         elif stage == "between_accounts":
-            min_d = float(delay_map.get("between_accounts_min", 3))
-            max_d = float(delay_map.get("between_accounts_max", 8))
+            min_d = float(delay_map.get("between_accounts_min", 0.3))
+            max_d = float(delay_map.get("between_accounts_max", 0.8))
         elif stage == "replies_retry":
-            min_d = float(delay_map.get("replies_retry_min", 1))
-            max_d = float(delay_map.get("replies_retry_max", 3))
+            min_d = float(delay_map.get("replies_retry_min", 0.1))
+            max_d = float(delay_map.get("replies_retry_max", 0.3))
         else:
-            min_d = float(delay_map.get("between_requests_min", 0.5))
-            max_d = float(delay_map.get("between_requests_max", 2.5))
+            min_d = float(delay_map.get("between_requests_min", 0.1))
+            max_d = float(delay_map.get("between_requests_max", 0.4))
 
         if max_d < min_d:
             max_d = min_d
@@ -468,16 +474,16 @@ class APIManager:
         policy = configured if isinstance(configured, dict) else {}
         return {
             "client_error_attempts": int(policy.get("client_error_attempts", 3)),
-            "client_error_min_seconds": float(policy.get("client_error_min_seconds", 10)),
-            "client_error_max_seconds": float(policy.get("client_error_max_seconds", 20)),
+            "client_error_min_seconds": float(policy.get("client_error_min_seconds", 1.0)),
+            "client_error_max_seconds": float(policy.get("client_error_max_seconds", 2.0)),
             "server_error_attempts": int(policy.get("server_error_attempts", 3)),
-            "server_error_base_seconds": float(policy.get("server_error_base_seconds", 5)),
-            "server_error_max_seconds": float(policy.get("server_error_max_seconds", 60)),
+            "server_error_base_seconds": float(policy.get("server_error_base_seconds", 1.0)),
+            "server_error_max_seconds": float(policy.get("server_error_max_seconds", 4.0)),
             "request_error_attempts": int(policy.get("request_error_attempts", 3)),
-            "request_error_base_seconds": float(policy.get("request_error_base_seconds", 5)),
-            "request_error_max_seconds": float(policy.get("request_error_max_seconds", 60)),
-            "rate_limit_safety_buffer_seconds": int(policy.get("rate_limit_safety_buffer_seconds", 5)),
-            "max_rate_limit_sleep_seconds": int(policy.get("max_rate_limit_sleep_seconds", 3600)),
+            "request_error_base_seconds": float(policy.get("request_error_base_seconds", 1.0)),
+            "request_error_max_seconds": float(policy.get("request_error_max_seconds", 3.0)),
+            "rate_limit_safety_buffer_seconds": int(policy.get("rate_limit_safety_buffer_seconds", 1)),
+            "max_rate_limit_sleep_seconds": int(policy.get("max_rate_limit_sleep_seconds", 900)),
         }
 
     def warmup_navigation_context(
@@ -836,6 +842,49 @@ class APIManager:
             pass
         return None
     
+    def _process_response_status(
+        self,
+        endpoint: str,
+        response: requests.Response,
+        request_headers: Dict[str, Any],
+        url: str,
+    ) -> None:
+        """Update rate-limit, health, and parameter state for a completed HTTP response."""
+        self.last_status_by_endpoint[endpoint] = response.status_code
+        self.update_rate_limit(endpoint, response.headers)
+
+        if response.status_code == 200:
+            self.endpoint_health[endpoint] = EndpointHealth.HEALTHY
+            self._save_endpoint_health()
+            current_tx_id = request_headers.get("x-client-transaction-id")
+            if current_tx_id:
+                self._mark_tx_id(endpoint, current_tx_id, "healthy")
+            current_query_id = self._query_id_from_url(endpoint, url)
+            if current_query_id:
+                self._mark_query_id(endpoint, current_query_id, "healthy")
+            self.consecutive_404s[endpoint] = 0
+        elif response.status_code == 429:
+            self.endpoint_health[endpoint] = EndpointHealth.RATE_LIMITED
+            self._save_endpoint_health()
+        elif response.status_code == 404:
+            current_tx_id = request_headers.get("x-client-transaction-id")
+            if current_tx_id:
+                self._mark_tx_id(endpoint, current_tx_id, "stale")
+            current_query_id = self._query_id_from_url(endpoint, url)
+            if current_query_id:
+                self._mark_query_id(endpoint, current_query_id, "stale")
+
+            self.consecutive_404s[endpoint] = self.consecutive_404s.get(endpoint, 0) + 1
+            self.endpoint_health[endpoint] = (
+                EndpointHealth.CONTEXT_REJECTED
+                if endpoint in {"UserTweetsAndReplies", "SearchTimeline"}
+                else EndpointHealth.STALE_QUERY_ID
+            )
+            self._save_endpoint_health()
+        elif 500 <= response.status_code < 600:
+            self.endpoint_health[endpoint] = EndpointHealth.SERVER_ERROR
+            self._save_endpoint_health()
+
     def perform_get(
         self,
         endpoint: str,
@@ -867,68 +916,42 @@ class APIManager:
                     extra_headers=extra_headers,
                 )
                 response = self._get(url, headers=request_headers, **kwargs)
-                self.last_status_by_endpoint[endpoint] = response.status_code
-                self.update_rate_limit(endpoint, response.headers)
+                self._process_response_status(endpoint, response, request_headers, url)
 
                 if response.status_code == 200:
-                    self.endpoint_health[endpoint] = EndpointHealth.HEALTHY
-                    self._save_endpoint_health()
-                    # Mark tx-id as healthy
-                    current_tx_id = request_headers.get("x-client-transaction-id")
-                    if current_tx_id:
-                        self._mark_tx_id(endpoint, current_tx_id, "healthy")
-                    current_query_id = self._query_id_from_url(endpoint, url)
-                    if current_query_id:
-                        self._mark_query_id(endpoint, current_query_id, "healthy")
-                    # Reset 404 counter
-                    self.consecutive_404s[endpoint] = 0
-                elif response.status_code == 429:
-                    self.endpoint_health[endpoint] = EndpointHealth.RATE_LIMITED
-                    self._save_endpoint_health()
-                elif response.status_code == 404:
-                    # Mark request params as failed; rule-out happens after 3 failures.
-                    current_tx_id = request_headers.get("x-client-transaction-id")
-                    if current_tx_id:
-                        self._mark_tx_id(endpoint, current_tx_id, "stale")
-                    current_query_id = self._query_id_from_url(endpoint, url)
-                    if current_query_id:
-                        self._mark_query_id(endpoint, current_query_id, "stale")
-                    
-                    # Increment 404 counter
-                    self.consecutive_404s[endpoint] = self.consecutive_404s.get(endpoint, 0) + 1
-                    
-                    self.endpoint_health[endpoint] = (
-                        EndpointHealth.CONTEXT_REJECTED
-                        if endpoint in {"UserTweetsAndReplies", "SearchTimeline"}
-                        else EndpointHealth.STALE_QUERY_ID
-                    )
-                    self._save_endpoint_health()
-                    
+                    return response
+                if response.status_code == 429:
+                    return response
+                if response.status_code == 404:
                     # Trigger auto-refresh after 3 consecutive 404s if all candidate params are ruled out.
                     if self.consecutive_404s[endpoint] >= 3 and (
                         self._all_tx_ids_stale(endpoint) or self._all_query_ids_stale(endpoint)
                     ):
-                        print(f"\n⚠️  All tx-ids stale for {endpoint} after {self.consecutive_404s[endpoint]} 404s, launching auto-refresh...")
-                        if self._auto_refresh_params(endpoint):
-                            print(f"✅ Auto-refresh successful, retrying {endpoint}...")
-                            self.consecutive_404s[endpoint] = 0
-                            # Retry this request once with fresh params
+                        print(
+                            f"\n⚠️  {endpoint} hit {self.consecutive_404s[endpoint]} consecutive 404s; "
+                            f"checking auto-refresh for @{username or 'default'}..."
+                        )
+                        if self._auto_refresh_params(endpoint, username=username):
+                            print(f"✅ Auto-refresh successful, retrying {endpoint} for @{username or 'default'}...")
                             request_headers = self._build_request_headers(endpoint, context, username, extra_headers)
                             response = self._get(url, headers=request_headers, **kwargs)
-                            self.last_status_by_endpoint[endpoint] = response.status_code
+                            self._process_response_status(endpoint, response, request_headers, url)
                             if response.status_code == 200:
-                                self.endpoint_health[endpoint] = EndpointHealth.HEALTHY
-                                self._save_endpoint_health()
-                        else:
-                            print(f"❌ Auto-refresh failed for {endpoint}")
-                elif 500 <= response.status_code < 600:
+                                return response
+                            if response.status_code == 404:
+                                print(
+                                    f"⚠️  Auto-refresh did not recover {endpoint} for @{username or 'default'}; "
+                                    "skipping further refresh loops for this account/endpoint."
+                                )
+                            return response
+                        print(f"❌ Auto-refresh failed for {endpoint} for @{username or 'default'}")
+                    return response
+                if 500 <= response.status_code < 600:
                     if attempt < max_retries - 1:
                         wait = retry_delay * (2 ** attempt)
                         print(f"⚠️  {response.status_code} on {endpoint}, retrying in {wait:.1f}s...")
                         time.sleep(wait)
                         continue
-                    self.endpoint_health[endpoint] = EndpointHealth.SERVER_ERROR
-                    self._save_endpoint_health()
 
                 return response
             except requests.exceptions.RequestException as exc:
@@ -944,11 +967,21 @@ class APIManager:
             raise last_exception
         raise RuntimeError(f"Request loop exited unexpectedly for endpoint={endpoint}")
 
-    def _auto_refresh_params(self, endpoint: str) -> bool:
+    def _auto_refresh_params(self, endpoint: str, username: Optional[str] = None) -> bool:
         """
         Launch auto-refresh via Playwright to get fresh tx-ids + query-ids.
         Returns True on success.
         """
+        key = (str(endpoint), str(username or "__default__"))
+        if key in self.auto_refresh_attempts:
+            print(
+                f"⚠️  Auto-refresh already attempted for {endpoint} for @{username or 'default'}; "
+                "skipping another refresh loop."
+            )
+            return False
+
+        self.auto_refresh_attempts[key] = 1
+
         try:
             from src.shared.auth.auto_refresh import auto_refresh_session
         except ImportError:
@@ -960,6 +993,7 @@ class APIManager:
             return False
         
         # Reload config and tx-id pools
+        self.config = getattr(self, "config", {})
         self.refresh_config_and_query_ids()
         self.real_tx_ids = self.config.get("real_transaction_ids_by_endpoint", {})
         if not self.real_tx_ids:
