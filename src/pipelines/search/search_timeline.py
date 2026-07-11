@@ -764,6 +764,9 @@ class SearchTimelineMonitor:
         if self.fetcher.first_request_warmup_seconds > 0:
             time.sleep(self.fetcher.first_request_warmup_seconds)
         frozen_headers = self._build_frozen_headers(search_url)
+        # Compute one consistent batch name for the entire search run so raw pages are saved
+        # into a single batch directory and pages_saved counts match saved files.
+        jalali_batch = self.storage._jalali_batch_name()
         for page in range(1, int(policy["pagination_safety_cap_pages"]) + 1):
             payload = self._request_page(
                 graphql_url,
@@ -783,7 +786,6 @@ class SearchTimelineMonitor:
             if browser_pages:
                 transport = "browser_fallback"
                 for fallback_index, fallback_payload in enumerate(browser_pages, start=page):
-                    jalali_batch = self.storage._jalali_batch_name()
                     output_path = self.storage.save_search_result_page(slug, product, jalali_batch, fallback_index, fallback_payload)
                     page_output_paths.append(str(output_path))
                     page_result = self._parse_search_page(fallback_payload, seen_ids, capture_debug=(fallback_index == 1))
@@ -800,7 +802,6 @@ class SearchTimelineMonitor:
             payload.pop("_attempts", None)
             payload.pop("_error_samples", None)
             payload.pop("_status", None)
-            jalali_batch = self.storage._jalali_batch_name()
             output_path = self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_output_paths.append(str(output_path))
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
