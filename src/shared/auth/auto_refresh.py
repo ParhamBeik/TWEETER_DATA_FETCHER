@@ -170,6 +170,7 @@ def auto_refresh_session(
     extracted_tx_id: Optional[str] = None
 
     def _on_request(request: Request) -> None:
+        nonlocal extracted_tx_id
         url = request.url
         headers = request.headers
 
@@ -195,7 +196,7 @@ def auto_refresh_session(
                             intercepted_tx_ids[endpoint].append(tx_val)
                 
                 # Also track the first tx-id we see for headers
-                if not extracted_tx_id:
+                if extracted_tx_id is None:
                     extracted_tx_id = tx_val
 
     print(f"[*] Launching {'headless' if headless else 'headed'} browser for auto-refresh...")

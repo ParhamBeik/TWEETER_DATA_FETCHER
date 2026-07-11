@@ -328,7 +328,7 @@ def run_v4(
     enable_user_tweets_and_replies: bool = True,
     validation_run_id: Optional[str] = None,
 ) -> None:
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = Path(__file__).resolve().parents[3]
     engine = FetcherEngine(config_path="src/shared/config/config.json", validation_run_id=validation_run_id)
     storage = StorageManager(
         project_root=project_root,
