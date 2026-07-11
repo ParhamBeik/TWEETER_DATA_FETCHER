@@ -43,7 +43,7 @@ Run tests:
 | Historical | `src/pipelines/historical/fetch_historical.py` | Backfill profile timeline and replies for configured accounts. |
 | Live | `src/pipelines/live/monitor_live.py` | Poll due accounts, update shared processed sets, maintain live seen-tweet and viral state. |
 | Search | `src/pipelines/search/search_timeline.py` | Poll configured `SearchTimeline` queries into isolated search storage. |
-| Diagnostics | `diagnostics/*.py`, `tools/*.py` | Probe endpoint health, verify request contract, compare parity. |
+| Diagnostics | `tests/diagnostics/*.py`, `tools/*.py` | Probe endpoint health, verify request contract, compare parity. |
 
 ## Source Map
 

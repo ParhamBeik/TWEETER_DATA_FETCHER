@@ -37,13 +37,13 @@ captured query-ids / transaction-ids into config, use
 For normal use, edit the ``USER SETTINGS`` section near the top of this file,
 then run it without arguments:
 
-    python -m diagnostics.graphql_traffic_sniffer
+    python tests/diagnostics/traffic_sniffer.py
 
 Command-line arguments remain available as optional one-off overrides:
 
-    python -m diagnostics.graphql_traffic_sniffer elonmusk --timeout 90
-    python -m diagnostics.graphql_traffic_sniffer https://x.com/elonmusk/with_replies
-    python -m diagnostics.graphql_traffic_sniffer https://x.com/home --timeout 300 --include-all-graphql
+    python tests/diagnostics/traffic_sniffer.py elonmusk --timeout 90
+    python tests/diagnostics/traffic_sniffer.py https://x.com/elonmusk/with_replies
+    python tests/diagnostics/traffic_sniffer.py https://x.com/home --timeout 300 --include-all-graphql
 
 Dependencies (only needed to actually capture — ``--help`` works without them):
 
@@ -160,8 +160,9 @@ IMPORTANT_HEADERS = {
     "x-twitter-client-language",
 }
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "src" / "shared" / "config" / "config.json"
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_DIAG_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _DIAG_DIR.parents[1]
+CONFIG_PATH = REPO_ROOT / "src" / "shared" / "config" / "config.json"
 TEHRAN_TZ = pytz.timezone("Asia/Tehran") if pytz else None
 
 DEFAULT_USER_AGENT = (
@@ -310,7 +311,7 @@ def _jalali_batch_name() -> str:
 
 
 def _default_output_dir() -> Path:
-    out = Path(__file__).resolve().parent / "sniffer_runs" / _jalali_batch_name()
+    out = _DIAG_DIR / "sniffer_runs" / _jalali_batch_name()
     out.mkdir(parents=True, exist_ok=True)
     return out
 
@@ -1152,7 +1153,7 @@ def _write_playbook(
     lines.append("")
     lines.append("1. Capture a fresh run:")
     lines.append("   ```")
-    lines.append("   python -m diagnostics.graphql_traffic_sniffer <target> --timeout 90")
+    lines.append("   python tests/diagnostics/traffic_sniffer.py <target> --timeout 90")
     lines.append("   ```")
     lines.append(
         "2. Copy the **Endpoints** table above into the "

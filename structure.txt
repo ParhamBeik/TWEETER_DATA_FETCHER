@@ -27,13 +27,13 @@ TWEETER_DATA_FETCHER/
 │       │   └── twitter_http_client.py
 │       └── data_pipeline/
 │           └── storage_manager.py
-├── diagnostics/
-│   ├── probe_sequence.py
-│   ├── probe_txid.py
-│   ├── traffic_sniffer.py
-│   └── verify_contract.py
 ├── tests/
 │   ├── contract/
+│   ├── diagnostics/
+│   │   ├── probe_sequence.py
+│   │   ├── probe_txid.py
+│   │   ├── traffic_sniffer.py
+│   │   └── verify_contract.py
 │   ├── integration/
 │   └── unit/
 ├── tools/
@@ -44,7 +44,7 @@ TWEETER_DATA_FETCHER/
 Generated/local-only:
 ├── data/
 ├── graphify-out/
-├── diagnostics/probe_runs/
-├── diagnostics/sniffer_runs/
-├── diagnostics/graphql_logs/
+├── tests/diagnostics/probe_runs/
+├── tests/diagnostics/sniffer_runs/
+├── tests/diagnostics/graphql_logs/
 └── src/shared/config/config.json

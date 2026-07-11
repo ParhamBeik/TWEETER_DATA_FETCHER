@@ -28,8 +28,8 @@ How to read it (verdict is auto-printed):
   - UserTweets/minimal = 404 too                     -> cold-probe/session issue
     (cookies stale, or a warmup/UserByScreenName call is needed first).
 
-    python3 tools/probe_txid.py
-    python3 tools/probe_txid.py --user-id 44196397
+    python tests/diagnostics/probe_txid.py
+    python tests/diagnostics/probe_txid.py --user-id 44196397
 """
 
 from __future__ import annotations
@@ -49,8 +49,10 @@ import requests
 # Constants
 # --------------------------------------------------------------------------- #
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "src" / "shared" / "config" / "config.json"
-PROBE_RUNS_DIR = Path(__file__).resolve().parent / "probe_runs"
+_DIAG_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _DIAG_DIR.parents[1]
+CONFIG_PATH = REPO_ROOT / "src" / "shared" / "config" / "config.json"
+PROBE_RUNS_DIR = _DIAG_DIR / "probe_runs"
 DEFAULT_USER_ID = "22703645"  # public account that returned 200 in the capture
 
 # endpoint -> (config query-id key, config payload key, referer path template)

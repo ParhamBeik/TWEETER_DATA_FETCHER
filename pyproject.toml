@@ -24,7 +24,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["src*", "diagnostics*", "tools*"]
+include = ["src*", "tools*"]
 namespaces = true
 
 [tool.pytest.ini_options]
