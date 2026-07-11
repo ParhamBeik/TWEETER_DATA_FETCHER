@@ -66,25 +66,25 @@ class LiveConsole:
         if self.rich_enabled:
             self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
         else:
-            print(f"{V4_PREFIX} {message}")
+            print(f"{V4_PREFIX} {message}", flush=True)
 
     def success(self, message: str) -> None:
         if self.rich_enabled:
             self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
         else:
-            print(f"{V4_PREFIX} \u2713 {message}")
+            print(f"{V4_PREFIX} ✓ {message}", flush=True)
 
     def warning(self, message: str) -> None:
         if self.rich_enabled:
             self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
         else:
-            print(f"{V4_PREFIX} \u26a0 {message}")
+            print(f"{V4_PREFIX} ⚠ {message}", flush=True)
 
     def error(self, message: str) -> None:
         if self.rich_enabled:
             self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
         else:
-            print(f"{V4_PREFIX} \u2717 {message}")
+            print(f"{V4_PREFIX} ✗ {message}", flush=True)
 
     def account_summary(self, username: str, account_report: Dict[str, Any]) -> None:
         """Print a summary for a single account after a cycle."""
@@ -134,7 +134,7 @@ class LiveMonitor:
     ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")
 
     def __init__(self, config_path: str = "src/shared/config/config.json", validation_run_id: Optional[str] = None):
-        self.project_root = Path(__file__).resolve().parents[4]
+        self.project_root = Path(__file__).resolve().parents[3]
         self.validation_run_id = validation_run_id
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live", validation_run_id=validation_run_id)
         self.console = LiveConsole()
@@ -247,6 +247,7 @@ class LiveMonitor:
             "endpoints": {},
         }
         try:
+            self.console.info(f"Bootstrapping browser context for @{username}")
             bootstrap = self.fetcher.bootstrap_browser_context(username=username)
             result["browser_bootstrap"] = {
                 "ok": bootstrap.ok,
@@ -254,6 +255,7 @@ class LiveMonitor:
                 "support_request_count": bootstrap.support_request_count,
                 "error": bootstrap.error,
             }
+            self.console.info(f"Resolving user ID for @{username}")
             user_id = self._get_live_user_id(username)
         except Exception as exc:
             self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
@@ -264,6 +266,7 @@ class LiveMonitor:
 
         endpoint_pages: Dict[str, List[Dict[str, Any]]] = {}
         for endpoint in self.ENDPOINTS:
+            self.console.info(f"Fetching {endpoint} for @{username}")
             endpoint_result = self._fetch_live_endpoint(
                 username,
                 user_id,
