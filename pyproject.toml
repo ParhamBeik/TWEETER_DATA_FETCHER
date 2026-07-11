@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tweeter-data-fetcher"
+version = "4.0.0"
+description = "Twitter/X data fetching pipelines with diagnostic tools"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "selenium>=4.0",
+    "requests>=2.0",
+    "playwright>=1.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*", "diagnostics*", "tools*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = ["-v"]
