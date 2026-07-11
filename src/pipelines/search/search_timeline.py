@@ -18,7 +18,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote, urlencode
 
 try:
@@ -79,25 +79,25 @@ class SearchConsole:
         if self.rich_enabled:
             self.console.print(f"[bold cyan]{V4_PREFIX}[/bold cyan] {message}")
         else:
-            print(f"{V4_PREFIX} {message}")
+            print(f"{V4_PREFIX} {message}", flush=True)
 
     def success(self, message: str) -> None:
         if self.rich_enabled:
             self.console.print(f"[bold green]{V4_PREFIX} \u2713 {message}[/bold green]")
         else:
-            print(f"{V4_PREFIX} \u2713 {message}")
+            print(f"{V4_PREFIX} ✓ {message}", flush=True)
 
     def warning(self, message: str) -> None:
         if self.rich_enabled:
             self.console.print(f"[bold yellow]{V4_PREFIX} \u26a0 {message}[/bold yellow]")
         else:
-            print(f"{V4_PREFIX} \u26a0 {message}")
+            print(f"{V4_PREFIX} ⚠ {message}", flush=True)
 
     def error(self, message: str) -> None:
         if self.rich_enabled:
             self.console.print(f"[bold red]{V4_PREFIX} \u2717 {message}[/bold red]")
         else:
-            print(f"{V4_PREFIX} \u2717 {message}")
+            print(f"{V4_PREFIX} ✗ {message}", flush=True)
 
     def summary(self, report: Dict[str, Any]) -> None:
         """Print a search report summary."""
@@ -240,7 +240,7 @@ class SearchTimelineMonitor:
         search_config_path: str = "src/shared/config/search_config.json",
         validation_run_id: Optional[str] = None,
     ):
-        self.project_root = Path(__file__).resolve().parents[4]
+        self.project_root = Path(__file__).resolve().parents[3]
         self.validation_run_id = validation_run_id
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="search", validation_run_id=validation_run_id)
         self.api_manager = self.fetcher.api_manager
@@ -267,7 +267,11 @@ class SearchTimelineMonitor:
 
     def _resolve_path(self, path: str) -> Path:
         candidate = Path(path)
-        return candidate if candidate.is_absolute() else self.project_root / candidate
+        if candidate.is_absolute():
+            return candidate
+        if candidate.parts and candidate.parts[0] == "shared":
+            candidate = Path("src") / candidate
+        return self.project_root / candidate
 
     def _load_search_config(self, path: str) -> List[Dict[str, Any]]:
         cfg_path = self._resolve_path(path)
@@ -461,7 +465,7 @@ class SearchTimelineMonitor:
     def _page_crossed_search_window(self, tweets: List[Dict[str, Any]], window_start: datetime) -> bool:
         dated = [self._tweet_datetime(tweet) for tweet in tweets]
         dated = [value for value in dated if value is not None]
-        return bool(dated and min(dated) <= window_start)
+        return bool(dated and max(dated) <= window_start)
 
     @staticmethod
     def classify_search_stall(
@@ -477,8 +481,6 @@ class SearchTimelineMonitor:
             return "repeated_cursor_history"
         if not next_cursor:
             return "no_bottom_cursor"
-        if cursor and has_entries and new_items_count <= 0:
-            return "no_new_tweets_on_cursor_page"
         return None
 
     @staticmethod
@@ -693,6 +695,21 @@ class SearchTimelineMonitor:
     def _state_key(self, search_def: Dict[str, Any], product: str) -> str:
         return f"{SearchQueryBuilder.slug(search_def)}::{product.lower()}"
 
+    def should_stop_search_pagination(
+        self,
+        *,
+        page_result: Dict[str, Any],
+        window_start: datetime,
+        cursor: Optional[str],
+        cursor_history: Set[str],
+    ) -> Tuple[bool, Optional[str]]:
+        next_cursor = page_result.get("next_cursor")
+        if cursor and next_cursor and str(next_cursor) in cursor_history:
+            return True, "repeated_cursor_history"
+        if not next_cursor:
+            return True, "no_bottom_cursor"
+        return False, None
+
     def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int, force_run: bool = False) -> bool:
         # اگر در حالت force_run هستیم، تایمرها کاملا نادیده گرفته می‌شوند
         if force_run:
@@ -784,27 +801,29 @@ class SearchTimelineMonitor:
             payload.pop("_error_samples", None)
             payload.pop("_status", None)
             jalali_batch = self.storage._jalali_batch_name()
-            if page <= 3:
-                self.console.info(f"  Page {page} fetched")
             output_path = self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_output_paths.append(str(output_path))
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
             tweets.extend(page_result["tweets"])
+            self.console.info(
+                f"  Page {page} fetched; tweets={len(page_result['tweets'])} "
+                f"next_cursor={'yes' if page_result.get('next_cursor') else 'no'}"
+            )
             if page == 1:
                 debug = {key: page_result.get(key) for key in ["entry_type_counts", "cursor_candidates", "skipped_entries", "processed_entries", "selected_cursor_source"]}
             next_cursor = page_result.get("next_cursor")
             if self._page_crossed_search_window(page_result["tweets"], window_start):
-                exhausted_reason = "success_search_window_crossed"
-                break
-            stall_reason = self.classify_search_stall(
+                self.console.info(
+                    f"  Page {page} is older than the rolling window, but the cursor is still active so pagination continues."
+                )
+            stop_pagination, stop_reason = self.should_stop_search_pagination(
+                page_result=page_result,
+                window_start=window_start,
                 cursor=cursor,
-                next_cursor=next_cursor,
-                has_entries=bool(page_result.get("has_entries")),
-                new_items_count=len(page_result.get("tweets", [])),
                 cursor_history=cursor_history,
             )
-            if stall_reason:
-                exhausted_reason = stall_reason
+            if stop_pagination:
+                exhausted_reason = stop_reason or "pagination_stopped"
                 break
             cursor_history.add(str(next_cursor))
             cursor = str(next_cursor)

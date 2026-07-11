@@ -14,6 +14,7 @@ Code map:
 import json
 import sys
 import time
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -134,7 +135,7 @@ class FetcherEngine:
         subsystem: str = "historical",
         validation_run_id: Optional[str] = None,
     ):
-        self.project_root = Path(__file__).resolve().parents[4]
+        self.project_root = Path(__file__).resolve().parents[3]
         raw_subsystem = str(subsystem or "historical").strip().lower()
         self.subsystem = "historical_live" if raw_subsystem in {"historical", "live"} else raw_subsystem
         self.validation_run_id = validation_run_id
@@ -145,6 +146,29 @@ class FetcherEngine:
         )
         self.logger = EngineLogger()
         self.api_manager = APIManager(config_path=config_path, state_dir=self.data_root / self.subsystem / "state")
+        # Pre-run contract verification: detect structural drift that commonly causes 400/404.
+        try:
+            verifier = self.project_root / "tests" / "diagnostics" / "verify_contract.py"
+            if verifier.exists():
+                proc = subprocess.run([sys.executable, str(verifier)], cwd=str(self.project_root))
+                if proc.returncode != 0:
+                    self.logger.warning("verify_contract detected drift vs frozen capture; attempting auto-refresh")
+                    try:
+                        from src.shared.auth.auto_refresh import auto_refresh_session
+                        cfg_path = self.project_root / "src" / "shared" / "config" / "config.json"
+                        refreshed = auto_refresh_session(cfg_path, headless=True, interactive_login=False)
+                        if refreshed:
+                            # reload APIManager with the updated config
+                            self.api_manager = APIManager(config_path=config_path, state_dir=self.data_root / self.subsystem / "state")
+                            self.logger.success("Auto-refresh applied and APIManager reloaded with updated config")
+                        else:
+                            self.logger.warning("Auto-refresh did not apply any changes; continuing with current config")
+                    except Exception as e:
+                        self.logger.warning(f"auto_refresh unavailable or failed: {e}")
+        except Exception:
+            # Non-fatal: verification is diagnostic; continue with existing APIManager
+            pass
+
         self.storage_manager = StorageManager(
             base_dir=self.project_root,
             timezone=TIMEZONE,
@@ -160,7 +184,7 @@ class FetcherEngine:
             self.config.get("api_config", {}).get("cursor_error_max_retries", 3)
         )
         self.first_request_warmup_seconds = int(
-            self.config.get("api_config", {}).get("first_request_warmup_seconds", 15)
+            self.config.get("api_config", {}).get("first_request_warmup_seconds", 2)
         )
         self.pagination_safety_cap_pages = int(
             self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50)

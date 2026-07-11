@@ -181,24 +181,35 @@ class StorageManager:
             self._ensure_base_dirs()
 
     def _ensure_base_dirs(self) -> None:
-        legacy_replies_only = self.processed_root / "5_replies_only"
-        if legacy_replies_only.exists() and not self.endpoint_diffs_dir.exists():
-            legacy_replies_only.rename(self.endpoint_diffs_dir)
+        if self.subsystem == "historical_live":
+            legacy_replies_only = self.processed_root / "5_replies_only"
+            if legacy_replies_only.exists() and not self.endpoint_diffs_dir.exists():
+                legacy_replies_only.rename(self.endpoint_diffs_dir)
 
-        for path in [
-            self.raw_user_tweets_dir,
-            self.raw_user_replies_dir,
-            self.user_tweets_dir,
-            self.user_replies_dir,
-            self.intersection_dir,
-            self.merged_dir,
-            self.a_minus_b_dir,
-            self.endpoint_diffs_dir,
-            self.symmetric_difference_dir,
-            self.state_dir,
-            self.reports_dir,
-            self.logs_dir,
-        ]:
+            base_dirs = [
+                self.raw_user_tweets_dir,
+                self.raw_user_replies_dir,
+                self.user_tweets_dir,
+                self.user_replies_dir,
+                self.intersection_dir,
+                self.merged_dir,
+                self.a_minus_b_dir,
+                self.endpoint_diffs_dir,
+                self.symmetric_difference_dir,
+                self.state_dir,
+                self.reports_dir,
+                self.logs_dir,
+            ]
+        else:
+            base_dirs = [
+                self.raw_root,
+                self.processed_root,
+                self.state_dir,
+                self.reports_dir,
+                self.logs_dir,
+            ]
+
+        for path in base_dirs:
             path.mkdir(parents=True, exist_ok=True)
 
     def create_run_id(self) -> str:

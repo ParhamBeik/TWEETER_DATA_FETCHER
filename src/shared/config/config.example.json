@@ -20,8 +20,8 @@
     "tweet_detail_query_id": "",
     "cursor_error_max_retries": 3,
     "default_timeout_seconds": 20,
-    "search_warmup_seconds": 2,
-    "first_request_warmup_seconds": 15,
+    "search_warmup_seconds": 1,
+    "first_request_warmup_seconds": 2,
     "pagination_safety_cap_pages": 50
   },
   "query_ids_by_endpoint": {
@@ -50,28 +50,28 @@
     "warmup_pages": 2,
     "error_retry_policy": {
       "client_error_attempts": 3,
-      "client_error_min_seconds": 10,
-      "client_error_max_seconds": 20,
+      "client_error_min_seconds": 1,
+      "client_error_max_seconds": 2,
       "server_error_attempts": 3,
-      "server_error_base_seconds": 5,
-      "server_error_max_seconds": 60,
+      "server_error_base_seconds": 1,
+      "server_error_max_seconds": 4,
       "request_error_attempts": 3,
-      "request_error_base_seconds": 5,
-      "request_error_max_seconds": 60,
-      "rate_limit_safety_buffer_seconds": 5,
-      "max_rate_limit_sleep_seconds": 3600
+      "request_error_base_seconds": 1,
+      "request_error_max_seconds": 3,
+      "rate_limit_safety_buffer_seconds": 1,
+      "max_rate_limit_sleep_seconds": 900
     },
     "delays_seconds": {
-      "before_request_min": 0.2,
-      "before_request_max": 1.2,
-      "between_requests_min": 0.5,
-      "between_requests_max": 2.5,
-      "between_pages_min": 2,
-      "between_pages_max": 6,
-      "between_accounts_min": 3,
-      "between_accounts_max": 8,
+      "before_request_min": 0.05,
+      "before_request_max": 0.2,
+      "between_requests_min": 0.1,
+      "between_requests_max": 0.4,
+      "between_pages_min": 0.2,
+      "between_pages_max": 0.6,
+      "between_accounts_min": 0.3,
+      "between_accounts_max": 0.8,
       "between_cycles_min": 0,
-      "between_cycles_max": 60
+      "between_cycles_max": 15
     }
   },
   "viral_detection": {

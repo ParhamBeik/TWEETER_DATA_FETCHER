@@ -23,8 +23,8 @@ class LiveStorageManager:
         timezone: str = "Asia/Tehran",
         data_root_override: Optional[Path] = None,
     ):
-        # تغییر parent به parents[4] برای رسیدن به ریشه پروژه
-        self.project_root = project_root or Path(__file__).resolve().parents[4]
+        # تغییر parent به parents[3] برای رسیدن به ریشه پروژه
+        self.project_root = project_root or Path(__file__).resolve().parents[3]
         self.storage = StorageManager(
             base_dir=self.project_root,
             timezone=timezone,
@@ -224,7 +224,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -238,6 +238,8 @@ class ViralDetector:
         self.project_root = PROJECT_ROOT
         cfg_path = Path(config_path)
         if not cfg_path.is_absolute():
+            if cfg_path.parts and cfg_path.parts[0] == "shared":
+                cfg_path = Path("src") / cfg_path
             cfg_path = self.project_root / cfg_path
         self.config = self._load_config(cfg_path)
         self.viral_config = self.config.get("viral_detection", self.config.get("viral_config", {}))
