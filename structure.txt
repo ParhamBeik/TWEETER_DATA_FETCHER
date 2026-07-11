@@ -1,0 +1,50 @@
+TWEETER_DATA_FETCHER/
+├── README.md
+├── AGENTS.md
+├── project_visual_guide.md
+├── pyproject.toml
+├── requirements.txt
+├── src/
+│   ├── pipelines/
+│   │   ├── historical/
+│   │   │   └── fetch_historical.py
+│   │   ├── live/
+│   │   │   ├── monitor_live.py
+│   │   │   └── utils.py
+│   │   └── search/
+│   │       └── search_timeline.py
+│   └── shared/
+│       ├── auth/
+│       │   ├── auto_refresh.py
+│       │   └── browser_context.py
+│       ├── config/
+│       │   ├── account_tiers.py
+│       │   ├── config.example.json
+│       │   └── search_config.json
+│       ├── core/
+│       │   ├── pagination_engine.py
+│       │   ├── tweet_processing_utils.py
+│       │   └── twitter_http_client.py
+│       └── data_pipeline/
+│           └── storage_manager.py
+├── diagnostics/
+│   ├── probe_sequence.py
+│   ├── probe_txid.py
+│   ├── traffic_sniffer.py
+│   └── verify_contract.py
+├── tests/
+│   ├── contract/
+│   ├── integration/
+│   └── unit/
+├── tools/
+│   └── parity_check.py
+└── LEGACY/
+    └── archived v1-v3 sources
+
+Generated/local-only:
+├── data/
+├── graphify-out/
+├── diagnostics/probe_runs/
+├── diagnostics/sniffer_runs/
+├── diagnostics/graphql_logs/
+└── src/shared/config/config.json
