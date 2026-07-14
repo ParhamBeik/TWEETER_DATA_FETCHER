@@ -16,6 +16,9 @@ Core outcome of the latest work:
 - Profile processed output has 7 sets.
 - Query IDs and transaction IDs are endpoint-specific pools with 3-strike failure state.
 - Rate-limit sleeps follow `x-rate-limit-reset` plus safety buffer, capped at 3600 seconds.
+- All pipelines share one observability subsystem (`src/shared/observability/`): Rich console, structured NDJSON event log, canonical run reports, and a raw-data coverage inventory.
+- `FetcherEngine` self-verifies the GraphQL request contract at startup and auto-refreshes on drift.
+- Every pipeline accepts `--validation-run-id <id>` to isolate output under `data/validation/<id>/` and bypass stale skip/poll state.
 
 ## Quick Navigation
 
@@ -28,6 +31,8 @@ Core outcome of the latest work:
 | Pagination/window stop | `src/shared/core/pagination_engine.py` |
 | Tweet parsing/set math/contracts | `src/shared/core/tweet_processing_utils.py` |
 | Storage/state/reports | `src/shared/data_pipeline/storage_manager.py` |
+| Observability (console/events/reports/coverage) | `src/shared/observability/` |
+| Coverage report CLI | `src/tools/coverage_status.py` |
 | Browser/bootstrap/refresh | `src/shared/auth/browser_context.py`, `src/shared/auth/auto_refresh.py` |
 | Account/search config | `src/shared/config/account_tiers.py`, `src/shared/config/search_config.json` |
 | Safe config template | `src/shared/config/config.example.json` |
@@ -73,6 +78,7 @@ flowchart TD
   FE --> SM["StorageManager"]
   FE --> RW["RollingWindowEvaluator"]
   RW --> TPU["TweetSetProcessor / contracts"]
+  FE --> OBS["observability: console / events / run report"]
   SM --> DATA["data/"]
   API --> CFG["local config.json"]
   API --> AUTH["browser_context / auto_refresh"]
@@ -220,13 +226,16 @@ data/
     processed/7_symmetric_difference/
     reports/
     state/
+    logs/                 # events.jsonl, 404_events.jsonl, 404_summary.json, errors/
     viral/
   search/
     raw/{search_slug}/{product}/{batch}/page_N.json
     processed/{search_slug}/{product}/
     debug/
     reports/
+    logs/
     state/search_state.json
+  validation/{run_id}/     # isolated output from --validation-run-id runs
 ```
 
 ## Common Tasks
@@ -257,6 +266,21 @@ python tests/diagnostics/probe_sequence.py
 python tests/diagnostics/verify_contract.py
 ```
 
+Check raw-data coverage:
+
+```bash
+python -m src.tools.coverage_status --format table
+python -m src.tools.coverage_status --account elonmusk --endpoint UserTweets --format json
+```
+
+Isolated validation run (no stale state, output under `data/validation/<id>/`):
+
+```bash
+python -m src.pipelines.historical.fetch_historical --only elonmusk --validation-run-id smoke1
+python -m src.pipelines.live.monitor_live --account elonmusk --once --validation-run-id smoke1
+python -m src.pipelines.search.search_timeline --once --validation-run-id smoke1
+```
+
 Use graphify:
 
 ```bash
@@ -271,8 +295,14 @@ Current suite:
 
 ```bash
 .venv/bin/python -m pytest -q
-# 49 passed
+# 94 passed
 ```
+
+Suite layout:
+
+- `tests/unit/`: pagination, storage, HTTP client, orchestration, runner status, observability, coverage inventory, diagnostics paths, unified plan.
+- `tests/integration/`: historical, live, and search pipeline runs.
+- `tests/contract/`: sniffer and GraphQL contract expectations.
 
 Focused regression file:
 
