@@ -28,6 +28,6 @@
     "min_faves": 1000,
     "min_retweets": 50,
     "since_days": 7,
-    "count": 30
+    "count": 20
   }
 ]

@@ -102,13 +102,23 @@ class APIManager:
         return path_obj.resolve()
 
     # مسیر پیش‌فرض کانفیگ اصلاح شد
-    def __init__(self, config_path: str = "shared/config/config.json", state_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        config_path: str = "shared/config/config.json",
+        state_dir: Optional[Path] = None,
+        console: Optional[Any] = None,
+        recorder: Optional[Any] = None,
+    ):
         self.config_path = self._resolve_config_path(config_path)
         self.config = self._load_config()
         self.simulation_config = self.config.get("anti_bot_simulation", {})
         self.default_timeout = int(
             self.config.get("api_config", {}).get("default_timeout_seconds", 20)
         )
+        
+        # Observability injection
+        self.console = console
+        self.recorder = recorder
         
         # State directory for persistent tracking
         self.state_dir = state_dir or (project_root / "data" / "historical_live" / "state")
@@ -594,6 +604,35 @@ class APIManager:
                 if headers.get(key):
                     self.session.headers[key] = str(headers[key])
 
+    def reconcile_bootstrap_params(
+        self,
+        endpoint: str,
+        *,
+        query_ids: Optional[Dict[str, str]] = None,
+        request_headers: Optional[Dict[str, Dict[str, str]]] = None,
+    ) -> None:
+        """Promote browser-captured params and clear stale endpoint health after bootstrap."""
+        for ep, query_id in (query_ids or {}).items():
+            if query_id:
+                self._mark_query_id(ep, str(query_id), "healthy")
+                pool = self.query_id_pools.setdefault(ep, [])
+                if str(query_id) not in pool:
+                    pool.insert(0, str(query_id))
+        endpoint_headers = (request_headers or {}).get(endpoint, {})
+        tx_id = endpoint_headers.get("x-client-transaction-id")
+        if tx_id:
+            self._mark_tx_id(endpoint, str(tx_id), "healthy")
+            tx_pool = self.real_tx_ids.setdefault(endpoint, [])
+            if str(tx_id) not in tx_pool:
+                tx_pool.insert(0, str(tx_id))
+        if endpoint in (query_ids or {}):
+            active = str(query_ids[endpoint])
+            self.query_ids[endpoint] = active
+            self.query_id_indices[endpoint] = 0
+            self.consecutive_404s[endpoint] = 0
+            self.endpoint_health[endpoint] = EndpointHealth.HEALTHY
+            self._save_endpoint_health()
+
     def _save_config(self) -> None:
         """Persist current config atomically with one simple backup."""
         if self.config_path.exists():
@@ -720,9 +759,13 @@ class APIManager:
 
     def _next_query_id(self, endpoint: str) -> Optional[str]:
         pool = self.query_id_pools.get(endpoint, [])
+        state_map = self.query_id_state.get(endpoint, {})
+        pinned = self.query_ids.get(endpoint)
+        if pinned and (not pool or str(pinned) in pool):
+            if not self._param_ruled_out(state_map.get(str(pinned))):
+                return str(pinned)
         if not pool:
             return self.query_ids.get(endpoint)
-        state_map = self.query_id_state.get(endpoint, {})
         self.query_id_indices.setdefault(endpoint, 0)
         for _ in range(len(pool)):
             query_id = pool[self.query_id_indices[endpoint] % len(pool)]

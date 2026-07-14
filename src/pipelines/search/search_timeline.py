@@ -47,6 +47,28 @@ from src.shared.core.tweet_processing_utils import (
 from src.shared.core.tweet_processing_utils import TweetSetProcessor
 from src.shared.core.tweet_processing_utils import parse_twitter_timestamp
 from src.shared.data_pipeline.storage_manager import StorageManager
+from src.shared.observability.pipeline_console import PipelineConsole
+
+
+# #region deprecated agent log (now using EventRecorder)
+# The hardcoded _AGENT_DEBUG_LOG path is deprecated.
+# Events are now routed through src/shared/observability/event_recorder.py
+_AGENT_DEBUG_LOG = Path("/Users/parham/.cursor/debug-9420e9.log")
+
+
+def _agent_debug_log(
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: Dict[str, Any],
+    *,
+    run_id: str = "pre-fix",
+) -> None:
+    """Deprecated: use EventRecorder instead. This is a no-op."""
+    pass
+
+
+# #endregion
 
 
 VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
@@ -57,11 +79,16 @@ FROZEN_SEARCH_FEATURES: Dict[str, object] = dict(SEARCH_TIMELINE_FEATURES)
 V4_PREFIX = "[V4]"
 
 
-# Console output helpers -----------------------------------------------------
+# Console output helpers (deprecated - using PipelineConsole) --------
 
 
 class SearchConsole:
-    """Rich-first console output for SearchTimelineMonitor, with plain-text fallback."""
+    """
+    Deprecated: Use PipelineConsole instead.
+    
+    Rich-first console output for SearchTimelineMonitor, with plain-text fallback.
+    This class is kept for backward compatibility but all new code should use PipelineConsole.
+    """
 
     def __init__(self) -> None:
         self.rich_enabled = Console is not None
@@ -261,7 +288,7 @@ class SearchTimelineMonitor:
         self.reports_root = self.search_root / "reports"
         self.state_file = self.search_root / "state" / "search_state.json"
         self.search_state = self._load_json(self.state_file, {})
-        self.console = SearchConsole()
+        self.console = PipelineConsole(subsystem="search", verbosity="normal")
         for path in [self.raw_root, self.processed_root, self.debug_root, self.reports_root, self.state_file.parent]:
             path.mkdir(parents=True, exist_ok=True)
 
@@ -302,17 +329,27 @@ class SearchTimelineMonitor:
     def _policy_for_search(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
         priority = int(search_def.get("polling_priority", 3))
         defaults = DEFAULT_PRIORITY_POLICIES.get(priority, DEFAULT_PRIORITY_POLICIES[7])
+        default_cap = int(self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50))
+        if search_def.get("pagination_safety_cap_pages") is not None:
+            page_cap = int(search_def["pagination_safety_cap_pages"])
+        elif search_def.get("pagination_depth") is not None:
+            page_cap = int(search_def["pagination_depth"])
+        else:
+            page_cap = default_cap
         return {
             "poll_interval_seconds": int(search_def.get("poll_interval_seconds", defaults["poll_interval_seconds"])),
-            "pagination_safety_cap_pages": int(
-                search_def.get(
-                    "pagination_safety_cap_pages",
-                    self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50),
-                )
-            ),
+            "pagination_safety_cap_pages": max(1, page_cap),
             "max_retries": int(search_def.get("max_retries", 3)),
             "rolling_hours": int(search_def.get("rolling_hours", 24)),
         }
+
+    def _after_bootstrap(self, bootstrap: Any, endpoint: str = "SearchTimeline") -> None:
+        if bootstrap.ok:
+            self.api_manager.reconcile_bootstrap_params(
+                endpoint,
+                query_ids=bootstrap.query_ids,
+                request_headers=bootstrap.request_headers,
+            )
 
     @staticmethod
     def _compact_json(payload: Dict[str, Any]) -> str:
@@ -535,6 +572,8 @@ class SearchTimelineMonitor:
         attempts = 0
         auth_refreshed = False
         context_refreshed = False
+        cursor_refreshed = False
+        active_headers = dict(frozen_headers)
         for attempt in range(max_attempts):
             attempts += 1
             try:
@@ -545,12 +584,25 @@ class SearchTimelineMonitor:
                     "variables": self._compact_json(variables),
                     "features": features_json,
                 }
+                # #region agent log
+                _agent_debug_log(
+                    "A",
+                    "search_timeline.py:_request_page",
+                    "request_attempt",
+                    {
+                        "attempt": attempt + 1,
+                        "has_cursor": bool(cursor),
+                        "has_pages": has_pages,
+                        "graphql_url_tail": graphql_url[-80:],
+                    },
+                )
+                # #endregion
                 response = self.api_manager.perform_get(
                     endpoint=endpoint,
                     url=graphql_url,
                     max_retries=1,
                     params=params,
-                    headers=frozen_headers,
+                    headers=active_headers,
                 )
                 if response.status_code == 200:
                     try:
@@ -596,17 +648,49 @@ class SearchTimelineMonitor:
                         auth_refreshed = True
                         refreshed = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
                         if refreshed.ok:
+                            self._after_bootstrap(refreshed, endpoint)
                             query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
                             if query_id:
                                 graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
+                            if search_url:
+                                active_headers = self._build_frozen_headers(search_url)
+                            continue
+                    if response.status_code == 404 and cursor and has_pages and not cursor_refreshed and search_url:
+                        cursor_refreshed = True
+                        refreshed = self.fetcher.bootstrap_browser_context(
+                            search_url=search_url,
+                            capture_endpoint=endpoint,
+                            max_pages=2,
+                        )
+                        if refreshed.ok:
+                            self._after_bootstrap(refreshed, endpoint)
+                            query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
+                            if query_id:
+                                graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
+                            active_headers = self._build_frozen_headers(search_url)
+                            # #region agent log
+                            _agent_debug_log(
+                                "A",
+                                "search_timeline.py:_request_page",
+                                "cursor_404_bootstrap",
+                                {
+                                    "bootstrap_ok": refreshed.ok,
+                                    "query_id": refreshed.query_ids.get(endpoint),
+                                    "endpoint_health": self.api_manager.get_endpoint_health(endpoint),
+                                },
+                            )
+                            # #endregion
                             continue
                     if response.status_code == 404 and not cursor and not has_pages and not context_refreshed:
                         context_refreshed = True
                         refreshed = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
                         if refreshed.ok:
+                            self._after_bootstrap(refreshed, endpoint)
                             query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
                             if query_id:
                                 graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
+                            if search_url:
+                                active_headers = self._build_frozen_headers(search_url)
                             continue
                     client_attempts = int(retry_policy.get("client_error_attempts", self.fetcher.max_cursor_error_retries))
                     if attempt < client_attempts - 1:
@@ -622,6 +706,8 @@ class SearchTimelineMonitor:
                             capture_endpoint=endpoint,
                             max_pages=max(1, browser_fallback_pages),
                         )
+                        if fallback.ok:
+                            self._after_bootstrap(fallback, endpoint)
                         fallback_pages = fallback.target_pages.get(endpoint, []) if fallback.ok else []
                         valid_pages = [
                             page_payload for page_payload in fallback_pages
@@ -731,7 +817,9 @@ class SearchTimelineMonitor:
         raw_query = SearchQueryBuilder.build_raw_query(search_def, self.storage._tehran_now())
         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
         policy = self._policy_for_search(search_def)
-        batch_dir = self._raw_batch_dir(slug, product)
+        jalali_batch = self.storage._jalali_batch_name()
+        batch_dir = self.raw_root / slug / product.lower() / jalali_batch
+        batch_dir.mkdir(parents=True, exist_ok=True)
         self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
         self.console.info(f"  Query: {raw_query}")
         seen_ids: Set[str] = set()
@@ -756,18 +844,31 @@ class SearchTimelineMonitor:
         features_json = self._compact_json(dict(search_features))
 
         bootstrap = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
+        self._after_bootstrap(bootstrap, "SearchTimeline")
+        # #region agent log
+        _agent_debug_log(
+            "B",
+            "search_timeline.py:monitor_search",
+            "startup_bootstrap",
+            {
+                "bootstrap_ok": bootstrap.ok,
+                "query_id": str(self.api_manager.get_query_id("SearchTimeline") or ""),
+                "endpoint_health": self.api_manager.get_endpoint_health("SearchTimeline"),
+                "query_id_pool_size": len(self.api_manager.query_id_pools.get("SearchTimeline", [])),
+                "page_cap": int(policy["pagination_safety_cap_pages"]),
+            },
+        )
+        # #endregion
         query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
         if not query_id:
             raise RuntimeError("Missing api_config.search_timeline_query_id")
-        graphql_url = f"https://x.com/i/api/graphql/{query_id}/SearchTimeline"
         self.api_manager.warmup_url(search_url, timeout=int(self.config.get("api_config", {}).get("search_warmup_seconds", 30)))
         if self.fetcher.first_request_warmup_seconds > 0:
             time.sleep(self.fetcher.first_request_warmup_seconds)
-        frozen_headers = self._build_frozen_headers(search_url)
-        # Compute one consistent batch name for the entire search run so raw pages are saved
-        # into a single batch directory and pages_saved counts match saved files.
-        jalali_batch = self.storage._jalali_batch_name()
         for page in range(1, int(policy["pagination_safety_cap_pages"]) + 1):
+            query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
+            graphql_url = f"https://x.com/i/api/graphql/{query_id}/SearchTimeline"
+            frozen_headers = self._build_frozen_headers(search_url)
             payload = self._request_page(
                 graphql_url,
                 variables_template,
@@ -798,6 +899,57 @@ class SearchTimelineMonitor:
                 break
             if payload.get("_failure"):
                 exhausted_reason = str(payload["_failure"])
+                if exhausted_reason == "partial_cursor_404" and tweets and search_url:
+                    remaining = max(1, int(policy["pagination_safety_cap_pages"]) - page + 1)
+                    fallback = self.fetcher.bootstrap_browser_context(
+                        search_url=search_url,
+                        capture_endpoint="SearchTimeline",
+                        max_pages=min(2, remaining),
+                    )
+                    if fallback.ok:
+                        self._after_bootstrap(fallback, "SearchTimeline")
+                    valid_pages = [
+                        page_payload
+                        for page_payload in (fallback.target_pages.get("SearchTimeline", []) if fallback.ok else [])
+                        if validate_graphql_payload("SearchTimeline", page_payload).ok
+                    ]
+                    if valid_pages:
+                        transport = "browser_fallback"
+                        for offset, fallback_payload in enumerate(valid_pages):
+                            page_number = page + offset
+                            output_path = self.storage.save_search_result_page(
+                                slug, product, jalali_batch, page_number, fallback_payload
+                            )
+                            page_output_paths.append(str(output_path))
+                            page_result = self._parse_search_page(fallback_payload, seen_ids, capture_debug=False)
+                            tweets.extend(page_result["tweets"])
+                        exhausted_reason = "verified_browser_fallback"
+                        # #region agent log
+                        _agent_debug_log(
+                            "A",
+                            "search_timeline.py:monitor_search",
+                            "partial_cursor_browser_recovery",
+                            {
+                                "recovered_pages": len(valid_pages),
+                                "tweets_after_recovery": len(tweets),
+                                "starting_page": page,
+                            },
+                        )
+                        # #endregion
+                        break
+                # #region agent log
+                _agent_debug_log(
+                    "A",
+                    "search_timeline.py:monitor_search",
+                    "pagination_failure",
+                    {
+                        "page": page,
+                        "failure": exhausted_reason,
+                        "last_http_status": payload.get("_status"),
+                        "tweets_so_far": len(tweets),
+                    },
+                )
+                # #endregion
                 break
             payload.pop("_attempts", None)
             payload.pop("_error_samples", None)
@@ -832,9 +984,25 @@ class SearchTimelineMonitor:
         else:
             exhausted_reason = "partial_safety_cap_reached"
 
+        pages_on_disk = len(list(batch_dir.glob("page_*.json")))
+        # #region agent log
+        _agent_debug_log(
+            "C",
+            "search_timeline.py:monitor_search",
+            "run_complete",
+            {
+                "exhausted_reason": exhausted_reason,
+                "pages_saved_disk": pages_on_disk,
+                "pages_saved_paths": len(page_output_paths),
+                "batch_dir": str(batch_dir),
+                "tweets": len(tweets),
+                "endpoint_health": self.api_manager.get_endpoint_health("SearchTimeline"),
+            },
+        )
+        # #endregion
         metadata = {
             "pages_requested": int(policy["pagination_safety_cap_pages"]),
-            "pages_saved": len(list(batch_dir.glob("page_*.json"))),
+            "pages_saved": pages_on_disk,
             "exhausted_reason": exhausted_reason,
             "cursor_history": sorted(cursor_history),
             "raw_batch_path": str(batch_dir),
