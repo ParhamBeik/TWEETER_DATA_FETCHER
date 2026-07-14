@@ -35,6 +35,11 @@ class SearchTimelinePathResolutionTests(unittest.TestCase):
         self.assertFalse(stop)
         self.assertIsNone(reason)
 
+    def test_policy_uses_pagination_depth_when_cap_missing(self):
+        self.monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
+        policy = self.monitor._policy_for_search({"pagination_depth": 3})
+        self.assertEqual(policy["pagination_safety_cap_pages"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

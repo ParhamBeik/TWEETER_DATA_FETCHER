@@ -72,5 +72,22 @@ class AutoRefreshTests(unittest.TestCase):
         self.assertEqual(refresh_mock.call_count, 1)
 
 
+class QueryIdSelectionTests(unittest.TestCase):
+    def test_pinned_query_id_is_reused_until_ruled_out(self):
+        manager = APIManager.__new__(APIManager)
+        manager.query_ids = {"SearchTimeline": "fresh-id"}
+        manager.query_id_pools = {"SearchTimeline": ["stale-id", "fresh-id"]}
+        manager.query_id_state = {
+            "SearchTimeline": {
+                "fresh-id": {"status": "healthy", "failures": 0},
+                "stale-id": {"status": "stale", "failures": 3},
+            }
+        }
+        manager.query_id_indices = {"SearchTimeline": 0}
+
+        self.assertEqual(manager._next_query_id("SearchTimeline"), "fresh-id")
+        self.assertEqual(manager._next_query_id("SearchTimeline"), "fresh-id")
+
+
 if __name__ == "__main__":
     unittest.main()

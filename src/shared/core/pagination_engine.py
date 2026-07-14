@@ -32,6 +32,9 @@ from src.shared.auth.browser_context import BrowserBootstrap, BrowserBootstrapRe
 from src.shared.core.tweet_processing_utils import RollingWindowEvaluator
 from src.shared.data_pipeline.storage_manager import StorageManager
 from src.shared.config.account_tiers import get_priority_policy, load_tier_config, ordered_accounts
+from src.shared.observability.coverage_inventory import CoverageInventory
+from src.shared.observability.event_recorder import EventRecorder, ObservabilityContext
+from src.shared.observability.pipeline_console import PipelineConsole
 
 try:
     import pytz
@@ -39,88 +42,13 @@ except ImportError:
     print("ERROR: Missing dependency pytz. Run: pip3 install pytz")
     raise
 
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-except Exception:  # pragma: no cover - fallback path
-    Console = None
-    Panel = None
-    Table = None
-
 
 TIMEZONE = "Asia/Tehran"
 DEFAULT_HISTORICAL_MAX_PAGES = 15
-SEP = "═" * 90
 
 
-# Console output helpers -----------------------------------------------------
-
-
-class EngineLogger:
-    """Rich-first logger with plain fallback."""
-
-    def __init__(self):
-        self.rich_enabled = Console is not None
-        self.console = Console() if self.rich_enabled else None
-
-    def info(self, message: str):
-        if self.rich_enabled:
-            self.console.print(f"[bold cyan][INFO][/bold cyan] {message}")
-        else:
-            print(f"[INFO] {message}")
-
-    def success(self, message: str):
-        if self.rich_enabled:
-            self.console.print(f"[bold green][OK][/bold green] {message}")
-        else:
-            print(f"[OK] {message}")
-
-    def warning(self, message: str):
-        if self.rich_enabled:
-            self.console.print(f"[bold yellow][WARN][/bold yellow] {message}")
-        else:
-            print(f"[WARN] {message}")
-
-    def error(self, message: str):
-        if self.rich_enabled:
-            self.console.print(f"[bold red][ERROR][/bold red] {message}")
-        else:
-            print(f"[ERROR] {message}")
-
-    def banner(self, title: str, body: str):
-        if self.rich_enabled and Panel is not None:
-            self.console.print(Panel.fit(body, title=title, border_style="magenta"))
-        else:
-            print(SEP)
-            print(title)
-            print(SEP)
-            print(body)
-            print(SEP)
-
-    def show_startup_config(self, config: Dict[str, Any], account_map: Dict[str, Dict], policies: Dict[int, Dict]):
-        api_cfg = config.get("api_config", {})
-        if self.rich_enabled and Table is not None:
-            table = Table(title="Loaded API / Tier Configuration", show_lines=False)
-            table.add_column("Key", style="cyan")
-            table.add_column("Value", style="white")
-            table.add_row("Config File", "src/shared/config/config.json") # <--- اصلاح شد
-            table.add_row("Accounts (tiered)", str(len(account_map)))
-            table.add_row("Priority Policies", str(len(policies)))
-            table.add_row("UserByScreenName QueryID", str(api_cfg.get("user_by_screen_name_query_id", ""))[:20] + "...")
-            table.add_row("UserTweets QueryID", str(api_cfg.get("user_tweets_query_id", ""))[:20] + "...")
-            table.add_row("UserTweetsAndReplies QueryID", str(api_cfg.get("user_tweets_and_replies_query_id", ""))[:20] + "...")
-            table.add_row("Timeout (sec)", str(api_cfg.get("default_timeout_seconds", 20)))
-            self.console.print(table)
-        else:
-            self.info(f"Config File: src/shared/config/config.json")
-            self.info(f"Accounts (tiered): {len(account_map)}")
-            self.info(f"Priority Policies: {len(policies)}")
-            self.info(f"Timeout (sec): {api_cfg.get('default_timeout_seconds', 20)}")
-
-    def pagination(self, account: str, endpoint: str, page: int, cursor: Optional[str]):
-        cursor_text = cursor if cursor else "END"
-        self.info(f"Account: @{account} | Endpoint: {endpoint} | Page: {page} | Next Cursor: {cursor_text}")
+# Backward-compatible alias
+EngineLogger = PipelineConsole
 
 
 # Timeline fetching ---------------------------------------------------------
@@ -144,8 +72,31 @@ class FetcherEngine:
             if validation_run_id
             else self.project_root / "data"
         )
-        self.logger = EngineLogger()
-        self.api_manager = APIManager(config_path=config_path, state_dir=self.data_root / self.subsystem / "state")
+        console_subsystem = "live" if self.subsystem == "historical_live" and raw_subsystem == "live" else (
+            "historical" if self.subsystem == "historical_live" else self.subsystem
+        )
+        self.logger = PipelineConsole(console_subsystem)
+        logs_dir = self.data_root / self.subsystem / "logs"
+        self.recorder = EventRecorder(logs_dir, subsystem=self.subsystem)
+        self.observability = ObservabilityContext(
+            console=self.logger,
+            recorder=self.recorder,
+            subsystem=self.subsystem,
+        )
+        self.coverage_inventory = CoverageInventory(
+            StorageManager(
+                base_dir=self.project_root,
+                timezone=TIMEZONE,
+                subsystem=self.subsystem,
+                data_root_override=self.data_root,
+            )
+        )
+        self.api_manager = APIManager(
+            config_path=config_path,
+            state_dir=self.data_root / self.subsystem / "state",
+            console=self.logger,
+            recorder=self.recorder,
+        )
         # Pre-run contract verification: detect structural drift that commonly causes 400/404.
         try:
             verifier = self.project_root / "tests" / "diagnostics" / "verify_contract.py"

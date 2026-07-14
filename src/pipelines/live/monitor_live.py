@@ -37,6 +37,7 @@ from src.shared.config.account_tiers import get_priority_policy, load_tier_confi
 from src.shared.core.pagination_engine import FetcherEngine
 from src.shared.core.tweet_processing_utils import TweetSetProcessor
 from src.shared.core.tweet_processing_utils import window_cutoff
+from src.shared.observability.pipeline_console import PipelineConsole
 from src.pipelines.live.utils import LiveStorageManager
 from src.pipelines.live.utils import ViralDetector
 
@@ -44,9 +45,10 @@ from src.pipelines.live.utils import ViralDetector
 V4_PREFIX = "[V4]"
 
 
-# Console output helpers -----------------------------------------------------
+# Console output helpers (deprecated - using PipelineConsole) --------
 
 
+# This class is deprecated; use PipelineConsole instead
 class LiveConsole:
     """Rich-first console output for LiveMonitor, with plain-text fallback."""
 
@@ -137,7 +139,7 @@ class LiveMonitor:
         self.project_root = Path(__file__).resolve().parents[3]
         self.validation_run_id = validation_run_id
         self.fetcher = FetcherEngine(config_path=config_path, subsystem="live", validation_run_id=validation_run_id)
-        self.console = LiveConsole()
+        self.console = PipelineConsole(subsystem="live", verbosity="normal")
         self.api_manager = self.fetcher.api_manager
         self.config = self.api_manager.config
         self.account_map, self.priority_policies = load_tier_config(self.config)

@@ -1,0 +1,91 @@
+{
+  "data": {
+    "user": {
+      "result": {
+        "timeline_v2": {
+          "timeline": {
+            "instructions": [
+              {
+                "type": "TimelineAddEntries",
+                "entries": [
+                  {
+                    "sortIndex": "1405040800000",
+                    "content": {
+                      "entryType": "TimelineTweet",
+                      "__typename": "TimelineTweet",
+                      "itemContent": {
+                        "itemType": "TimelineTweet",
+                        "__typename": "TimelineTweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "rest_id": "1748000000000000002",
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "id": "VXNlcjoxMzE2ODk3MzMx",
+                                  "rest_id": "123456789",
+                                  "legacy": {
+                                    "created_at": "Wed Apr 08 2026 11:30:00 GMT+0000",
+                                    "description": "Reply tweet",
+                                    "id_str": "123456789",
+                                    "name": "Test User",
+                                    "screen_name": "testuser"
+                                  }
+                                }
+                              }
+                            },
+                            "legacy": {
+                              "created_at": "Wed Apr 08 2026 11:30:00 GMT+0000",
+                              "conversation_id_str": "1748000000000000002",
+                              "display_text_range": [0, 140],
+                              "entities": {
+                                "user_mentions": [],
+                                "urls": [],
+                                "hashtags": [],
+                                "symbols": []
+                              },
+                              "full_text": "Test reply content for fixture",
+                              "in_reply_to_screen_name": "othertestuser",
+                              "in_reply_to_status_id_str": "1748000000000000001",
+                              "in_reply_to_user_id_str": "987654321",
+                              "is_quote_status": false,
+                              "lang": "en",
+                              "public_metrics": {
+                                "reply_count": 0,
+                                "retweet_count": 0,
+                                "like_count": 1,
+                                "bookmark_count": 0
+                              },
+                              "reply_settings": "everyone",
+                              "rest_id": "1748000000000000002",
+                              "user_id_str": "123456789"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "sortIndex": "1405040700000",
+                    "content": {
+                      "entryType": "TimelineTimelineItem",
+                      "__typename": "TimelineTimelineItem",
+                      "itemContent": {
+                        "itemType": "TimelineCursor",
+                        "__typename": "TimelineCursor",
+                        "value": "DAACCAABCgABbhBAAAoAARaYAA",
+                        "cursorType": "Bottom"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
