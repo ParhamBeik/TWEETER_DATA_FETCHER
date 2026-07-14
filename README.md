@@ -12,6 +12,8 @@ Latest project state: July 2026.
 - Processed profile output now has 7 sets: `A`, `B`, `A ∩ B`, `A ∪ B`, `A - B`, `B - A`, and `A △ B`.
 - Query IDs and transaction IDs are endpoint-specific pools with 3-strike rule-out before a value is skipped.
 - Rate-limit sleeps use response reset epochs, with a 3600 second cap.
+- A shared observability subsystem (`src/shared/observability/`) gives every pipeline the same Rich console, structured NDJSON event log, canonical run reports, and a raw-data coverage inventory (`src/tools/coverage_status.py`).
+- `FetcherEngine` self-verifies the GraphQL request contract at startup and auto-refreshes on drift; `--validation-run-id` isolates runs under `data/validation/<id>/`.
 - `src/shared/config/config.json` is local-only and ignored because it contains live cookies/tokens. Use `src/shared/config/config.example.json` as the safe template.
 
 ## Quick Start
@@ -43,7 +45,10 @@ Run tests:
 | Historical | `src/pipelines/historical/fetch_historical.py` | Backfill profile timeline and replies for configured accounts. |
 | Live | `src/pipelines/live/monitor_live.py` | Poll due accounts, update shared processed sets, maintain live seen-tweet and viral state. |
 | Search | `src/pipelines/search/search_timeline.py` | Poll configured `SearchTimeline` queries into isolated search storage. |
+| Coverage | `src/tools/coverage_status.py` | Report raw-data coverage per account/endpoint against watermarks (`--account`, `--endpoint`, `--format`, `--export`). |
 | Diagnostics | `tests/diagnostics/*.py`, `tools/*.py` | Probe endpoint health, verify request contract, compare parity. |
+
+All three pipelines accept `--validation-run-id <id>`, which isolates output under `data/validation/<id>/` and bypasses stale skip/poll state for safe end-to-end test runs.
 
 ## Source Map
 
@@ -58,6 +63,11 @@ Run tests:
 | `src/shared/config/account_tiers.py` | Account list and priority policy defaults. |
 | `src/shared/config/search_config.json` | Search query definitions. |
 | `src/pipelines/live/utils.py` | Live state, seen tweet index, viral snapshots and reports. |
+| `src/shared/observability/pipeline_console.py` | `PipelineConsole`: Rich-first terminal output with subsystem tags and plain-text fallback. |
+| `src/shared/observability/event_recorder.py` | `EventRecorder`: append structured NDJSON events (`logs/events.jsonl`) and per-error detail files. |
+| `src/shared/observability/run_report.py` | `RunReportBuilder` and canonical per-endpoint report schema shared across pipelines. |
+| `src/shared/observability/coverage_inventory.py` | `CoverageInventory`: scan raw datastore and cross-reference sync-state watermarks. |
+| `src/tools/coverage_status.py` | CLI wrapper over `CoverageInventory` for coverage reports/exports. |
 
 ## Data Layout
 
@@ -85,13 +95,20 @@ data/
       tx_id_state.json
       query_id_state.json
       rate_limits.json
+    logs/
+      events.jsonl
+      404_events.jsonl
+      404_summary.json
+      errors/
     viral/
   search/
     raw/{search_slug}/{product}/{batch}/page_N.json
     processed/{search_slug}/{product}/
     debug/
     reports/
+    logs/
     state/search_state.json
+  validation/{run_id}/        # isolated output from --validation-run-id runs
 ```
 
 Historical and live intentionally share `data/historical_live/`; search is isolated and must never create profile set folders.
@@ -129,6 +146,15 @@ Let `A = UserTweets` and `B = UserTweetsAndReplies`.
 
 The dedup key is `author_id:tweet_id` when author ID exists, otherwise tweet ID.
 
+## Observability
+
+All pipelines share `src/shared/observability/`:
+
+- `PipelineConsole`: Rich-first terminal output tagged by subsystem (`HIST`, `LIVE`, `SEARCH`, `ENGINE`, `AUTH`), with a plain-text fallback and `quiet`/`normal`/`verbose` verbosity.
+- `EventRecorder`: appends structured events to `data/<subsystem>/logs/events.jsonl` and writes per-error detail files under `logs/errors/`. HTTP 4xx/404 are also aggregated into `404_events.jsonl` and `404_summary.json`.
+- `RunReportBuilder` / `endpoint_report_from_result`: one canonical per-run/per-endpoint report schema written into each subsystem's `reports/`.
+- `CoverageInventory`: scans the raw datastore and cross-references `sync_state.json` watermarks; surfaced via the `src/tools/coverage_status.py` CLI.
+
 ## Auth, Query IDs, Transaction IDs
 
 `APIManager` reads local `src/shared/config/config.json`.
@@ -138,6 +164,8 @@ The dedup key is `author_id:tweet_id` when author ID exists, otherwise tweet ID.
 - `query_ids_by_endpoint` provides endpoint query-id pools.
 - `real_transaction_ids_by_endpoint` provides endpoint tx-id pools captured from browser requests.
 - `tx_id_state.json` and `query_id_state.json` rule out params only after 3 consecutive failures.
+
+On startup `FetcherEngine` runs `tests/diagnostics/verify_contract.py` to detect request-contract drift against the frozen sniffer capture; on drift it attempts a headless `auto_refresh` before fetching.
 
 Manual refresh:
 
@@ -163,7 +191,7 @@ Current green check:
 
 ```bash
 .venv/bin/python -m pytest -q
-# 49 passed
+# 94 passed
 ```
 
 Useful targeted checks:
