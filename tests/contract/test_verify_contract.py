@@ -121,8 +121,8 @@ class ContractFixtureTests(unittest.TestCase):
     """Test contract baseline fixtures."""
     
     def test_fixture_directory_structure(self):
-        """Contract fixtures should be under src/shared/config/known_good_contracts/."""
-        fixture_base = Path(__file__).resolve().parents[2] / "src" / "shared" / "config" / "known_good_contracts"
+        """Contract fixtures should be under config/known_good_contracts/."""
+        fixture_base = Path(__file__).resolve().parents[2] / "config" / "known_good_contracts"
         
         # Fixtures should exist (or be created on first auto-refresh)
         # This test documents the expected structure

@@ -4,9 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.pipelines.live.monitor_live import LiveMonitor
-from src.pipelines.search.search_timeline import SearchTimelineMonitor
-from src.shared.config.account_tiers import DEFAULT_PRIORITY_POLICIES
+from tweeter_data_fetcher.pipelines.live.service import LiveMonitor
+from tweeter_data_fetcher.pipelines.search.service import SearchTimelineMonitor
+from tweeter_data_fetcher.account_config import DEFAULT_PRIORITY_POLICIES
 
 
 class LiveStatusTests(unittest.TestCase):

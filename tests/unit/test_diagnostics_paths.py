@@ -1,7 +1,7 @@
-"""Regression guard for diagnostic script path constants under tests/diagnostics/.
+"""Regression guard for operational diagnostic path constants.
 
-Diagnostic scripts live in ``tests/diagnostics/`` and must:
-- read config from ``src/shared/config/config.json`` (repo root, not ``tests/src/``)
+Diagnostic scripts live in ``tools/diagnostics/`` and must:
+- read config through canonical resolution
 - write run output beside each script (``probe_runs/``, ``sniffer_runs/``)
 - never resolve paths outside the repo
 
@@ -12,16 +12,16 @@ import shutil
 import unittest
 from pathlib import Path
 
-from tests.diagnostics import verify_contract
-from tests.diagnostics import probe_sequence, probe_txid, traffic_sniffer
+from tools.diagnostics import verify_contract
+from tools.diagnostics import probe_sequence, probe_txid, traffic_sniffer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DIAGNOSTICS = REPO_ROOT / "tests" / "diagnostics"
-CONFIG_JSON = REPO_ROOT / "src" / "shared" / "config" / "config.json"
+DIAGNOSTICS = REPO_ROOT / "tools" / "diagnostics"
+CONFIG_JSON = REPO_ROOT / "config" / "config.json"
 
 
 class ConfigPathTests(unittest.TestCase):
-    """Every diagnostic script must read config from src/shared/config/."""
+    """Every diagnostic script must read the canonical local config."""
 
     def test_config_paths_point_at_moved_config(self):
         for mod in (probe_txid, probe_sequence, traffic_sniffer, verify_contract):
@@ -32,10 +32,10 @@ class ConfigPathTests(unittest.TestCase):
         # If this fails, the config was moved again and the scripts are blind.
         self.assertTrue(CONFIG_JSON.parent.is_dir(), CONFIG_JSON.parent)
 
-    def test_verify_contract_baseline_stays_under_src(self):
+    def test_verify_contract_baseline_under_config(self):
         self.assertTrue(
             verify_contract.BASELINE_DIR.resolve().is_relative_to(
-                REPO_ROOT / "src" / "shared" / "config"
+                REPO_ROOT / "config" / "known_good_contracts"
             ),
             verify_contract.BASELINE_DIR,
         )

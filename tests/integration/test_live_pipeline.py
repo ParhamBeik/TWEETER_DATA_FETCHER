@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.pipelines.live.monitor_live import LiveMonitor
+from tweeter_data_fetcher.pipelines.live.service import LiveMonitor
 
 
 class LivePipelineTests(unittest.TestCase):
@@ -31,10 +31,9 @@ class LivePipelineTests(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('src.pipelines.live.monitor_live.FetcherEngine')
-    @patch('src.pipelines.live.monitor_live.LiveConsole')
-    @patch('src.pipelines.live.monitor_live.LiveStorageManager')
-    def test_live_monitor_initialization(self, mock_storage, mock_console, mock_engine):
+    @patch('tweeter_data_fetcher.pipelines.live.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.live.service.LiveStorageManager')
+    def test_live_monitor_initialization(self, mock_storage, mock_engine):
         """Test LiveMonitor initialization."""
         mock_engine_instance = MagicMock()
         mock_engine_instance.config = {}
@@ -55,8 +54,8 @@ class LivePipelineTests(unittest.TestCase):
         # Just verify the class can be instantiated
         self.assertTrue(True)
 
-    @patch('src.pipelines.live.monitor_live.FetcherEngine')
-    @patch('src.pipelines.live.monitor_live.LiveStorageManager')
+    @patch('tweeter_data_fetcher.pipelines.live.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.live.service.LiveStorageManager')
     def test_monitor_account_structure(self, mock_storage, mock_engine):
         """Test monitor_account method structure."""
         mock_engine_instance = MagicMock()
@@ -71,11 +70,11 @@ class LivePipelineTests(unittest.TestCase):
         self.assertTrue(hasattr(monitor, 'monitor_account'))
         self.assertTrue(callable(monitor.monitor_account))
 
-    @patch('src.pipelines.live.monitor_live.FetcherEngine')
-    @patch('src.pipelines.live.monitor_live.LiveStorageManager')
+    @patch('tweeter_data_fetcher.pipelines.live.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.live.service.LiveStorageManager')
     def test_viral_detector_integration(self, mock_storage, mock_engine):
         """Test viral detector integration."""
-        from src.pipelines.live.utils import ViralDetector
+        from tweeter_data_fetcher.pipelines.live.viral import ViralDetector
         
         mock_engine_instance = MagicMock()
         mock_engine.return_value = mock_engine_instance

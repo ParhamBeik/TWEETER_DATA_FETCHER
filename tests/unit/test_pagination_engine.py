@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 import tempfile
 
-from src.shared.core.pagination_engine import FetcherEngine
+from tweeter_data_fetcher.twitter.timeline import FetcherEngine
 
 
 class PaginationEngineTests(unittest.TestCase):

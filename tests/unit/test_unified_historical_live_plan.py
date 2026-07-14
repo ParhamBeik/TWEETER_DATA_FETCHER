@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytz
 
-from src.shared.core.tweet_processing_utils import RollingWindowEvaluator, TweetSetProcessor, window_cutoff
-from src.shared.core.twitter_http_client import APIManager
+from tweeter_data_fetcher.tweets._legacy import RollingWindowEvaluator, TweetSetProcessor, window_cutoff
+from tweeter_data_fetcher.twitter.client import APIManager
 
 
 def _tweet_at(dt: datetime) -> dict:

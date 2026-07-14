@@ -1,140 +1,90 @@
 # TWEETER DATA FETCHER
 
-Python 3.11 toolkit for fetching Twitter/X GraphQL data through the web API contract observed from real browser sessions. The current project lives at repo root under `src/`; old v1-v3 code is archived under `LEGACY/`.
+Twitter/X historical, live, and search pipelines packaged as a Python modular monolith.
 
-## Current State
-
-Latest project state: July 2026.
-
-- Historical and live now share one rolling-window mechanism, one storage root, and one fetcher engine.
-- Historical and live both run profile endpoints in global two-pass order: `UserTweets` for every due account, then `UserTweetsAndReplies` for every due account.
-- Rolling windows are timestamp-granular and watermark-backed, so a mid-day or mid-hour successful fetch cannot create a permanent gap.
-- Processed profile output now has 7 sets: `A`, `B`, `A ∩ B`, `A ∪ B`, `A - B`, `B - A`, and `A △ B`.
-- Query IDs and transaction IDs are endpoint-specific pools with 3-strike rule-out before a value is skipped.
-- Rate-limit sleeps use response reset epochs, with a 3600 second cap.
-- A shared observability subsystem (`src/shared/observability/`) gives every pipeline the same Rich console, structured NDJSON event log, canonical run reports, and a raw-data coverage inventory (`src/tools/coverage_status.py`).
-- `FetcherEngine` self-verifies the GraphQL request contract at startup and auto-refreshes on drift; `--validation-run-id` isolates runs under `data/validation/<id>/`.
-- `src/shared/config/config.json` is local-only and ignored because it contains live cookies/tokens. Use `src/shared/config/config.example.json` as the safe template.
-
-## Quick Start
+## Install
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-pip install pytest
-
-cp src/shared/config/config.example.json src/shared/config/config.json
-python src/shared/auth/auto_refresh.py --interactive
-
-python -m src.pipelines.historical.fetch_historical --only elonmusk
-python -m src.pipelines.live.monitor_live --account elonmusk --once
-python -m src.pipelines.search.search_timeline --once
+pip install -e .
 ```
 
-Run tests:
+Local authentication is ignored by Git. The canonical path is `config/config.json`.
 
 ```bash
-.venv/bin/python -m pytest -q
+cp config/config.example.json config/config.json
+tdf-auth --interactive
 ```
 
-## Main Entry Points
+## Commands
 
-| Area | Module | Purpose |
-|---|---|---|
-| Historical | `src/pipelines/historical/fetch_historical.py` | Backfill profile timeline and replies for configured accounts. |
-| Live | `src/pipelines/live/monitor_live.py` | Poll due accounts, update shared processed sets, maintain live seen-tweet and viral state. |
-| Search | `src/pipelines/search/search_timeline.py` | Poll configured `SearchTimeline` queries into isolated search storage. |
-| Coverage | `src/tools/coverage_status.py` | Report raw-data coverage per account/endpoint against watermarks (`--account`, `--endpoint`, `--format`, `--export`). |
-| Diagnostics | `tests/diagnostics/*.py`, `tools/*.py` | Probe endpoint health, verify request contract, compare parity. |
+```bash
+tdf-historical --only elonmusk
+tdf-live --account elonmusk --once
+tdf-search --once
+tdf-coverage --format table
+```
 
-All three pipelines accept `--validation-run-id <id>`, which isolates output under `data/validation/<id>/` and bypasses stale skip/poll state for safe end-to-end test runs.
+The installed `tdf-*` commands call the real modules directly; there is no wrapper-only CLI package.
+Each runnable module also supports `python -m ... --help` and starts with a short run/flag guide.
 
-## Source Map
+```bash
+python -m tweeter_data_fetcher.pipelines.historical.service --help
+python -m tweeter_data_fetcher.pipelines.live.service --help
+python -m tweeter_data_fetcher.pipelines.search.service --help
+python -m tweeter_data_fetcher.observability.coverage_inventory --help
+python -m tweeter_data_fetcher.twitter.auth --help
+```
 
-| Path | Role |
-|---|---|
-| `src/shared/core/twitter_http_client.py` | `APIManager`: HTTP session, auth headers, tx/query-id pools, rate-limit state, retry helpers. |
-| `src/shared/core/pagination_engine.py` | `FetcherEngine`: user lookup, timeline URL construction, pagination, window cutoff stop, raw page persistence. |
-| `src/shared/core/tweet_processing_utils.py` | GraphQL contracts, timestamp parsing, rolling-window evaluator, tweet extraction, set math. |
-| `src/shared/data_pipeline/storage_manager.py` | Raw/processed/report/state file I/O and historical/live/search storage routing. |
-| `src/shared/auth/browser_context.py` | Playwright/browser context bootstrap used by fetchers for warm session state. |
-| `src/shared/auth/auto_refresh.py` | Playwright session refresh; captures cookies, tx-id pools, query-id pools and writes local config. |
-| `src/shared/config/account_tiers.py` | Account list and priority policy defaults. |
-| `src/shared/config/search_config.json` | Search query definitions. |
-| `src/pipelines/live/utils.py` | Live state, seen tweet index, viral snapshots and reports. |
-| `src/shared/observability/pipeline_console.py` | `PipelineConsole`: Rich-first terminal output with subsystem tags and plain-text fallback. |
-| `src/shared/observability/event_recorder.py` | `EventRecorder`: append structured NDJSON events (`logs/events.jsonl`) and per-error detail files. |
-| `src/shared/observability/run_report.py` | `RunReportBuilder` and canonical per-endpoint report schema shared across pipelines. |
-| `src/shared/observability/coverage_inventory.py` | `CoverageInventory`: scan raw datastore and cross-reference sync-state watermarks. |
-| `src/tools/coverage_status.py` | CLI wrapper over `CoverageInventory` for coverage reports/exports. |
+All pipelines accept `--validation-run-id <id>` and isolate output under `data/validation/<id>/`.
 
-## Data Layout
-
-Runtime data is ignored and written under `data/`.
+## Architecture
 
 ```text
-data/
-  historical_live/
-    raw/
-      UserTweets/{account}/{batch}/page_N.json
-      UserTweetsAndReplies/{account}/{batch}/page_N.json
-    processed/
-      1_user_tweets/
-      2_user_tweets_and_replies/
-      3_intersection/
-      4_union/
-      5_a_minus_b/
-      6_b_minus_a/
-      7_symmetric_difference/
-    reports/
-    state/
-      sync_state.json
-      live_state.json
-      seen_tweets.json
-      tx_id_state.json
-      query_id_state.json
-      rate_limits.json
-    logs/
-      events.jsonl
-      404_events.jsonl
-      404_summary.json
-      errors/
-    viral/
-  search/
-    raw/{search_slug}/{product}/{batch}/page_N.json
-    processed/{search_slug}/{product}/
-    debug/
-    reports/
-    logs/
-    state/search_state.json
-  validation/{run_id}/        # isolated output from --validation-run-id runs
+config/                tracked templates and account/search definitions
+data/                  ignored runtime output
+docs/                  detailed engineering notes
+LEGACY/                read-only archived versions
+src/tweeter_data_fetcher/
+  pipelines/           historical, live, and search orchestration
+  twitter/             HTTP, request state, contracts, browser/auth, pagination
+  tweets/              parsing, seven-set operations, rolling windows
+  storage/             filesystem, state, exports, StorageManager facade
+  observability/       terminal console, file logs, NDJSON events, reports
+tests/                 unit, integration, contract, and fixtures
+tools/diagnostics/     evidence-gathering scripts
 ```
 
-Historical and live intentionally share `data/historical_live/`; search is isolated and must never create profile set folders.
+Core entry-point classes: `FetcherEngine`, `APIManager`, `StorageManager`, `TweetSetProcessor`, `RollingWindowEvaluator`, `LiveMonitor`, and `SearchTimelineMonitor`.
 
-## Rolling Window Model
+## Configuration
 
-Each successful account+endpoint fetch stores `fetch_watermark` in `sync_state.json`. The next cutoff is:
+Resolution order:
 
-```text
-min(now - configured_window, floor(fetch_watermark))
-```
+1. Explicit CLI/config path
+2. `TDF_CONFIG`
+3. Root `config/`
 
-Historical floors the watermark to day start. Live floors it to hour start. The overlap is intentional and is absorbed by tweet ID deduplication.
+Tracked canonical files:
 
-Default priority windows:
+- `config/config.example.json`
+- `config/accounts.json`
+- `config/searches.json`
 
-| Priority | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| live hours | 24 | 20 | 16 | 12 | 9 | 6 | 3 |
-| historical days | 7 | 6 | 5 | 4 | 3 | 2 | 2 |
+Never commit `config/config.json`.
 
-## Processed Sets
+## Runtime Contracts
 
-Let `A = UserTweets` and `B = UserTweetsAndReplies`.
+Historical and live share `data/historical_live/` and use global two-pass order:
 
-| Folder | Meaning |
+1. Resolve user IDs for active/due accounts.
+2. Fetch `UserTweets` for all accounts.
+3. Fetch `UserTweetsAndReplies` for all accounts.
+4. Build seven processed sets per account.
+
+Let `A = UserTweets` and `B = UserTweetsAndReplies`:
+
+| Folder | Set |
 |---|---|
 | `1_user_tweets` | `A` |
 | `2_user_tweets_and_replies` | `B` |
@@ -144,59 +94,52 @@ Let `A = UserTweets` and `B = UserTweetsAndReplies`.
 | `6_b_minus_a` | `B - A` |
 | `7_symmetric_difference` | `A △ B` |
 
-The dedup key is `author_id:tweet_id` when author ID exists, otherwise tweet ID.
+The rolling cutoff remains:
 
-## Observability
-
-All pipelines share `src/shared/observability/`:
-
-- `PipelineConsole`: Rich-first terminal output tagged by subsystem (`HIST`, `LIVE`, `SEARCH`, `ENGINE`, `AUTH`), with a plain-text fallback and `quiet`/`normal`/`verbose` verbosity.
-- `EventRecorder`: appends structured events to `data/<subsystem>/logs/events.jsonl` and writes per-error detail files under `logs/errors/`. HTTP 4xx/404 are also aggregated into `404_events.jsonl` and `404_summary.json`.
-- `RunReportBuilder` / `endpoint_report_from_result`: one canonical per-run/per-endpoint report schema written into each subsystem's `reports/`.
-- `CoverageInventory`: scans the raw datastore and cross-references `sync_state.json` watermarks; surfaced via the `src/tools/coverage_status.py` CLI.
-
-## Auth, Query IDs, Transaction IDs
-
-`APIManager` reads local `src/shared/config/config.json`.
-
-- `api_cookies.ct0` must match the `x-csrf-token` header.
-- `api_auth.bearer_token` is the public web bearer token.
-- `query_ids_by_endpoint` provides endpoint query-id pools.
-- `real_transaction_ids_by_endpoint` provides endpoint tx-id pools captured from browser requests.
-- `tx_id_state.json` and `query_id_state.json` rule out params only after 3 consecutive failures.
-
-On startup `FetcherEngine` runs `tests/diagnostics/verify_contract.py` to detect request-contract drift against the frozen sniffer capture; on drift it attempts a headless `auto_refresh` before fetching.
-
-Manual refresh:
-
-```bash
-python src/shared/auth/auto_refresh.py --interactive
+```text
+effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 ```
 
-GraphQL capture/probe tools are diagnostic. They can contain live credential material in output, so capture output stays ignored.
+Query IDs and transaction IDs remain endpoint-specific pools with three-strike rule-out. Rate-limit sleeps remain reset epoch plus safety buffer, bounded by configured maximum (production default 3600 seconds).
 
-## Graphify
+Search remains isolated under `data/search/` and never creates historical/live set folders.
 
-A graphify graph lives in `graphify-out/` and is ignored because it is generated. Use it for architecture questions:
+## Logging And Diagnosis
+
+Every pipeline uses the same observability path:
+
+- Terminal: tagged Rich output such as `[HIST]`, `[LIVE]`, and `[SEARCH]`.
+- File log: rotating `data/<subsystem>/logs/<subsystem>.log` records every console and package logger message with timestamp, level, logger name, and `run_id`.
+- Event stream: `data/<subsystem>/logs/events.jsonl` stores structured lifecycle, phase, page, and HTTP-error events.
+- HTTP details: `data/<subsystem>/logs/errors/*.json` stores request/response diagnostics; `http_summary.json` aggregates failures by account, endpoint, and status code.
+- Reports/state: pipeline reports and watermarks remain under each subsystem's `reports/` and `state/` folders.
+
+Useful diagnosis commands:
 
 ```bash
-graphify query "How does FetcherEngine write watermarks?"
-graphify path "APIManager" "StorageManager"
-graphify update .
+tail -f data/historical_live/logs/historical_live.log
+grep '"run_id": "run_..."' data/historical_live/logs/events.jsonl
+cat data/historical_live/logs/http_summary.json
 ```
+
+Secrets may appear in HTTP detail files. Runtime logs remain ignored by Git.
+
+## Diagnostics
+
+```bash
+python tools/diagnostics/verify_contract.py
+python tools/diagnostics/probe_txid.py
+python tools/diagnostics/probe_sequence.py
+python tools/diagnostics/traffic_sniffer.py
+```
+
+`FetcherEngine` calls the contract verifier as a library function; it no longer launches a diagnostic subprocess. Verification is skipped when no frozen baseline is present.
 
 ## Verification
 
-Current green check:
-
 ```bash
 .venv/bin/python -m pytest -q
-# 94 passed
+python -m compileall -q src tests tools
 ```
 
-Useful targeted checks:
-
-```bash
-.venv/bin/python -m pytest tests/unit/test_unified_historical_live_plan.py -q
-python -m compileall -q src tests
-```
+Current baseline: **108 passed** on July 14, 2026.

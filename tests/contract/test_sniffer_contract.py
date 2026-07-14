@@ -16,8 +16,8 @@ except ImportError:
     pytz_stub.UTC = None
     sys.modules["pytz"] = pytz_stub
 
-from tests.diagnostics import traffic_sniffer as sniff_graphql
-from src.shared.core.pagination_engine import FetcherEngine
+from tools.diagnostics import traffic_sniffer as sniff_graphql
+from tweeter_data_fetcher.twitter.timeline import FetcherEngine
 
 
 class UserByScreenNameContractTests(unittest.TestCase):

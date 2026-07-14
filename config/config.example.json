@@ -1,0 +1,87 @@
+{
+  "api_cookies": {
+    "auth_token": "REPLACE_ME",
+    "ct0": "REPLACE_ME",
+    "guest_id": "REPLACE_ME",
+    "kdt": "REPLACE_ME",
+    "twid": "REPLACE_ME"
+  },
+  "api_auth": {
+    "bearer_token": "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+  },
+  "api_headers": {
+    "x-client-transaction-id": ""
+  },
+  "api_config": {
+    "user_by_screen_name_query_id": "2qvSHpkWTMS9i0zJAwDNiA",
+    "user_tweets_query_id": "hr4gzZONlq23okjU8fIe_A",
+    "user_tweets_and_replies_query_id": "FIFgycIi-CNJcV0R-135Uw",
+    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
+    "tweet_detail_query_id": "",
+    "cursor_error_max_retries": 3,
+    "default_timeout_seconds": 20,
+    "search_warmup_seconds": 1,
+    "first_request_warmup_seconds": 2,
+    "pagination_safety_cap_pages": 50
+  },
+  "query_ids_by_endpoint": {
+    "UserByScreenName": ["2qvSHpkWTMS9i0zJAwDNiA"],
+    "UserTweets": ["hr4gzZONlq23okjU8fIe_A"],
+    "UserTweetsAndReplies": ["FIFgycIi-CNJcV0R-135Uw"],
+    "SearchTimeline": ["Bcw3RzK-PatNAmbnw54hFw"],
+    "TweetDetail": []
+  },
+  "real_transaction_ids_by_endpoint": {
+    "UserByScreenName": [],
+    "UserTweets": [],
+    "UserTweetsAndReplies": [],
+    "SearchTimeline": []
+  },
+  "rate_limits": {
+    "UserByScreenName": {"limit": 150, "window_seconds": 900},
+    "UserTweets": {"limit": 50, "window_seconds": 900},
+    "UserTweetsAndReplies": {"limit": 500, "window_seconds": 900},
+    "TweetDetail": {"limit": 150, "window_seconds": 900},
+    "SearchTimeline": {"limit": 50, "window_seconds": 900}
+  },
+  "anti_bot_simulation": {
+    "enabled": true,
+    "browse_warmup_enabled": true,
+    "warmup_pages": 2,
+    "error_retry_policy": {
+      "client_error_attempts": 3,
+      "client_error_min_seconds": 1,
+      "client_error_max_seconds": 2,
+      "server_error_attempts": 3,
+      "server_error_base_seconds": 1,
+      "server_error_max_seconds": 4,
+      "request_error_attempts": 3,
+      "request_error_base_seconds": 1,
+      "request_error_max_seconds": 3,
+      "rate_limit_safety_buffer_seconds": 1,
+      "max_rate_limit_sleep_seconds": 3600
+    },
+    "delays_seconds": {
+      "before_request_min": 0.05,
+      "before_request_max": 0.2,
+      "between_requests_min": 0.1,
+      "between_requests_max": 0.4,
+      "between_pages_min": 0.2,
+      "between_pages_max": 0.6,
+      "between_accounts_min": 0.3,
+      "between_accounts_max": 0.8,
+      "between_cycles_min": 0,
+      "between_cycles_max": 15
+    }
+  },
+  "viral_detection": {
+    "window_days": 7,
+    "threshold_percentile": 95,
+    "history_score_weight": 0.3,
+    "delta_score_weight": 0.7,
+    "composite_score_cutoff": 1.0,
+    "delta_percentile_cutoff": 0.8,
+    "snapshot_min_metric_delta": 25,
+    "snapshot_min_minutes": 10
+  }
+}

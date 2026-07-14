@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.pipelines.search.search_timeline import SearchTimelineMonitor
+from tweeter_data_fetcher.pipelines.search.service import SearchTimelineMonitor
 
 
 class SearchPipelineTests(unittest.TestCase):
@@ -37,8 +37,8 @@ class SearchPipelineTests(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('src.pipelines.search.search_timeline.FetcherEngine')
-    @patch('src.pipelines.search.search_timeline.StorageManager')
+    @patch('tweeter_data_fetcher.pipelines.search.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.search.service.StorageManager')
     def test_search_monitor_initialization(self, mock_storage, mock_engine):
         """Test SearchTimelineMonitor initialization."""
         mock_engine_instance = MagicMock()
@@ -58,14 +58,14 @@ class SearchPipelineTests(unittest.TestCase):
 
     def test_valid_products_constant(self):
         """Test that VALID_PRODUCTS constant is defined."""
-        from src.pipelines.search.search_timeline import VALID_PRODUCTS
+        from tweeter_data_fetcher.pipelines.search.service import VALID_PRODUCTS
         self.assertIn("Top", VALID_PRODUCTS)
         self.assertIn("Latest", VALID_PRODUCTS)
         self.assertIn("Media", VALID_PRODUCTS)
         self.assertIn("People", VALID_PRODUCTS)
 
-    @patch('src.pipelines.search.search_timeline.FetcherEngine')
-    @patch('src.pipelines.search.search_timeline.StorageManager')
+    @patch('tweeter_data_fetcher.pipelines.search.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.search.service.StorageManager')
     def test_monitor_search_structure(self, mock_storage, mock_engine):
         """Test monitor_search method structure."""
         mock_engine_instance = MagicMock()
@@ -83,8 +83,8 @@ class SearchPipelineTests(unittest.TestCase):
         self.assertTrue(hasattr(monitor, 'monitor_search'))
         self.assertTrue(callable(monitor.monitor_search))
 
-    @patch('src.pipelines.search.search_timeline.FetcherEngine')
-    @patch('src.pipelines.search.search_timeline.StorageManager')
+    @patch('tweeter_data_fetcher.pipelines.search.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.search.service.StorageManager')
     def test_search_query_building(self, mock_storage, mock_engine):
         """Test search query building."""
         mock_engine_instance = MagicMock()
@@ -104,7 +104,7 @@ class SearchPipelineTests(unittest.TestCase):
 
     def test_frozen_search_features(self):
         """Test FROZEN_SEARCH_FEATURES is defined."""
-        from src.pipelines.search.search_timeline import FROZEN_SEARCH_FEATURES
+        from tweeter_data_fetcher.pipelines.search.service import FROZEN_SEARCH_FEATURES
         self.assertIsInstance(FROZEN_SEARCH_FEATURES, dict)
 
 

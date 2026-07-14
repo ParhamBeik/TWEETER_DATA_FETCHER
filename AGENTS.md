@@ -1,232 +1,123 @@
 # TWEETER DATA FETCHER — Agent Guide
 
-This is the canonical handoff file for coding agents. Read this before touching the repo.
+Latest update: July 14, 2026.
 
-## Current Project State
+## Active Architecture
 
-Latest update: July 2026.
+The canonical codebase is the standard setuptools `src/` package under `src/tweeter_data_fetcher/`. `LEGACY/` is read-only archive material.
 
-The active codebase is the root-level `src/` project. Older source trees live under `LEGACY/` as archive material. Runtime data, graph output, local credentials, probe output, and sniffer captures are ignored.
-
-Core outcome of the latest work:
-
-- Historical and live pipelines are unified around `FetcherEngine`, `StorageManager`, and `RollingWindowEvaluator`.
-- Historical and live use global two-pass endpoint order: all due `UserTweets`, then all due `UserTweetsAndReplies`.
-- Rolling windows are timestamp-granular and watermark-backed.
-- Profile processed output has 7 sets.
-- Query IDs and transaction IDs are endpoint-specific pools with 3-strike failure state.
-- Rate-limit sleeps follow `x-rate-limit-reset` plus safety buffer, capped at 3600 seconds.
-- All pipelines share one observability subsystem (`src/shared/observability/`): Rich console, structured NDJSON event log, canonical run reports, and a raw-data coverage inventory.
-- `FetcherEngine` self-verifies the GraphQL request contract at startup and auto-refreshes on drift.
-- Every pipeline accepts `--validation-run-id <id>` to isolate output under `data/validation/<id>/` and bypass stale skip/poll state.
-
-## Quick Navigation
-
-| Component | Main Files |
+| Responsibility | Canonical files |
 |---|---|
-| Historical pipeline | `src/pipelines/historical/fetch_historical.py` |
-| Live pipeline | `src/pipelines/live/monitor_live.py`, `src/pipelines/live/utils.py` |
-| Search pipeline | `src/pipelines/search/search_timeline.py` |
-| HTTP/auth/rate limits | `src/shared/core/twitter_http_client.py` |
-| Pagination/window stop | `src/shared/core/pagination_engine.py` |
-| Tweet parsing/set math/contracts | `src/shared/core/tweet_processing_utils.py` |
-| Storage/state/reports | `src/shared/data_pipeline/storage_manager.py` |
-| Observability (console/events/reports/coverage) | `src/shared/observability/` |
-| Coverage report CLI | `src/tools/coverage_status.py` |
-| Browser/bootstrap/refresh | `src/shared/auth/browser_context.py`, `src/shared/auth/auto_refresh.py` |
-| Account/search config | `src/shared/config/account_tiers.py`, `src/shared/config/search_config.json` |
-| Safe config template | `src/shared/config/config.example.json` |
+| Historical pipeline | `src/tweeter_data_fetcher/pipelines/historical/service.py` |
+| Live pipeline | `src/tweeter_data_fetcher/pipelines/live/service.py`, `state.py`, `viral.py` |
+| Search pipeline | `src/tweeter_data_fetcher/pipelines/search/service.py`, `query.py` |
+| Runnable entrypoints | Pipeline service modules, `twitter/auth.py`, `observability/coverage_inventory.py` |
+| HTTP transport | `src/tweeter_data_fetcher/twitter/client.py` |
+| Request persistence | `src/tweeter_data_fetcher/twitter/request_state.py` |
+| GraphQL contracts | `src/tweeter_data_fetcher/twitter/contracts.py` |
+| Pagination | `src/tweeter_data_fetcher/twitter/timeline.py` |
+| Auth/browser | `src/tweeter_data_fetcher/twitter/auth.py`, `browser.py` |
+| Tweet processing | `src/tweeter_data_fetcher/tweets/` |
+| Storage | `src/tweeter_data_fetcher/storage/` |
+| Observability | `src/tweeter_data_fetcher/observability/` |
+| Configuration | `src/tweeter_data_fetcher/configuration.py`, root `config/` |
+| Diagnostics | `tools/diagnostics/` |
 | Tests | `tests/unit/`, `tests/integration/`, `tests/contract/` |
 
 ## Non-Negotiables
 
-- Do not commit `src/shared/config/config.json`; it contains live cookies/tokens.
-- Do not commit `data/`, `tests/diagnostics/probe_runs/`, `tests/diagnostics/sniffer_runs/`, `tests/diagnostics/graphql_logs/`, or `graphify-out/`.
-- Prefer root-cause fixes in shared code over one-off guards in pipeline runners.
-- Keep Twitter/X request-shape changes evidence-backed by sniffer/probe output.
-- Do not add generalized request abstractions unless multiple current callers require them.
+- Never commit `config/config.json`, `data/`, diagnostic run output, or `graphify-out/`.
+- Prefer root-cause fixes in canonical code.
+- Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` paths.
+- Keep Twitter/X request changes evidence-backed by diagnostic captures.
+- Do not add database layers, abstract repositories, ports, factories, or new dependencies without a current second implementation.
 - After meaningful code changes run `.venv/bin/python -m pytest -q`.
-- After code changes that alter architecture, refresh graphify with `graphify update .`.
+- After architecture changes run `graphify update .`.
 
-## How To Run
+## Configuration
+
+Resolution order:
+
+1. Explicit path
+2. `TDF_CONFIG`
+3. `config/`
+
+Tracked files:
+
+- `config/config.example.json`
+- `config/accounts.json`
+- `config/searches.json`
+
+Move local secrets by rename; never copy them into tracked files.
+
+## Commands
 
 ```bash
 source .venv/bin/activate
+pip install -e .
 
-python -m src.pipelines.historical.fetch_historical --only elonmusk
-python -m src.pipelines.live.monitor_live --account elonmusk --once
-python -m src.pipelines.search.search_timeline --once
-
-.venv/bin/python -m pytest -q
+tdf-historical --only elonmusk
+tdf-live --account elonmusk --once
+tdf-search --once
+tdf-coverage --format table
+tdf-auth --interactive
 ```
 
-First-time local auth:
+## Runtime Contracts
 
-```bash
-cp src/shared/config/config.example.json src/shared/config/config.json
-python src/shared/auth/auto_refresh.py --interactive
-```
+Historical and live share `data/historical_live/` and use global two-pass order:
 
-## Architecture
+1. Resolve user IDs.
+2. Fetch `UserTweets` for every active/due account.
+3. Fetch `UserTweetsAndReplies` for every active/due account.
+4. Build processed sets.
 
-```mermaid
-flowchart TD
-  HT["Historical runner"] --> FE["FetcherEngine"]
-  LIVE["Live runner"] --> FE
-  SEARCH["Search runner"] --> API["APIManager"]
-  FE --> API
-  FE --> SM["StorageManager"]
-  FE --> RW["RollingWindowEvaluator"]
-  RW --> TPU["TweetSetProcessor / contracts"]
-  FE --> OBS["observability: console / events / run report"]
-  SM --> DATA["data/"]
-  API --> CFG["local config.json"]
-  API --> AUTH["browser_context / auto_refresh"]
-```
-
-Historical and live share:
-
-- `data/historical_live/raw/UserTweets/`
-- `data/historical_live/raw/UserTweetsAndReplies/`
-- `data/historical_live/processed/`
-- `data/historical_live/state/sync_state.json`
-
-Live additionally owns:
-
-- `data/historical_live/state/live_state.json`
-- `data/historical_live/state/seen_tweets.json`
-- `data/historical_live/state/snapshot_index.json`
-- `data/historical_live/viral/`
-
-Search is isolated under `data/search/` and must not create historical/live set folders.
-
-## Rolling Window Contract
-
-The shared cutoff rule is:
+The rolling cutoff is:
 
 ```text
 effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 ```
 
-- Historical uses `historical_window_days` and floors watermark to day start.
-- Live uses `live_window_hours` and floors watermark to hour start.
-- `fetch_watermark` advances only after successful endpoint completion.
-- Partial/failed runs do not advance the watermark.
-- Overlap is expected; dedup absorbs it.
+- Historical floors watermark to day start.
+- Live floors watermark to hour start.
+- Watermarks advance only after successful endpoint completion.
+- Partial/failed runs do not advance watermarks.
+- Overlap is expected and deduplicated.
 
-Default windows by priority:
+Processed folders remain:
 
-| Priority | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| live hours | 24 | 20 | 16 | 12 | 9 | 6 | 3 |
-| historical days | 7 | 6 | 5 | 4 | 3 | 2 | 2 |
+1. `1_user_tweets`
+2. `2_user_tweets_and_replies`
+3. `3_intersection`
+4. `4_union`
+5. `5_a_minus_b`
+6. `6_b_minus_a`
+7. `7_symmetric_difference`
 
-## Endpoint Order
+`StorageManager.merge_processed_items()` deduplicates by `author_id:tweet_id`, falling back to tweet ID. Legacy `5_replies_only` maps to `6_b_minus_a`.
 
-Historical and live use global two-pass order:
+## HTTP And GraphQL
 
-1. Resolve user IDs for active/due accounts.
-2. Fetch `UserTweets` for every account in tier order.
-3. Fetch `UserTweetsAndReplies` for every account in tier order.
-4. Build processed sets per account.
+- `APIManager` owns transport/auth/session behavior.
+- `RequestStateStore` owns JSON persistence for tx/query health, rate limits, and endpoint health.
+- Tx/query candidates are suspect on failures one and two, stale on failure three, and healthy/reset on HTTP 200.
+- Timeline endpoints use GET with compact JSON `variables`, `features`, and optional `fieldToggles`.
+- Search omits `fieldToggles`; profile timelines use `{"withArticlePlainText":false}`.
+- Extract only bottom cursors; never reuse them across endpoint/account/query/product/session.
+- Validate status, JSON, GraphQL errors, endpoint data path, instruction types, and fresh cursor independently.
+- HTTP 429 sleeps to reset plus safety buffer, bounded by the configured maximum.
 
-This keeps endpoint rate-limit windows independent and makes pipeline behavior consistent.
-
-## Processed Output Sets
-
-Let `A = UserTweets` and `B = UserTweetsAndReplies`.
-
-| Folder | Set |
-|---|---|
-| `1_user_tweets` | `A` |
-| `2_user_tweets_and_replies` | `B` |
-| `3_intersection` | `A ∩ B` |
-| `4_union` | `A ∪ B` |
-| `5_a_minus_b` | `A - B` |
-| `6_b_minus_a` | `B - A` |
-| `7_symmetric_difference` | `A △ B` |
-
-`StorageManager.merge_processed_items()` dedups by `author_id:tweet_id` when possible, otherwise tweet ID.
-
-Legacy `5_replies_only` is treated as `6_b_minus_a` for backward compatibility.
-
-## Auth And Request Parameters
-
-`APIManager` owns auth/session/rate-limit state.
-
-Local config:
-
-- `api_cookies`: `auth_token`, `ct0`, `guest_id`, `kdt`, `twid`, etc.
-- `api_auth.bearer_token`: public web bearer token.
-- `api_config`: current scalar query IDs.
-- `query_ids_by_endpoint`: query-id pools.
-- `real_transaction_ids_by_endpoint`: tx-id pools.
-- `anti_bot_simulation.error_retry_policy.max_rate_limit_sleep_seconds`: default `3600`.
-
-State files:
-
-- `tx_id_state.json`: tx-id health and failure count.
-- `query_id_state.json`: query-id health and failure count.
-- `rate_limits.json`: endpoint rate-limit reset/remaining state.
-- `endpoint_health.json`: endpoint-level health classification.
-
-Rule-out policy:
-
-- A tx-id or query-id is marked suspect for the first two 404 failures.
-- It is ruled out on the third consecutive failure.
-- A 200 marks the value healthy and resets its failure count.
-- Auto-refresh triggers after 3 endpoint-level consecutive 404s when tx-id or query-id candidates are exhausted.
-
-## GraphQL Request Contract
-
-Runtime endpoints:
-
-| Endpoint | Runtime referer | Core variables |
-|---|---|---|
-| `UserByScreenName` | `https://x.com/{username}` | `screen_name`, `withGrokTranslatedBio` |
-| `UserTweets` | `https://x.com/{username}` | `userId`, `count: 20`, optional `cursor`, promoted content, quick-promote fields, voice |
-| `UserTweetsAndReplies` | `https://x.com/{username}/with_replies` | `userId`, `count: 20`, optional `cursor`, promoted content, community, voice |
-| `SearchTimeline` | `https://x.com/search?...&src=typed_query` | `rawQuery`, `count: 20`, optional `cursor`, `querySource`, `product` |
-
-Timeline rules:
-
-- Use GET to `https://x.com/i/api/graphql/{query_id}/{endpoint}`.
-- Use compact JSON query params for `variables`, `features`, and optional `fieldToggles`.
-- `UserTweets` and `UserTweetsAndReplies` include `fieldToggles={"withArticlePlainText":false}`.
-- `SearchTimeline` omits `fieldToggles`.
-- Extract only bottom cursors from timeline instructions.
-- Never reuse cursors across endpoint, account, query, product, or session.
-- Validate HTTP status, JSON parse, GraphQL `errors`, endpoint data path, supported instruction types, and fresh bottom cursor independently.
-
-## HTTP Failure Policy
-
-| Status | Meaning | Action |
-|---|---|---|
-| 200 | Transport success | Validate GraphQL body before parsing. |
-| 400 | Request contract/encoding failure | Do not retry unchanged request; compare query ID, variables, features, field toggles, compact JSON. |
-| 401/403 | Auth/session failure | Refresh cookies/session; do not change pagination fields. |
-| Initial 404 | Query/context/param rejection | Try browser/bootstrap once, then classify failure; param state may trigger auto-refresh. |
-| Cursor 404 | Dead cursor | Preserve completed pages and stop chain as partial. |
-| 429 | Rate limit | Sleep until reset epoch plus buffer, capped at 3600s, retry same cursor/page. |
-| 5xx | Server failure | Exponential backoff per retry policy. |
-
-## Storage Layout
+## Storage
 
 ```text
 data/
   historical_live/
     raw/UserTweets/{account}/{batch}/page_N.json
     raw/UserTweetsAndReplies/{account}/{batch}/page_N.json
-    processed/1_user_tweets/
-    processed/2_user_tweets_and_replies/
-    processed/3_intersection/
-    processed/4_union/
-    processed/5_a_minus_b/
-    processed/6_b_minus_a/
-    processed/7_symmetric_difference/
+    processed/{seven set folders}/
     reports/
     state/
-    logs/                 # events.jsonl, 404_events.jsonl, 404_summary.json, errors/
+    logs/
     viral/
   search/
     raw/{search_slug}/{product}/{batch}/page_N.json
@@ -235,85 +126,36 @@ data/
     reports/
     logs/
     state/search_state.json
-  validation/{run_id}/     # isolated output from --validation-run-id runs
+  validation/{run_id}/
 ```
 
-## Common Tasks
+Search must not create historical/live set folders.
 
-Add or edit accounts:
+## Observability Contract
 
-- Edit `src/shared/config/account_tiers.py`.
-- Keep priority tiers/account lists simple.
-- `DEFAULT_PRIORITY_POLICIES` controls windows and poll intervals.
+- `PipelineConsole` owns tagged terminal output and forwards every message to the package logger.
+- `configure_logging()` writes rotating subsystem logs under `data/<subsystem>/logs/` and stamps records with `run_id`.
+- `EventRecorder` writes structured `events.jsonl`, HTTP detail files under `logs/errors/`, and `http_summary.json`.
+- Historical emits run and phase events; live/search emit cycle events; timeline pagination emits page events; HTTP failures emit detail references.
+- Event/log write failures must be logged, not silently discarded.
+- Do not log cookies, bearer tokens, CSRF tokens, or full authorization headers in ordinary messages. HTTP detail files are local runtime artifacts and must remain ignored.
 
-Add or edit searches:
-
-- Edit `src/shared/config/search_config.json`.
-- `product` must be `Top`, `Latest`, `Media`, or `People`.
-- `preserve_exact_query: true` lets the raw query pass through unchanged.
-
-Refresh auth/session:
+## Diagnostics
 
 ```bash
-python src/shared/auth/auto_refresh.py --interactive
+python tools/diagnostics/verify_contract.py
+python tools/diagnostics/probe_txid.py
+python tools/diagnostics/probe_sequence.py
+python tools/diagnostics/traffic_sniffer.py
 ```
 
-Probe endpoints:
-
-```bash
-python tests/diagnostics/probe_txid.py
-python tests/diagnostics/probe_sequence.py
-python tests/diagnostics/verify_contract.py
-```
-
-Check raw-data coverage:
-
-```bash
-python -m src.tools.coverage_status --format table
-python -m src.tools.coverage_status --account elonmusk --endpoint UserTweets --format json
-```
-
-Isolated validation run (no stale state, output under `data/validation/<id>/`):
-
-```bash
-python -m src.pipelines.historical.fetch_historical --only elonmusk --validation-run-id smoke1
-python -m src.pipelines.live.monitor_live --account elonmusk --once --validation-run-id smoke1
-python -m src.pipelines.search.search_timeline --once --validation-run-id smoke1
-```
-
-Use graphify:
-
-```bash
-graphify query "How do live and historical share StorageManager?"
-graphify path "APIManager" "FetcherEngine"
-graphify update .
-```
+`FetcherEngine` invokes contract verification directly as a library function. No subprocess launch is allowed for startup verification.
 
 ## Tests
 
-Current suite:
-
 ```bash
 .venv/bin/python -m pytest -q
-# 94 passed
+python -m compileall -q src tests tools
 ```
 
-Suite layout:
-
-- `tests/unit/`: pagination, storage, HTTP client, orchestration, runner status, observability, coverage inventory, diagnostics paths, unified plan.
-- `tests/integration/`: historical, live, and search pipeline runs.
-- `tests/contract/`: sniffer and GraphQL contract expectations.
-
-Focused regression file:
-
-```bash
-.venv/bin/python -m pytest tests/unit/test_unified_historical_live_plan.py -q
-```
-
-That file covers:
-
-- timestamp-granular cutoff completion,
-- watermark floor gap prevention,
-- 7 set operations,
-- 3-strike param rule-out,
-- 3600 second rate-limit cap.
+Current suite: **108 passed** on July 14, 2026.
