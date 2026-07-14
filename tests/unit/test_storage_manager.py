@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.shared.data_pipeline.storage_manager import StorageManager
+from tweeter_data_fetcher.storage.facade import StorageManager
 
 
 class StorageManagerTests(unittest.TestCase):

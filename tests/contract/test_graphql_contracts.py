@@ -1,6 +1,6 @@
 import unittest
 
-from src.shared.core.tweet_processing_utils import (
+from tweeter_data_fetcher.tweets._legacy import (
     extract_bottom_cursor,
     search_timeline_variables,
     timeline_variables,

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from unittest.mock import Mock, patch, MagicMock
 
-from src.shared.core.pagination_engine import FetcherEngine
+from tweeter_data_fetcher.twitter.timeline import FetcherEngine
 
 
 class HistoricalOrchestrationTests(unittest.TestCase):

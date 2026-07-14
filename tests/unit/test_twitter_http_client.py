@@ -1,9 +1,9 @@
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from src.shared.core.twitter_http_client import APIManager
+from tweeter_data_fetcher.twitter.client import APIManager
 
 
 class TransactionIdTests(unittest.TestCase):
@@ -35,14 +35,14 @@ class TransactionIdTests(unittest.TestCase):
 
 
 class ConfigPathResolutionTests(unittest.TestCase):
-    def test_resolves_repo_relative_src_config_path(self):
-        expected = Path(__file__).resolve().parents[2] / "src" / "shared" / "config" / "config.example.json"
-        resolved = APIManager._resolve_config_path("src/shared/config/config.example.json")
+    def test_resolves_repo_relative_config_path(self):
+        expected = Path(__file__).resolve().parents[2] / "config" / "config.example.json"
+        resolved = APIManager._resolve_config_path("config/config.example.json")
         self.assertEqual(resolved, expected)
 
-    def test_resolves_repo_relative_shared_config_path(self):
-        expected = Path(__file__).resolve().parents[2] / "src" / "shared" / "config" / "config.example.json"
-        resolved = APIManager._resolve_config_path("shared/config/config.example.json")
+    def test_resolves_default_canonical_config_path(self):
+        expected = Path(__file__).resolve().parents[2] / "config" / "config.json"
+        resolved = APIManager._resolve_config_path(None)
         self.assertEqual(resolved, expected)
 
 
@@ -57,19 +57,27 @@ class AutoRefreshTests(unittest.TestCase):
         manager.endpoint_health = {}
         manager.consecutive_404s = {}
         manager.auto_refresh_attempts = {}
+        manager.recorder = MagicMock()
         manager.refresh_config_and_query_ids = lambda: None
         manager._save_tx_id_state = lambda: None
         manager._save_query_id_state = lambda: None
         manager._mark_tx_id = lambda *args, **kwargs: None
         manager._mark_query_id = lambda *args, **kwargs: None
 
-        with patch("src.shared.auth.auto_refresh.auto_refresh_session", return_value=True) as refresh_mock:
+        with patch("tweeter_data_fetcher.twitter.auth.auto_refresh_session", return_value=True) as refresh_mock:
             first = manager._auto_refresh_params("UserTweets", username="elonmusk")
             second = manager._auto_refresh_params("UserTweets", username="elonmusk")
 
         self.assertTrue(first)
         self.assertFalse(second)
         self.assertEqual(refresh_mock.call_count, 1)
+        manager.recorder.emit_auto_refresh_start.assert_called_once()
+        manager.recorder.emit_auto_refresh_done.assert_called_once_with(
+            endpoint="UserTweets",
+            updated=["UserTweets"],
+            success=True,
+            username="elonmusk",
+        )
 
 
 class QueryIdSelectionTests(unittest.TestCase):

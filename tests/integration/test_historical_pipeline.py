@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.pipelines.historical.fetch_historical import run_v4
+from tweeter_data_fetcher.pipelines.historical.service import run_v4
 
 
 class HistoricalPipelineTests(unittest.TestCase):
@@ -31,8 +31,8 @@ class HistoricalPipelineTests(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('src.pipelines.historical.fetch_historical.FetcherEngine')
-    @patch('src.pipelines.historical.fetch_historical.StorageManager')
+    @patch('tweeter_data_fetcher.pipelines.historical.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.historical.service.StorageManager')
     def test_pipeline_structure(self, mock_storage, mock_engine):
         """Test that historical pipeline has correct structure."""
         # Mock the engine and storage
@@ -46,7 +46,7 @@ class HistoricalPipelineTests(unittest.TestCase):
         # Verify the function exists and can be called
         self.assertTrue(callable(run_v4))
 
-    @patch('src.pipelines.historical.fetch_historical.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.historical.service.FetcherEngine')
     def test_account_processing(self, mock_engine):
         """Test account processing logic."""
         mock_engine_instance = MagicMock()
@@ -59,12 +59,12 @@ class HistoricalPipelineTests(unittest.TestCase):
 
     def test_endpoint_handling(self):
         """Test that all endpoints are handled."""
-        from src.pipelines.historical.fetch_historical import ENDPOINTS
+        from tweeter_data_fetcher.pipelines.historical.service import ENDPOINTS
         self.assertIn("UserTweets", ENDPOINTS)
         self.assertIn("UserTweetsAndReplies", ENDPOINTS)
 
-    @patch('src.pipelines.historical.fetch_historical.FetcherEngine')
-    @patch('src.pipelines.historical.fetch_historical.StorageManager')
+    @patch('tweeter_data_fetcher.pipelines.historical.service.FetcherEngine')
+    @patch('tweeter_data_fetcher.pipelines.historical.service.StorageManager')
     def test_validation_run(self, mock_storage, mock_engine):
         """Test validation run mode."""
         mock_engine_instance = MagicMock()

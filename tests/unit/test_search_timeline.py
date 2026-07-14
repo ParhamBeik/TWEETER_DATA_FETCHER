@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from src.pipelines.search.search_timeline import SearchTimelineMonitor
+from tweeter_data_fetcher.pipelines.search.service import SearchTimelineMonitor
 
 
 class SearchTimelinePathResolutionTests(unittest.TestCase):
@@ -11,14 +11,14 @@ class SearchTimelinePathResolutionTests(unittest.TestCase):
         self.monitor.project_root = Path(__file__).resolve().parents[2]
 
     def test_resolve_relative_search_config_path(self):
-        expected = self.monitor.project_root / "src" / "shared" / "config" / "search_config.json"
-        resolved = self.monitor._resolve_path("src/shared/config/search_config.json")
+        expected = self.monitor.project_root / "config" / "searches.json"
+        resolved = self.monitor._resolve_path("config/searches.json")
         self.assertEqual(resolved, expected)
 
-    def test_resolve_shared_relative_search_config_path(self):
-        expected = self.monitor.project_root / "src" / "shared" / "config" / "search_config.json"
-        resolved = self.monitor._resolve_path("shared/config/search_config.json")
-        self.assertEqual(resolved, expected)
+    def test_resolve_absolute_search_config_path(self):
+        abs_path = self.monitor.project_root / "config" / "searches.json"
+        resolved = self.monitor._resolve_path(str(abs_path))
+        self.assertEqual(resolved, abs_path)
 
     def test_window_crossed_page_does_not_stop_pagination(self):
         window_start = datetime.utcnow() - timedelta(hours=6)

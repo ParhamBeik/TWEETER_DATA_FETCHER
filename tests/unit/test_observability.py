@@ -7,10 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-from src.shared.observability.pipeline_console import PipelineConsole
-from src.shared.observability.event_recorder import EventRecorder, ObservabilityContext
-from src.shared.observability.run_report import RunReportBuilder
-from src.shared.observability.coverage_inventory import CoverageInventory
+from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
+from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext
+from tweeter_data_fetcher.observability.run_report import RunReportBuilder
+from tweeter_data_fetcher.observability.coverage_inventory import CoverageInventory
 
 
 class PipelineConsoleTests(unittest.TestCase):

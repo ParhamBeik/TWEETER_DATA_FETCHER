@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-from src.shared.observability.coverage_inventory import CoverageInventory
-from src.shared.data_pipeline.storage_manager import StorageManager
+from tweeter_data_fetcher.observability.coverage_inventory import CoverageInventory
+from tweeter_data_fetcher.storage.facade import StorageManager
 
 
 class CoverageInventoryTests(unittest.TestCase):
