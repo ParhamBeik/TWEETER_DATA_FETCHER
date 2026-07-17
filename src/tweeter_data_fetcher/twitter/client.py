@@ -514,7 +514,7 @@ class APIManager:
         """Best-effort warmup matching the original /with_replies behavior."""
         if not self.simulation_config.get("enabled", True):
             return
-        if not self.simulation_config.get("browse_warmup_enabled", True):
+        if not self.simulation_config.get("browse_warmup_enabled", False):
             return
 
         ctx = self._coerce_context(endpoint or "UserTweets", context, username)
@@ -539,7 +539,13 @@ class APIManager:
         1) Visit home page
         2) Visit user profile page
         3) Pin session referer to the user profile
+
+        Dormant by default: warm-up GETs add 500-800ms with zero success-rate
+        benefit (see tests/reports/COLD_VS_WARM_FINDINGS.md). Re-enable per
+        deployment via simulation_config.browse_warmup_enabled=true if needed.
         """
+        if not self.simulation_config.get("browse_warmup_enabled", False):
+            return False
         username = (username or "").strip().lstrip("@")
         if not username:
             return False
@@ -562,7 +568,7 @@ class APIManager:
         """Best-effort warmup for non-profile routes (e.g., search pages)."""
         if not self.simulation_config.get("enabled", True):
             return
-        if not self.simulation_config.get("browse_warmup_enabled", True):
+        if not self.simulation_config.get("browse_warmup_enabled", False):
             return
         target = str(url or "").strip()
         if not target:

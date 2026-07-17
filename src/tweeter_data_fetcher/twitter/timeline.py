@@ -155,7 +155,7 @@ class TimelineFetcher:
             self.config.get("api_config", {}).get("cursor_error_max_retries", 3)
         )
         self.first_request_warmup_seconds = int(
-            self.config.get("api_config", {}).get("first_request_warmup_seconds", 2)
+            self.config.get("api_config", {}).get("first_request_warmup_seconds", 0)
         )
         self.pagination_safety_cap_pages = int(
             self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50)
