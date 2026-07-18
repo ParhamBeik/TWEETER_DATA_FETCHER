@@ -31,18 +31,18 @@ tdf-historical = "tweeter_data_fetcher.pipelines.historical.service:main"
 tdf-live = "tweeter_data_fetcher.pipelines.live.service:main"
 tdf-search = "tweeter_data_fetcher.pipelines.search.service:main"
 tdf-coverage = "tweeter_data_fetcher.observability.coverage_inventory:main"
-tdf-auth = "tweeter_data_fetcher.twitter.auth:main"
+tdf-auth = "tweeter_data_fetcher.x_api.auth:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "twitter_fetcher/src"}
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["twitter_fetcher/src"]
 include = ["tweeter_data_fetcher*"]
 
 [tool.pytest.ini_options]
-pythonpath = [".", "src"]
-testpaths = ["tests"]
+pythonpath = [".", "twitter_fetcher/src", "twitter_fetcher"]
+testpaths = ["twitter_fetcher/tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = ["-v"]

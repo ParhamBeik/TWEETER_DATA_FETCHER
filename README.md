@@ -9,10 +9,10 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Local authentication is ignored by Git. The canonical path is `config/config.json`.
+Local authentication is ignored by Git. The canonical path is `twitter_fetcher/config/config.json`.
 
 ```bash
-cp config/config.example.json config/config.json
+cp twitter_fetcher/config/config.example.json twitter_fetcher/config/config.json
 tdf-auth --interactive
 ```
 
@@ -33,7 +33,7 @@ python -m tweeter_data_fetcher.pipelines.historical.service --help
 python -m tweeter_data_fetcher.pipelines.live.service --help
 python -m tweeter_data_fetcher.pipelines.search.service --help
 python -m tweeter_data_fetcher.observability.coverage_inventory --help
-python -m tweeter_data_fetcher.twitter.auth --help
+python -m tweeter_data_fetcher.x_api.auth --help
 ```
 
 All pipelines accept `--validation-run-id <id>` and isolate output under `data/validation/<id>/`.
@@ -41,18 +41,18 @@ All pipelines accept `--validation-run-id <id>` and isolate output under `data/v
 ## Architecture
 
 ```text
-config/                tracked templates and account/search definitions
-data/                  ignored runtime output
-docs/                  detailed engineering notes
-LEGACY/                read-only archived versions
-src/tweeter_data_fetcher/
-  pipelines/           historical, live, and search orchestration
-  twitter/             HTTP, request state, contracts, browser/auth, pagination
-  tweets/              parsing, seven-set operations, rolling windows
-  storage/             filesystem, state, exports, StorageManager facade
-  observability/       terminal console, file logs, NDJSON events, reports
-tests/                 unit, integration, contract, and fixtures
-tools/diagnostics/     evidence-gathering scripts
+twitter_fetcher/             current-version parent folder
+  config/            tracked templates and account/search definitions
+  data/              ignored runtime output (historical_live/, search/)
+  src/tweeter_data_fetcher/
+    pipelines/       historical, live, and search orchestration
+    x_api/           HTTP, request state, contracts, browser/auth, pagination
+    processing/      parsing, seven-set operations, rolling windows
+    storage/         filesystem, state, exports, StorageManager facade
+    observability/   terminal console, file logs, NDJSON events, reports
+  tests/             unit, integration, contract, and fixtures
+  diagnostics/       evidence-gathering scripts and reports
+LEGACY/              read-only archived versions
 ```
 
 Core entry-point classes: `FetcherEngine`, `APIManager`, `StorageManager`, `TweetSetProcessor`, `RollingWindowEvaluator`, `LiveMonitor`, and `SearchTimelineMonitor`.
@@ -63,15 +63,15 @@ Resolution order:
 
 1. Explicit CLI/config path
 2. `TDF_CONFIG`
-3. Root `config/`
+3. Root `twitter_fetcher/config/`
 
 Tracked canonical files:
 
-- `config/config.example.json`
-- `config/accounts.json`
-- `config/searches.json`
+- `twitter_fetcher/config/config.example.json`
+- `twitter_fetcher/config/accounts.json`
+- `twitter_fetcher/config/searches.json`
 
-Never commit `config/config.json`.
+Never commit `twitter_fetcher/config/config.json`.
 
 ## Runtime Contracts
 
@@ -117,9 +117,9 @@ Every pipeline uses the same observability path:
 Useful diagnosis commands:
 
 ```bash
-tail -f data/historical_live/logs/historical_live.log
-grep '"run_id": "run_..."' data/historical_live/logs/events.jsonl
-cat data/historical_live/logs/http_summary.json
+tail -f twitter_fetcher/data/historical_live/logs/historical_live.log
+grep '"run_id": "run_..."' twitter_fetcher/data/historical_live/logs/events.jsonl
+cat twitter_fetcher/data/historical_live/logs/http_summary.json
 ```
 
 Secrets may appear in HTTP detail files. Runtime logs remain ignored by Git.
@@ -127,10 +127,10 @@ Secrets may appear in HTTP detail files. Runtime logs remain ignored by Git.
 ## Diagnostics
 
 ```bash
-python tools/diagnostics/verify_contract.py
-python tools/diagnostics/probe_txid.py
-python tools/diagnostics/probe_sequence.py
-python tools/diagnostics/traffic_sniffer.py
+python twitter_fetcher/diagnostics/verify_contract.py
+python twitter_fetcher/diagnostics/probe_txid.py
+python twitter_fetcher/diagnostics/probe_sequence.py
+python twitter_fetcher/diagnostics/traffic_sniffer.py
 ```
 
 `FetcherEngine` calls the contract verifier as a library function; it no longer launches a diagnostic subprocess. Verification is skipped when no frozen baseline is present.
@@ -139,7 +139,7 @@ python tools/diagnostics/traffic_sniffer.py
 
 ```bash
 .venv/bin/python -m pytest -q
-python -m compileall -q src tests tools
+python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
 ```
 
 Current baseline: **108 passed** on July 14, 2026.
