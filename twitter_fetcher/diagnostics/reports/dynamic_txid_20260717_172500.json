@@ -1,0 +1,119 @@
+{
+  "run_started": "2026-07-17T17:24:57.594885",
+  "run_finished": "2026-07-17T17:25:00.024611",
+  "config_path": "/Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/config/config.json",
+  "tx_seed": {
+    "home_status": 200,
+    "home_bytes": 271125,
+    "ondemand_url": "https://abs.twimg.com/responsive-web/client-web/ondemand.s.e5f5cf6a.js",
+    "ondemand_status": 200,
+    "seed_ms": 1611.0
+  },
+  "params": {
+    "accounts": [
+      "elonmusk",
+      "Reuters",
+      "realDonaldTrump",
+      "TankerTrackers",
+      "KobeissiLetter",
+      "EIAgov"
+    ],
+    "pages": 6,
+    "endpoints": [
+      "SearchTimeline"
+    ],
+    "queries": [
+      "OpenAI"
+    ],
+    "inter_page": 0.6,
+    "config": null
+  },
+  "resolved_user_ids": {
+    "elonmusk": "44196397",
+    "Reuters": "1652541",
+    "realDonaldTrump": "25073877",
+    "TankerTrackers": "784455407486009344",
+    "KobeissiLetter": "3316376038",
+    "EIAgov": "57111966"
+  },
+  "query_ids": {
+    "UserTweets": "6r5OLCC_wFH4CpRyXKuAmQ",
+    "UserTweetsAndReplies": "klja8a2iJX_3to5RdfVlgw",
+    "SearchTimeline": "hz_94eVAtrtQo_vO3my7Rw"
+  },
+  "summary": {
+    "A/SearchTimeline": {
+      "requests": 2,
+      "success": 1,
+      "success_pct": 50.0,
+      "404s": 1,
+      "429s": 0,
+      "page1_200": 1,
+      "page2plus_total": 1,
+      "page2plus_success": 0,
+      "max_page_reached": 2,
+      "avg_ms": 796.6,
+      "median_ms": 796.6
+    },
+    "B/SearchTimeline": {
+      "requests": 1,
+      "success": 0,
+      "success_pct": 0.0,
+      "404s": 1,
+      "429s": 0,
+      "page1_200": 0,
+      "page2plus_total": 0,
+      "page2plus_success": 0,
+      "max_page_reached": 1,
+      "avg_ms": 221.6,
+      "median_ms": 221.6
+    }
+  },
+  "results": [
+    {
+      "status_code": 200,
+      "response_time_ms": 1358.1,
+      "http_version": "HTTP/2",
+      "parsed_ok": true,
+      "next_cursor": "DAADDAABCgABHNbzp0fbQEcKAAIc1vMI2dtAlAAIAAIAAAACCAADAAAAAAgABAAAAAAKAAUc1vO4WkAnEAoABhzW87haP9jwAAA",
+      "rate_remaining": "49",
+      "txid_len": 0,
+      "txid_source": "static_pool",
+      "error": null,
+      "variant": "A",
+      "endpoint": "SearchTimeline",
+      "target": "OpenAI",
+      "page": 1
+    },
+    {
+      "status_code": 404,
+      "response_time_ms": 235.1,
+      "http_version": "HTTP/2",
+      "parsed_ok": false,
+      "next_cursor": null,
+      "rate_remaining": "48",
+      "txid_len": 0,
+      "txid_source": "static_pool",
+      "error": null,
+      "variant": "A",
+      "endpoint": "SearchTimeline",
+      "target": "OpenAI",
+      "page": 2
+    },
+    {
+      "status_code": 404,
+      "response_time_ms": 221.6,
+      "http_version": "HTTP/2",
+      "parsed_ok": false,
+      "next_cursor": null,
+      "rate_remaining": "47",
+      "txid_len": 94,
+      "txid_source": "dynamic",
+      "error": null,
+      "variant": "B",
+      "endpoint": "SearchTimeline",
+      "target": "OpenAI",
+      "page": 1
+    }
+  ]
+}

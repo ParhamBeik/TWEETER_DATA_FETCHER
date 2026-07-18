@@ -4,29 +4,29 @@ Latest update: July 14, 2026.
 
 ## Active Architecture
 
-The canonical codebase is the standard setuptools `src/` package under `src/tweeter_data_fetcher/`. `LEGACY/` is read-only archive material.
+The canonical codebase is the standard setuptools `src/` package under `twitter_fetcher/src/tweeter_data_fetcher/`. `LEGACY/` is read-only archive material. The `twitter_fetcher/` parent holds all current-version code, tests, diagnostics, config, and runtime data; the repo root holds only that parent plus `LEGACY/`, `.venv/`, `graphify-out/`, and project-metadata files (`README.md`, `AGENTS.md`, `pyproject.toml`, `.gitignore`).
 
 | Responsibility | Canonical files |
 |---|---|
-| Historical pipeline | `src/tweeter_data_fetcher/pipelines/historical/service.py` |
-| Live pipeline | `src/tweeter_data_fetcher/pipelines/live/service.py`, `state.py`, `viral.py` |
-| Search pipeline | `src/tweeter_data_fetcher/pipelines/search/service.py`, `query.py` |
-| Runnable entrypoints | Pipeline service modules, `twitter/auth.py`, `observability/coverage_inventory.py` |
-| HTTP transport | `src/tweeter_data_fetcher/twitter/client.py` |
-| Request persistence | `src/tweeter_data_fetcher/twitter/request_state.py` |
-| GraphQL contracts | `src/tweeter_data_fetcher/twitter/contracts.py` |
-| Pagination | `src/tweeter_data_fetcher/twitter/timeline.py` |
-| Auth/browser | `src/tweeter_data_fetcher/twitter/auth.py`, `browser.py` |
-| Tweet processing | `src/tweeter_data_fetcher/tweets/` |
-| Storage | `src/tweeter_data_fetcher/storage/` |
-| Observability | `src/tweeter_data_fetcher/observability/` |
-| Configuration | `src/tweeter_data_fetcher/configuration.py`, root `config/` |
-| Diagnostics | `tools/diagnostics/` |
-| Tests | `tests/unit/`, `tests/integration/`, `tests/contract/` |
+| Historical pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/historical/service.py` |
+| Live pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/live/service.py`, `state.py`, `viral.py` |
+| Search pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/search/service.py`, `query.py` |
+| Runnable entrypoints | Pipeline service modules, `x_api/auth.py`, `observability/coverage_inventory.py` |
+| HTTP transport | `twitter_fetcher/src/tweeter_data_fetcher/x_api/client.py` |
+| Request persistence | `twitter_fetcher/src/tweeter_data_fetcher/x_api/request_state.py` |
+| GraphQL contracts | `twitter_fetcher/src/tweeter_data_fetcher/x_api/contracts.py` |
+| Pagination | `twitter_fetcher/src/tweeter_data_fetcher/x_api/timeline.py` |
+| Auth/browser | `twitter_fetcher/src/tweeter_data_fetcher/x_api/auth.py`, `browser.py` |
+| Tweet processing | `twitter_fetcher/src/tweeter_data_fetcher/processing/` |
+| Storage | `twitter_fetcher/src/tweeter_data_fetcher/storage/` |
+| Observability | `twitter_fetcher/src/tweeter_data_fetcher/observability/` |
+| Configuration | `twitter_fetcher/src/tweeter_data_fetcher/configuration.py`, `twitter_fetcher/config/` |
+| Diagnostics | `twitter_fetcher/diagnostics/` |
+| Tests | `twitter_fetcher/tests/unit/`, `twitter_fetcher/tests/integration/`, `twitter_fetcher/tests/contract/` |
 
 ## Non-Negotiables
 
-- Never commit `config/config.json`, `data/`, diagnostic run output, or `graphify-out/`.
+- Never commit `twitter_fetcher/config/config.json`, `twitter_fetcher/data/`, diagnostic run output, or `graphify-out/`.
 - Prefer root-cause fixes in canonical code.
 - Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` paths.
 - Keep Twitter/X request changes evidence-backed by diagnostic captures.
@@ -40,13 +40,13 @@ Resolution order:
 
 1. Explicit path
 2. `TDF_CONFIG`
-3. `config/`
+3. `twitter_fetcher/config/`
 
 Tracked files:
 
-- `config/config.example.json`
-- `config/accounts.json`
-- `config/searches.json`
+- `twitter_fetcher/config/config.example.json`
+- `twitter_fetcher/config/accounts.json`
+- `twitter_fetcher/config/searches.json`
 
 Move local secrets by rename; never copy them into tracked files.
 
@@ -143,10 +143,10 @@ Search must not create historical/live set folders.
 ## Diagnostics
 
 ```bash
-python tools/diagnostics/verify_contract.py
-python tools/diagnostics/probe_txid.py
-python tools/diagnostics/probe_sequence.py
-python tools/diagnostics/traffic_sniffer.py
+python twitter_fetcher/diagnostics/verify_contract.py
+python twitter_fetcher/diagnostics/probe_txid.py
+python twitter_fetcher/diagnostics/probe_sequence.py
+python twitter_fetcher/diagnostics/traffic_sniffer.py
 ```
 
 `FetcherEngine` invokes contract verification directly as a library function. No subprocess launch is allowed for startup verification.
@@ -155,7 +155,7 @@ python tools/diagnostics/traffic_sniffer.py
 
 ```bash
 .venv/bin/python -m pytest -q
-python -m compileall -q src tests tools
+python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
 ```
 
 Current suite: **108 passed** on July 14, 2026.
