@@ -1,38 +1,56 @@
 # TWEETER DATA FETCHER — Agent Guide
 
-Latest update: July 14, 2026.
+Latest update: July 18, 2026.
+
+This file is for coding agents. For human install/usage, see `README.md`.
 
 ## Active Architecture
 
-The canonical codebase is the standard setuptools `src/` package under `twitter_fetcher/src/tweeter_data_fetcher/`. `LEGACY/` is read-only archive material. The `twitter_fetcher/` parent holds all current-version code, tests, diagnostics, config, and runtime data; the repo root holds only that parent plus `LEGACY/`, `.venv/`, `graphify-out/`, and project-metadata files (`README.md`, `AGENTS.md`, `pyproject.toml`, `.gitignore`).
+Canonical package: setuptools `src` layout under `twitter_fetcher/src/tweeter_data_fetcher/`.
 
-| Responsibility | Canonical files |
+`twitter_fetcher/` holds all current-version code, tests, diagnostics, config, and runtime data. Repo root holds only that parent, `LEGACY/` (read-only archive), `.venv/`, `graphify-out/` (local, gitignored), and metadata (`README.md`, `AGENTS.md`, `pyproject.toml`, `.gitignore`).
+
+`paths.py` is the single path router. `PROJECT_ROOT` is `twitter_fetcher/` (not the git root). All `config/` and `data/` paths resolve from there.
+
+| Responsibility | Canonical location |
 |---|---|
 | Historical pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/historical/service.py` |
-| Live pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/live/service.py`, `state.py`, `viral.py` |
-| Search pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/search/service.py`, `query.py` |
-| Runnable entrypoints | Pipeline service modules, `x_api/auth.py`, `observability/coverage_inventory.py` |
-| HTTP transport | `twitter_fetcher/src/tweeter_data_fetcher/x_api/client.py` |
-| Request persistence | `twitter_fetcher/src/tweeter_data_fetcher/x_api/request_state.py` |
-| GraphQL contracts | `twitter_fetcher/src/tweeter_data_fetcher/x_api/contracts.py` |
-| Pagination | `twitter_fetcher/src/tweeter_data_fetcher/x_api/timeline.py` |
-| Auth/browser | `twitter_fetcher/src/tweeter_data_fetcher/x_api/auth.py`, `browser.py` |
-| Tweet processing | `twitter_fetcher/src/tweeter_data_fetcher/processing/` |
-| Storage | `twitter_fetcher/src/tweeter_data_fetcher/storage/` |
-| Observability | `twitter_fetcher/src/tweeter_data_fetcher/observability/` |
-| Configuration | `twitter_fetcher/src/tweeter_data_fetcher/configuration.py`, `twitter_fetcher/config/` |
+| Live pipeline | `pipelines/live/service.py`, `state.py`, `viral.py` |
+| Search pipeline | `pipelines/search/service.py`, `query.py` |
+| Runnable entrypoints | Pipeline `service` modules, `x_api/auth.py`, `observability/coverage_inventory.py` |
+| HTTP transport | `x_api/client.py` (`APIManager`) |
+| curl_cffi transport | `x_api/curl_cffi_client.py` |
+| Request persistence | `x_api/request_state.py` |
+| GraphQL contracts | `x_api/contracts.py`, `contract_verification.py` |
+| Pagination | `x_api/timeline.py` (`FetcherEngine`) |
+| Auth/browser | `x_api/auth.py`, `browser.py` |
+| Tweet processing | `processing/` (`core.py`, `parsing.py`, `sets.py`, `windows.py`) |
+| Storage | `storage/` (`facade.py` = `StorageManager`) |
+| Observability | `observability/` |
+| Path constants | `paths.py` |
+| Configuration | `configuration.py`, `account_config.py`, `twitter_fetcher/config/` |
 | Diagnostics | `twitter_fetcher/diagnostics/` |
-| Tests | `twitter_fetcher/tests/unit/`, `twitter_fetcher/tests/integration/`, `twitter_fetcher/tests/contract/` |
+| Tests | `twitter_fetcher/tests/{unit,integration,contract}/` |
+
+### Rename map (do not resurrect old paths)
+
+| Old | Current |
+|---|---|
+| `src/`, `tests/`, `config/`, `tools/` at repo root | under `twitter_fetcher/` |
+| `tweeter_data_fetcher/twitter/` | `tweeter_data_fetcher/x_api/` |
+| `tweeter_data_fetcher/tweets/` | `tweeter_data_fetcher/processing/` |
+| `tools/diagnostics/` | `twitter_fetcher/diagnostics/` |
+| `tests/reports/` | `twitter_fetcher/diagnostics/reports/` |
 
 ## Non-Negotiables
 
 - Never commit `twitter_fetcher/config/config.json`, `twitter_fetcher/data/`, diagnostic run output, or `graphify-out/`.
-- Prefer root-cause fixes in canonical code.
-- Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` paths.
+- Prefer root-cause fixes in canonical code under `twitter_fetcher/src/`.
+- Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` path shapes.
 - Keep Twitter/X request changes evidence-backed by diagnostic captures.
 - Do not add database layers, abstract repositories, ports, factories, or new dependencies without a current second implementation.
 - After meaningful code changes run `.venv/bin/python -m pytest -q`.
-- After architecture changes run `graphify update .`.
+- After architecture or path moves run `graphify update .` (use `--force` / `GRAPHIFY_FORCE=1` if outputs stay untouched after a large rename). Before exploring with Read/Grep/Glob, orient with `graphify query` / `path` / `explain` when `graphify-out/graph.json` exists.
 
 ## Configuration
 
@@ -40,7 +58,7 @@ Resolution order:
 
 1. Explicit path
 2. `TDF_CONFIG`
-3. `twitter_fetcher/config/`
+3. `twitter_fetcher/config/` (via `PROJECT_ROOT`)
 
 Tracked files:
 
@@ -63,16 +81,18 @@ tdf-coverage --format table
 tdf-auth --interactive
 ```
 
+Entry points are defined in `pyproject.toml` (`package-dir` = `twitter_fetcher/src`). Pytest uses `testpaths = ["twitter_fetcher/tests"]`.
+
 ## Runtime Contracts
 
-Historical and live share `data/historical_live/` and use global two-pass order:
+Historical and live share `twitter_fetcher/data/historical_live/` and use global two-pass order:
 
 1. Resolve user IDs.
 2. Fetch `UserTweets` for every active/due account.
 3. Fetch `UserTweetsAndReplies` for every active/due account.
 4. Build processed sets.
 
-The rolling cutoff is:
+Rolling cutoff:
 
 ```text
 effective_cutoff = min(now - configured_window, floor(fetch_watermark))
@@ -84,7 +104,7 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 - Partial/failed runs do not advance watermarks.
 - Overlap is expected and deduplicated.
 
-Processed folders remain:
+Processed folders (unchanged):
 
 1. `1_user_tweets`
 2. `2_user_tweets_and_replies`
@@ -109,8 +129,10 @@ Processed folders remain:
 
 ## Storage
 
+Runtime root is `twitter_fetcher/data/` (`DATA_DIR` in `paths.py`):
+
 ```text
-data/
+twitter_fetcher/data/
   historical_live/
     raw/UserTweets/{account}/{batch}/page_N.json
     raw/UserTweetsAndReplies/{account}/{batch}/page_N.json
@@ -145,9 +167,14 @@ Search must not create historical/live set folders.
 ```bash
 python twitter_fetcher/diagnostics/verify_contract.py
 python twitter_fetcher/diagnostics/probe_txid.py
+python twitter_fetcher/diagnostics/probe_dynamic_txid.py
 python twitter_fetcher/diagnostics/probe_sequence.py
+python twitter_fetcher/diagnostics/probe_pacing.py
+python twitter_fetcher/diagnostics/pagination_test.py
 python twitter_fetcher/diagnostics/traffic_sniffer.py
 ```
+
+Reports: `twitter_fetcher/diagnostics/reports/`. Probe/sniffer run dirs (`probe_runs/`, `sniffer_runs/`, `graphql_logs/`) are gitignored.
 
 `FetcherEngine` invokes contract verification directly as a library function. No subprocess launch is allowed for startup verification.
 
@@ -158,4 +185,4 @@ python twitter_fetcher/diagnostics/traffic_sniffer.py
 python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
 ```
 
-Current suite: **108 passed** on July 14, 2026.
+Current suite: **108 passed** on July 18, 2026.
