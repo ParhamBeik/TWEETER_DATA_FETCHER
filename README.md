@@ -121,21 +121,31 @@ cat twitter_fetcher/data/historical_live/logs/http_summary.json
 
 Runtime data and HTTP detail files are gitignored. Secrets may appear in HTTP detail files — keep them local.
 
+## Endpoint Contracts, Pacing & Browser Fallback
+
+The pipelines use evidence-backed request contracts and pacing to maintain high reliability and bypass anti-scraping soft-blocks:
+
+| Endpoint | Primary Transport | Referer Header | Pacing & Strategy |
+|---|---|---|---|
+| `UserTweets` | `curl_cffi` HTTP/2 | `https://x.com/{account}` | Direct HTTP/2 GET, 0.2s–0.6s inter-page sleep |
+| `UserTweetsAndReplies` | `curl_cffi` HTTP/2 | `https://x.com/{account}/with_replies` | `x-twitter-active-user: yes`, 1.0s–1.5s inter-page delay, 10s–12s inter-account cooldown to prevent 404 density soft-blocks |
+| `SearchTimeline` | `APIManager` + Playwright | `https://x.com/search?...` | Page 1 via HTTP; Page 2+ (cursor-bearing queries) automatically fall back to Playwright Chromium SPA context (`FetcherEngine.bootstrap_browser_context`) |
+
+Detailed request templates, variable definitions, and diagnostic findings are documented in [`ENDPOINT_TEMPLATES_AND_PACING_GUIDE.md`](file:///Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/twitter_fetcher/diagnostics/reports/ENDPOINT_TEMPLATES_AND_PACING_GUIDE.md).
+
 ## Diagnostics
 
 Evidence-gathering scripts (not the pytest suite):
 
 ```bash
-python twitter_fetcher/diagnostics/verify_contract.py
-python twitter_fetcher/diagnostics/probe_txid.py
-python twitter_fetcher/diagnostics/probe_dynamic_txid.py
-python twitter_fetcher/diagnostics/probe_sequence.py
-python twitter_fetcher/diagnostics/probe_pacing.py
-python twitter_fetcher/diagnostics/pagination_test.py
-python twitter_fetcher/diagnostics/traffic_sniffer.py
+python twitter_fetcher/diagnostics/verify_contract.py            # config-vs-baseline drift guard (production-wired)
+python twitter_fetcher/diagnostics/pagination_test.py             # multi-account UserTweets & UserTweetsAndReplies harness
+python twitter_fetcher/diagnostics/probe_search_timeline_matrix.py # SearchTimeline multi-route & multi-product probe
+python twitter_fetcher/diagnostics/probe_browser_vs_curl.py       # browser-vs-curl differential experiment harness
+python twitter_fetcher/diagnostics/sniffer.py                     # headful Playwright request capture → sniffer_runs/
 ```
 
-Findings and run reports land in `twitter_fetcher/diagnostics/reports/`.
+Curated findings live in `twitter_fetcher/diagnostics/reports/`; the live `sniffer_runs/` capture dir is gitignored.
 
 `FetcherEngine` calls contract verification as a library function (no subprocess). Verification is skipped when no frozen baseline is present.
 

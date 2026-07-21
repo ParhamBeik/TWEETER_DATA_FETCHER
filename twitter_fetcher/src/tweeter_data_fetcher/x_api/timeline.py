@@ -1112,7 +1112,10 @@ class TimelineFetcher:
                 )
                 cursor = next_cursor
                 page += 1
-                self.api_manager.human_delay("between_pages")
+                if endpoint == "UserTweetsAndReplies":
+                    self.api_manager.human_delay("between_pages_replies")
+                else:
+                    self.api_manager.human_delay("between_pages")
                 continue
 
             self.logger.info(

@@ -123,6 +123,9 @@ Processed folders (unchanged):
 - Tx/query candidates are suspect on failures one and two, stale on failure three, and healthy/reset on HTTP 200.
 - Timeline endpoints use GET with compact JSON `variables`, `features`, and optional `fieldToggles`.
 - Search omits `fieldToggles`; profile timelines use `{"withArticlePlainText":false}`.
+- `UserTweetsAndReplies` requires `referer: https://x.com/{account}/with_replies` and `x-twitter-active-user: yes`.
+- `UserTweetsAndReplies` requires 1.0s–1.5s inter-page delay and 10s–12s inter-account cooldown to prevent IP/session 404 soft-blocks.
+- `SearchTimeline` Page 1 runs over HTTP; Page 2+ (cursor queries) automatically routes through Playwright Chromium SPA context (`FetcherEngine.bootstrap_browser_context`) to bypass server-side cursor 404 gates.
 - Extract only bottom cursors; never reuse them across endpoint/account/query/product/session.
 - Validate status, JSON, GraphQL errors, endpoint data path, instruction types, and fresh cursor independently.
 - HTTP 429 sleeps to reset plus safety buffer, bounded by the configured maximum.
@@ -165,16 +168,12 @@ Search must not create historical/live set folders.
 ## Diagnostics
 
 ```bash
-python twitter_fetcher/diagnostics/verify_contract.py
-python twitter_fetcher/diagnostics/probe_txid.py
-python twitter_fetcher/diagnostics/probe_dynamic_txid.py
-python twitter_fetcher/diagnostics/probe_sequence.py
-python twitter_fetcher/diagnostics/probe_pacing.py
-python twitter_fetcher/diagnostics/pagination_test.py
-python twitter_fetcher/diagnostics/traffic_sniffer.py
+python twitter_fetcher/diagnostics/verify_contract.py    # config-vs-baseline drift guard (production-wired)
+python twitter_fetcher/diagnostics/pagination_test.py     # curl-cffi + warmup/active-user pagination harness
+python twitter_fetcher/diagnostics/sniffer.py             # headful Playwright request capture → sniffer_runs/
 ```
 
-Reports: `twitter_fetcher/diagnostics/reports/`. Probe/sniffer run dirs (`probe_runs/`, `sniffer_runs/`, `graphql_logs/`) are gitignored.
+Reports: `twitter_fetcher/diagnostics/reports/` (curated findings). Run dirs (`sniffer_runs/`, `graphql_logs/`) are gitignored.
 
 `FetcherEngine` invokes contract verification directly as a library function. No subprocess launch is allowed for startup verification.
 

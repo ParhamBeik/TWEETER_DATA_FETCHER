@@ -463,6 +463,11 @@ def run_v4(
             pass_total=len(enabled_endpoints),
         )
         for idx, username in enumerate(active_accounts):
+            if idx > 0:
+                if endpoint == "UserTweetsAndReplies":
+                    engine.api_manager.human_delay("between_accounts_replies")
+                else:
+                    engine.api_manager.human_delay("between_accounts")
             console.info(f"@{username}: fetching {endpoint}")
             result, window_coverage = _fetch_or_skip_endpoint(
                 engine=engine,
