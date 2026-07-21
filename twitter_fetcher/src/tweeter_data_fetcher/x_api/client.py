@@ -373,8 +373,8 @@ class APIManager:
 
         if endpoint == "UserTweetsAndReplies":
             return [
-                RequestContext("replies_tab_passive", endpoint, replies_url, "no", (replies_url,)),
                 RequestContext("replies_tab_active", endpoint, replies_url, "yes", (replies_url,)),
+                RequestContext("replies_tab_passive", endpoint, replies_url, "no", (replies_url,)),
                 RequestContext("home_fallback", endpoint, "https://x.com/", "yes", ()),
             ]
 
@@ -459,9 +459,15 @@ class APIManager:
         elif stage == "between_pages":
             min_d = float(delay_map.get("between_pages_min", 0.2))
             max_d = float(delay_map.get("between_pages_max", 0.6))
+        elif stage == "between_pages_replies":
+            min_d = float(delay_map.get("between_pages_replies_min", 1.0))
+            max_d = float(delay_map.get("between_pages_replies_max", 1.5))
         elif stage == "between_accounts":
             min_d = float(delay_map.get("between_accounts_min", 0.3))
             max_d = float(delay_map.get("between_accounts_max", 0.8))
+        elif stage == "between_accounts_replies":
+            min_d = float(delay_map.get("between_accounts_replies_min", 10.0))
+            max_d = float(delay_map.get("between_accounts_replies_max", 12.0))
         elif stage == "replies_retry":
             min_d = float(delay_map.get("replies_retry_min", 0.1))
             max_d = float(delay_map.get("replies_retry_max", 0.3))

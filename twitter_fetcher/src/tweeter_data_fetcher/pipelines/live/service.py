@@ -267,7 +267,12 @@ class LiveMonitor:
 
         endpoint_pages_by_account: Dict[str, Dict[str, List[Dict[str, Any]]]] = {username: {} for username in user_ids}
         for endpoint in self.ENDPOINTS:
-            for username, user_id in user_ids.items():
+            for idx, (username, user_id) in enumerate(user_ids.items()):
+                if idx > 0:
+                    if endpoint == "UserTweetsAndReplies":
+                        self.api_manager.human_delay("between_accounts_replies")
+                    else:
+                        self.api_manager.human_delay("between_accounts")
                 policy = get_priority_policy(username, self.account_map, self.priority_policies)
                 endpoint_result = self._fetch_live_endpoint(
                     username,
@@ -278,7 +283,6 @@ class LiveMonitor:
                 )
                 report["accounts"][username]["endpoints"][endpoint] = {k: v for k, v in endpoint_result.items() if k != "pages"}
                 endpoint_pages_by_account[username][endpoint] = endpoint_result.get("pages", [])
-                self.api_manager.human_delay("between_accounts")
 
         for username, endpoint_pages in endpoint_pages_by_account.items():
             policy = get_priority_policy(username, self.account_map, self.priority_policies)

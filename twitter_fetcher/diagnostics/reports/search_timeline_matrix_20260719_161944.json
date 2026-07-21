@@ -1,0 +1,510 @@
+{
+  "stamp": "20260719_161944",
+  "max_pages": 6,
+  "playwright_matrix": [
+    {
+      "target_url": "https://x.com/explore",
+      "product": "Top",
+      "query": "AI min_faves:100 min_retweets:10",
+      "pages_fetched": 0,
+      "pages": [],
+      "success_rate": 0.0,
+      "route_name": "explore_page"
+    },
+    {
+      "target_url": "https://x.com/search?q=AI%20min_faves%3A100%20min_retweets%3A10&src=typed_query",
+      "product": "Top",
+      "query": "AI min_faves:100 min_retweets:10",
+      "pages_fetched": 3,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 199943,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoJNLAJxAKAAMc2agk0r_Y8AgABAAAAAILAAUAAADwRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUJRYzBsdTBwTnVSZGh6WWI0N2JHOUR2SE5SdVhBWlhVRm9jMXkzMXVKZWh4UnpYMTdpckY0QnBIQVV1ZXY3V3NlTWMyUStvaEJwUjdSeU1qdHNybTZFcUhObFJEaUthOExZYzJTRzNXWmVCVVJ6WGh1eEZHMkNpSE5SUFdDWlh3VndjMWVPYmZacGhsUnpaZXBhdEZ3RC9HVjVMZTlGV1VaUWMxQnhYU05ieDRoeldTY0x2RjVCUEhOZWlYVDFiY0MwYzFsckJoeGJncWh6Vnhad3BseUhZCAAGAAAAAAgABwAAAAAMAAgKAAEZXkt70VZRlAAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 2,
+          "status": 200,
+          "body_bytes": 169042,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoJNLAJxAKAAMc2agk0r-x4AgABAAAAAILAAUAAAHIRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUNnYzBBd2E4aHB4d0JleUdEWlVGZ0ZzSE5odmp0c2IwTzhjMHNuUy94dVFrQnpUTE5PYm10RFdIQVV1ZXY3V3NlTWMxRzVjQmxkUVdoelgxN2lyRjRCcEhOY3Q5YmlYb2NVYzJRK29oQnBSN1J6WXdtbEIydkhuSE5OTGsrdWIwSndjMlNHM1daZUJVUnpWQmhuN212QUJITldNV2pJV29Na2MxZWdBR0ZvQVN4elRIdVJBRzJISEhOTWVKWERic2FZYzJYcVdyUmNBL3h6WG9sMDlXM0F0SE5aSnd1OFhrRThjMWNXY0taY2gyQnpXV3NHSEZ1Q3FITkpidEtUYmtYWWMwVmdLUzFxZ2V4elpSdEhkbHFFb0dURFhZckFXSU5JYzFKU0JENWNRbGh6VjIxaTRHckdnSE5KZERIZ2JZZFVjakk3Yks1dWhLaHpYaHV4RkcyQ2lITmxSRGlLYThMWWNmamtnU3hyd3Z4elZYNjF6R2tCQkhObHRZaWRhUVlFYzFlT2JmWnBobFJ6VUhGZEkxdkhpSE5SUFdDWlh3VndaWGt0NzBWWlJsQT09CAAGAAAAAAgABwAAAAEMAAgKAAEZXkt70VZRlAAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 3,
+          "status": 200,
+          "body_bytes": 178787,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoJNLAJxAKAAMc2agk0r-K0AgABAAAAAILAAUAAAKcRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUR3YkxSMjNBTnFSWmh6UTh2YjhtNkE5SE5NczA1dWEwTlljMXkzMXVKZWh4UndGTG5yKzFySGpITkxKMHY4YmtKQWMwMHVUNjV2UW5Cell3bWxCMnZIbkhOYmQ2UmtYWU9rYzFlZ0FHRm9BU3h6VmpGb3lGcURKSE5NZUpYRGJzYVljMlhxV3JSY0EveHpXU2NMdkY1QlBITmVpWFQxYmNDMGMyWno4TWxvaGZCelNXN1NrMjVGMkhORllDa3Rhb0hzWk1OZGlzQllnMGh6VXowQWsyaUdsSE5YMXI2TmFFV1FjMWR0WXVCcXhvQnpVbElFUGx4Q1dITlZmclhNYVFFRWMxZU9iZlpwaGxSelVIRmRJMXZIaUhObE10bTRhOGVnYzFnMGk0dGFneGh6UURCcnlHbkhBSE5odmp0c2IwTzhjMVRtVUlwc1FqUnpYcGhCdkczRnVITmZYdUtzWGdHa2MxRzVjQmxkUVdob1Y0WmRwMXhDb0hOTTJPc2Via1pBYzJRK29oQnBSN1JleUdEWlVGZ0ZzSE5raHQxbVhnVkVjMS9sd2dCZHhCaHpWQmhuN212QUJITlphd1ljVzRLb2MweDdrUUJ0aHh4elZ4WndwbHlIWUcwZ0Q1MEVXRUtBYzFKc3p3eHJRakJ6WlJ0SGRscUVvSE5DVTdyT2JZQXdjakk3Yks1dWhLaHpTWFF4NEcySFZITXVNOGtjYjBJZ2NmamtnU3hyd3Z4elpVUTRpbXZDMkhOZUc3RVViWUtJYm9rMHFSVnFnOEJ6WHBKNFNtaEI4SE5sdFlpZGFRWUVjMUU5WUpsZkJYQmxlUzN2UlZsR1VHVTg4SkpLYTRjQT0IAAYAAAAACAAHAAAAAgwACAoAARleS3vRVlGUAAAA",
+          "tweet_count": 20
+        }
+      ],
+      "success_rate": 100.0,
+      "route_name": "top_search_page"
+    },
+    {
+      "target_url": "https://x.com/search?q=AI%20min_faves%3A100%20min_retweets%3A10&f=live&src=typed_query",
+      "product": "Latest",
+      "query": "AI min_faves:100 min_retweets:10",
+      "pages_fetched": 5,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 164261,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmkpBcWcGwKAAIc2ZaAa1tBtgAIAAIAAAACCAADAAAAAAgABAAAAAAKAAUc2ag2qYAnEAoABhzZqDapf9jwAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 2,
+          "status": 200,
+          "body_bytes": 176307,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmkpBcWcGwKAAIc2ZBGqBrQkAAIAAIAAAACCAADAAAAAAgABAAAAAEKAAUc2ag2qYAnEAoABhzZqDapf7HgAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 3,
+          "status": 200,
+          "body_bytes": 164953,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmkpBcWcGwKAAIc2YjQ9hog8gAIAAIAAAACCAADAAAAAAgABAAAAAIKAAUc2ag2qYAnEAoABhzZqDapf4rQAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 4,
+          "status": 200,
+          "body_bytes": 175797,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmkpBcWcGwKAAIc2YPSltugMwAIAAIAAAACCAADAAAAAAgABAAAAAMKAAUc2ag2qYAnEAoABhzZqDapf2PAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 5,
+          "status": 200,
+          "body_bytes": 196628,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmkpBcWcGwKAAIc2X_0ZldhcQAIAAIAAAACCAADAAAAAAgABAAAAAQKAAUc2ag2qYAnEAoABhzZqDapfzywAAA",
+          "tweet_count": 20
+        }
+      ],
+      "success_rate": 100.0,
+      "route_name": "latest_search_page"
+    },
+    {
+      "target_url": "https://x.com/explore",
+      "product": "Top",
+      "query": "OpenAI",
+      "pages_fetched": 0,
+      "pages": [],
+      "success_rate": 0.0,
+      "route_name": "explore_page"
+    },
+    {
+      "target_url": "https://x.com/search?q=OpenAI&src=typed_query",
+      "product": "Top",
+      "query": "OpenAI",
+      "pages_fetched": 4,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 195593,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoXLaAJxAKAAMc2ahctn_Y8AgABAAAAAILAAUAAADwRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUJRY3RiRENaMWVSS1J6WFZRRnpXM0ZXSE5CaXBsQWFvS01jYUcvVUtkcEJheHpVM202czI4RHVITmV0NUo4YmNiMGNzZUUwckJwUTZSdjdBOUxzV3dFWUhOSDV1YUliVVU4Y3pOcjBlTnBRU0J5TWp0c3JtNkVxSE5DU0pGL1hVTjBjMUtaQ210dHdYQnpVZis3UDI4QjBITlhqbTMyYVlaVWNyTkhKdjFleE5SelhaNXF0R3VHaUhOT1Q4ZXRiY1NFYzFqRjJlRnJ4cWh6V3BRcGoxcEZrCAAGAAAAAAgABwAAAAAMAAgKAAEb-wPS7FsBGAAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 2,
+          "status": 200,
+          "body_bytes": 190925,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoXLaAJxAKAAMc2ahctn-x4AgABAAAAAILAAUAAAHIRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUNnYzJEbFRyNXN4U3h4NDZCcTQxbEJESE5CaXBsQWFvS01jYUcvVUtkcEJheHl4NFRTc0dsRHBITmRubTJyYUVJNGIrd1BTN0ZzQkdCelIrYm1pRzFGUEhOTmt3WHRiY0RzY21Cem1QZHBCSFJ6UWtpUmYxMURkSE16WVhMNGJnUW9jMUtaQ210dHdYQnpVZis3UDI4QjBHMkhGcEg3YnNTb2MxenVCTnR2UVZoelFkV0lzV3pHQUhOYWxDbVBXa1dRYzFqRjJlRnJ4cWh4NzRHbkFtdUNqSExXd3dtZFhrU2tjMTFVQmMxdHhWaHpNKzNlTVdyRlpITlhwOGhuYk1FMGMxTjV1ck52QTdoelJibUlyR3BDekhOZXQ1SjhiY2IwY25TWDNkZHZSb2h6TTJ2UjQybEJJSEtrbmhuT2JFV01jakk3Yks1dWhLaHpMalBKSEc5Q0lISVRpOEJwYkVYQWNhYjRpakJxd0ZSelhaNXF0R3VHaUhOWGptMzJhWVpVY1lLLzJ6NXNBVGh5czBjbS9WN0UxSE5PVDhldGJjU0VjMTJnZ3hCdXhyQT09CAAGAAAAAAgABwAAAAEMAAgKAAEb-wPS7FsBGAAAAA",
+          "tweet_count": 19
+        },
+        {
+          "page": 3,
+          "status": 200,
+          "body_bytes": 163716,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoXLaAJxAKAAMc2ahctn-K0AgABAAAAAILAAUAAAKcRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUR3YzJEbFRyNXN4U3h5eDRUU3NHbERwRy9zRDB1eGJBUmdYUkoyMEZwcFFBQnpSK2JtaUcxRlBHUHZYV0RVV0lVMGNtQnptUGRwQkhSelRaTUY3VzNBN0hOZW5hQnNhSUwwYzJMQ3c3cHFoZUJ6UC9vY0FXN0VxSE5SLzdzL2J3SFFiWWNXa2Z0dXhLaHkxc01KblY1RXBITXJWS3R4YWNhc2JmTThQcmRyd0dCelY2ZklaMnpCTkhNejdkNHhhc1ZrYzFONXVyTnZBN2h5NVRRR01tN0VzSEowbDkzWGIwYUljek5yMGVOcFFTQnpWMjFpNEdyR2dISVRpOEJwYkVYQWMxZU9iZlpwaGxSeGdyL2JQbXdCT0hLelJ5YjlYc1RVY1p6eG85Tm9BWXh6WGFDREVHN0dzSEoyc3BNbmJnYzhjYUcvVUtkcEJheHpRWXFaUUdxQ2pISGpvR3JqV1VFTWMxMmViYXRvUWpoeDVJbjJqVzVITEhOTHdQcGdhSVVJYkhEM2RBeHV3emh1WlZTK0YyMUJ0SE5DU0pGL1hVTjBjek5oY3ZodUJDaG9kbW9KVUdsQ2JITlNtUXByYmNGd2JtdGN0cTFyUW5oeldNWFo0V3ZHcUhOYWxDbVBXa1dRYzBIVmlMRnN4Z0J6WE80RTIyOUJXSEErZkFJQWJFUlVjZStCcHdKcmdveHpYVlFGelczRldISUVQUnQ1YXNYNGMxNjNrbnh0eHZSelJibUlyR3BDekhNdU04a2NiMElnY3FTZUdjNXNSWXh5TWp0c3JtNkVxSEdtK0lvd2FzQlVjMTJlYXJScmhvaHpUay9IclczRWhISHU1cWVvYVFjdz0IAAYAAAAACAAHAAAAAgwACAoAARv7A9LsWwEYAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 4,
+          "status": 200,
+          "body_bytes": 212013,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoXLaAJxAKAAMc2ahctn9jwAgABAAAAAILAAUAAAOIRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUZJYzJEbFRyNXN4U3h6UTJUWE9HcEY2SEx3WERWeGFzQjRjMXdIYWd4ZWdNaHl4NFRTc0dsRHBIRmV4YnV5V3NXMGIrd1BTN0ZzQkdCZEVuYlFXbWxBQUhOSDV1YUliVVU4WSs5ZFlOUlloVFJ5WUhPWTkya0VkSE5Oa3dYdGJjRHNjMTZkb0d4b2d2UnpZc0xEdW1xRjRITk0zQm1nYUFVY2N6LzZIQUZ1eEtoelVmKzdQMjhCMEcySEZwSDdic1NvVzF6RGYwZG9BQVJ2eURzaUUxZ0RrRzZKbURXRmJrZDBjMFBIQllkZEErQnhEY2hGQzFxRUlITFd3d21kWGtTa2N5dFVxM0ZweHF4dDh6dyt0MnZBWUhOWHA4aG5iTUUwY3pQdDNqRnF4V1J6VTNtNnMyOER1SExsTkFZeWJzU3djblNYM2RkdlJvaHpNMnZSNDJsQklHMlhrT3BUYk1Mb2MxZHRZdUJxeG9CeUU0dkFhV3hGd0cyQjN1bG5hSVVZYzFlT2JmWnBobFJ4Z3IvYlBtd0JPSEt6UnliOVhzVFVjWnp4bzlOb0FZeHpQTTFKcEZqR0ZITmRvSU1RYnNhd2NhRy9VS2RwQmF4eWRyS1RKMjRIUEhOQmlwbEFhb0tNY2VPZ2F1TlpRUXh5OEZ3ekJHckdtSE5kbm0ycmFFSTRjZVNKOW8xdVJ5eHpUM3Nqakc4SDVIRmxwb29HYWtlWWMwdkErbUJvaFFoc2NQZDBERzdET0c1bFZMNFhiVUcwYzBKSWtYOWRRM1JxSnNnVzlHdUMySE16WVhMNGJnUW9hSFpxQ1ZCcFFteHpVcGtLYTIzQmNHNXJYTGF0YTBKNGMxakYyZUZyeHFoeldwUXBqMXBGa0hOQjFZaXhiTVlBYzF6dUJOdHZRVmh3UG53Q0FHeEVWSEh2Z2FjQ2E0S01jMTFVQmMxdHhWaHlCRDBiZVdyRitITmV0NUo4YmNiMGMwVzVpS3hxUXN4eHl6MXhsRzJDbUhNdU04a2NiMElnY3FTZUdjNXNSWXh5TWp0c3JtNkVxSE0rZXJaRFdZZDRjYWI0aWpCcXdGUnk4RncwSzJuRlpITmRubXEwYTRhSWMwNVB4NjF0eElSeHo5RnIxbWtIQkhIdTVxZW9hUWN3YzAxQTBiRnNodlE9PQgABgAAAAAIAAcAAAADDAAICgABG_sD0uxbARgAAAA",
+          "tweet_count": 19
+        }
+      ],
+      "success_rate": 100.0,
+      "route_name": "top_search_page"
+    },
+    {
+      "target_url": "https://x.com/search?q=OpenAI&f=live&src=typed_query",
+      "product": "Latest",
+      "query": "OpenAI",
+      "pages_fetched": 5,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 134408,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmoZ-ZWQFsKAAIc2afUwNrABgAIAAIAAAACCAADAAAAAAgABAAAAAAKAAUc2ahu9IAnEAoABhzZqG70f9jwAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 2,
+          "status": 200,
+          "body_bytes": 120392,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmoZ-ZWQFsKAAIc2aawEBbQuAAIAAIAAAACCAADAAAAAAgABAAAAAEKAAUc2ahu9IAnEAoABhzZqG70f7HgAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 3,
+          "status": 200,
+          "body_bytes": 136618,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmoZ-ZWQFsKAAIc2aXErRfB8AAIAAIAAAACCAADAAAAAAgABAAAAAIKAAUc2ahu9IAnEAoABhzZqG70f4rQAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 4,
+          "status": 200,
+          "body_bytes": 104609,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmoZ-ZWQFsKAAIc2aULr5ugyAAIAAIAAAACCAADAAAAAAgABAAAAAMKAAUc2ahu9IAnEAoABhzZqG70f2PAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 5,
+          "status": 200,
+          "body_bytes": 123647,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmoZ-ZWQFsKAAIc2aP3xZdAJQAIAAIAAAACCAADAAAAAAgABAAAAAQKAAUc2ahu9IAnEAoABhzZqG70fzywAAA",
+          "tweet_count": 20
+        }
+      ],
+      "success_rate": 100.0,
+      "route_name": "latest_search_page"
+    },
+    {
+      "target_url": "https://x.com/explore",
+      "product": "Top",
+      "query": "Nvidia",
+      "pages_fetched": 0,
+      "pages": [],
+      "success_rate": 0.0,
+      "route_name": "explore_page"
+    },
+    {
+      "target_url": "https://x.com/search?q=Nvidia&src=typed_query",
+      "product": "Top",
+      "query": "Nvidia",
+      "pages_fetched": 5,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 203928,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoleQAJxAKAAMc2aiV4__Y8AgABAAAAAILAAUAAAD8RW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUJVYzJEbFRyNXN4U3h6VE01SXZGckh6SEtvekRoQ1djYXNjeTVUYkFkcHdHeHhCdzFyRFdpQXVHR3BHTVIwV0VjNGMxY2RzQkJaUlVCeXFUR2s4bDVCbkhOVTFCNExYZ2ZzYzJWdUVhcGRndHh6THpuYlUyekg3SE5Uc05mMVhjUkljaFl2M1BSWXdmUnpZSjZ6RjF4RWlHR211U2cyV3NZSWMxaEV2SWRhQXBSelUzVW9jMThHK0hOaDAvWTZYSWQwYzB3cHpteHFRemh6Vk0xUXlsbENLSEpGOTAzb2J3Rjg9CAAGAAAAAAgABwAAAAAMAAgKAAEcQcNaw1ogLgAAAA",
+          "tweet_count": 19
+        },
+        {
+          "page": 2,
+          "status": 200,
+          "body_bytes": 197846,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoleQAJxAKAAMc2aiV4_-x4AgABAAAAAILAAUAAAHQRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUNrYzB6T1NMeGF4OHh6WU9WT3ZtekZMSE11VTJ3SGFjQnNjQUcvY1dGc1IraHhCdzFyRFdpQXVITlZsbmhkWGdQWWMxMmlDOXRjaEpSelUzVGw4V3hGR0hOVHNOZjFYY1JJYzJDZXN4ZGNSSWh6Wlc0UnFsMkMzR2gyYWdsUWFVSnNjMUZhYlBOcmhmaHpZZFAyT2x5SGRITk1LYzVzYWtNNGMxZitxS0ZiQnZoeVpCR1U2MTVFYkhOY0ZyOGRYVUEwY3FqTU9FSlp4cXhocVJqRWRGaEhPSE5YSGJBUVdVVkFjcWt4cFBKZVFaeHpWTlFlQzE0SDdITmNxcUlnVzBkTVljZjhNVzFaaHR4ekx6bmJVMnpIN0hOZENrOHpYUUYwY2hZdjNQUll3ZlJocHJrb05sckdDSE5ZUkx5SFdnS1VjMXRUMkNCZHdrUnpWNzBGdlZ3QmtITkhyMEVoV1ljb2MxTjFLSE5mQnZoellUNDJCMnJIK0hOUTR1ZkFiY1FNYzBGVTVkeHV3aXh6Vk0xUXlsbENLSE5UZFNpbldNTU1ja1gzVGVodkFYeHpUTkYxc0Y0RmYIAAYAAAAACAAHAAAAAQwACAoAARxBw1rDWiAuAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 3,
+          "status": 200,
+          "body_bytes": 213491,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoleQAJxAKAAMc2aiV4_-K0AgABAAAAAILAAUAAAKoRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUQwYzFINXQ2NW9nMVJ6WU9WT3ZtekZMSE5Ua2lHUVdzVDRjQUcvY1dGc1IraHpaVzRScWwyQzNITlRzTmYxWGNSSWMyQ2VzeGRjUkloelhhSUwyMXlFbEhOU09VdG1id1RjYzFGYWJQTnJoZmh6V1VhbHExc0J4SE5NS2M1c2FrTTRjMlNwZTJSb0J2QnpRS0F1U1dnSElITmpueVNuYkVNZ2Nxak1PRUpaeHF4ellJTFRlMmdIaEdHcEdNUjBXRWM0Y3FreHBQSmVRWnh6Vk5RZUMxNEg3SE5NOHFwcGJFTVFjMXlxb2lCYlIweHpMem5iVTJ6SDdITkpLSExkV1FIVWNoWXYzUFJZd2ZSeldFUzhoMW9DbEhOWHZRVzlYQUdRYzBldlFTRlpoeWh6Vk0xUXlsbENLSEpGOTAzb2J3RjhjMHpSZGJCZUJYeHpVM1VvcDFqRERITk16a2k4V3NmTWMxVERTdEJiUmd4ekxsTnNCMm5BYkhORFBHSk5XVVk4Y1FjTmF3MW9nTGh6VlpaNFhWNEQySE5UZE9YeGJFVVljMUFSMEIxWUJFUnpZK054WVZ5QnlHaDJhZ2xRYVVKc2MySFQ5anBjaDNSelFlQStGMjRHUUhOU2NEb0ZhUVB3YzFmK3FLRmJCdmh5WkJHVTYxNUViSE5jRnI4ZFhVQTBjeit1dHI1ZUI0QnpWeDJ3RUZsRlFHSEgvREZ0V1liY2MxMEtUek5kQVhSelRvU2FRbG9FZ0dHbXVTZzJXc1lJYzF0VDJDQmR3a1J6VFBXamxGOEJjSE5UZFNoelh3YjRjMkUrTmdkcXgvaHpRVlRsM0c3Q0xITmNXZ1ZKYThWTWMxRGk1OEJ0eEF3PT0IAAYAAAAACAAHAAAAAgwACAoAARzP662vl4HgAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 4,
+          "status": 200,
+          "body_bytes": 182658,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoleQAJxAKAAMc2aiV4_9jwAgABAAAAAILAAUAAAN8RW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUZFYzFINXQ2NW9nMVJ6WU9WT3ZtekZMSE5SMUpYeGJ3VmNjMU9TSVpCYXhQaHdBYjl4WVd4SDZITHZDVnhTYkVLb2MyVnVFYXBkZ3R4elU3RFg5VjNFU0hOZ25yTVhYRVNJYzEyaUM5dGNoSlJ4ckZXZG5XNkNNSE5tUTQzdFgwWkVjbXpwNnJSWmhseHpVamxMWm04RTNITk1TU2FCWFFGVWMxRmFiUE5yaGZoeldVYWxxMXNCeEhOTUtjNXNha000YzJTcGUyUm9CdkJ6WWszcksxOUE0SE5Bb0M1SmFBY2djMXhDclZ0ZHhYQnpZNThrcDJ4RElIS296RGhDV2Nhc2MyQ0MwM3RvQjRSaHFSakVkRmhIT0hLcE1hVHlYa0djYzFUVUhndGVCK3h6VFBLcWFXeERFSE5jcXFJZ1cwZE1jeTg1MjFOc3greHpTU2h5M1ZrQjFISVdMOXowV01IMGMxaEV2SWRhQXBSeldCcjZ2Vm9FSkhOaFZ6cVZYVVZrYzFlOUJiMWNBWkJ6WVBuWXVHb0FESE5IcjBFaFdZY29jMVROVU1wWlFpaHpXYTVUOTE3RDZISkY5MDNvYndGOGMwelJkYkJlQlh4elUzVW9wMWpEREhOTXpraThXc2ZNYzFURFN0QmJSZ3h6TGxOc0IybkFiSE5EUEdKTldVWThjUWNOYXcxb2dMaHpWWlo0WFY0RDJITlRkT1h4YkVVWWMxQVIwQjFZQkVSelkrTnhZVnlCeUdoMmFnbFFhVUpzYzJIVDlqcGNoM1J6UWVBK0YyNEdRSE5TY0RvRmFRUHdjMWYrcUtGYkJ2aHlaQkdVNjE1RWJITmw2cklPYmdCWWMxd1d2eDFkUURSellpL042bDFEUEhNL3JyYStYZ2VBYzFjZHNCQlpSVUJoeC93eGJWbUczSE5kQ2s4elhRRjBjMDZFbWtKYUJJQmhwcmtvTmxyR0NISVhEcDR6V0Vmd2MxdFQyQ0Jkd2tSellDRlZEV3RFY0hObC92QWxiQU44YzB6MW81UmZBWEJ6VTNVb2MxOEcrSE5oUGpZSGFzZjRjMHdyTFlkdUJyeHpYOU5FemwzSGVITkJWT1hjYnNJc2MxeGFCVWxyeFV4elcxZjIwMjNGQ0hOUTR1ZkFiY1FNPQgABgAAAAAIAAcAAAADDAAICgABHM_rra-XgeAAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 5,
+          "status": 200,
+          "body_bytes": 210590,
+          "parsed_ok": true,
+          "cursor_out": "DAACCgACHNmoleQAJxAKAAMc2aiV4_88sAgABAAAAAILAAUAAAO8QUFBQUFDNk5zd2dBQUFCbEFBQUFBQUFBRlh3QUFBQUhBQUFBVmhBSU1BUUJBQkJBUUFFRUFBZ0VBa0VBa1VFQVVCaEVFQUJBRUlFQUFBQUFJZ0lCQkFCRkFMQUFJUUVBQWdKQ0FCUVFBUUFRQUNJQWdFSVlBUkJFQ0FBQWdBUWdBQUFCRUFFVUFBQndJSkJnTWdnQUFFQUFGQUVvQUFBWVFnQkZnQUFBUUFEUUFBQXdBQUFBZ2dFQVFoUUFBRUFBUUFUQUdJQUFCQUFBNUJBU0FnSUFRQUFBYkVBQVNnQUFBQUFBQkFJUUJLaFVnSkVSQUNrQ0FFQ2dBQ1JDQUFBaWdRQ29BQXBBQUFDREVCQkpBQUJBUnlBQUFRQUFJZ0FDRTJBSUFRQUFBQUJDQUFBUVFqSkFFb0FDQ0FBaEFBQUNBQUFBQWdBQUlFQUFFQUFBUUJBQlZBUW9BQkNFQUlBSUFBQUJRQkJTQUtDUlFoQXNBQUFBaUNBQWdBZ0FBQmlJQUpBTVNBSUFBQUFRRWdCa0RLWUVnd0FBQUFDQkNBQVNrbElDSUFnZ0FCQW9BZ1JRZ0FDUUFnQkFDQUFCQ0FnRUVBQ2tBRUFJQUlBSUVDRUJDQUFBQkFZZ0VBZ0FCQUFBQUFHSkFBQ2tDQkZRQUVCQWdJUUFBUUVBQUJRRVFBQUFRQUFGSUVFQUFRQUpCQUFDeFFMQUFDQVFnQUNBQUFBQUFVQUFRQWhRQUlBZ0lCQUJBZ0FDQVFBMFFCQUVCQUJVZ1FJQVFRRUNBUVFBQUFBUUFBQ1lBQVFBQVNBUUNJUkFpQUFBQkFTZ0FCSUVBQUFBQkFJQkFPRWdnQ0FVWWdCQUFBaEFDQUVFQkFBQWdDQWdJQXlBQUJaQ0FBQVFBd0FDQUFBQ0lCQ0FRQUVDQVJFQkFBQUFBQUFVQ0VTQ0FBQUFBQUVBQUJBRUJBZ0FCSUFnQkFBQUdBQUFBQUFDQWdGQkFBSW9BQVFnaVlBWVFRRUFBUVFBQUFGaEFrQUFBSWdCQUJBSkFBQUFDQVFBQkFBSUNBUUFBQWdBQVFCQUFDQ0FJQUFBQUFCQUNBUUFBSUFRRWtBQUFCQUJCQUFFSVFYZ0FBQUFBQUlRVVFBQUlnQUFNQWdBUVNRU0FBQ0FDOGpBQUFBQ0FBRGdDSUdSQUJRaGdBa0F3RUFBQUFBQUFBQWdRQUVnQkFJQUFBZ0JnQUlBZ01BQUFBQUlRUWdBQWdrQUJCUUlBQ1FBQUNSUUFBaUFBQUpBQXdBWUFCST0IAAYAAAAACAAHAAAABAwACAoAARzP662vl4HgAAAA",
+          "tweet_count": 20
+        }
+      ],
+      "success_rate": 100.0,
+      "route_name": "top_search_page"
+    },
+    {
+      "target_url": "https://x.com/search?q=Nvidia&f=live&src=typed_query",
+      "product": "Latest",
+      "query": "Nvidia",
+      "pages_fetched": 5,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 118125,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmonFBWANoKAAIc2acwk5dxnQAIAAIAAAACCAADAAAAAAgABAAAAAAKAAUc2aioAAAnEAoABhzZqKf__9jwAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 2,
+          "status": 200,
+          "body_bytes": 134741,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmonFBWANoKAAIc2aSJ6VvQ0gAIAAIAAAACCAADAAAAAAgABAAAAAEKAAUc2aioAAAnEAoABhzZqKf__7HgAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 3,
+          "status": 200,
+          "body_bytes": 128051,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmonFBWANoKAAIc2aPmllZQ4QAIAAIAAAACCAADAAAAAAgABAAAAAIKAAUc2aioAAAnEAoABhzZqKf__4rQAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 4,
+          "status": 200,
+          "body_bytes": 121268,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmonFBWANoKAAIc2aJKdhqAzQAIAAIAAAACCAADAAAAAAgABAAAAAMKAAUc2aioAAAnEAoABhzZqKf__2PAAAA",
+          "tweet_count": 20
+        },
+        {
+          "page": 5,
+          "status": 200,
+          "body_bytes": 117657,
+          "parsed_ok": true,
+          "cursor_out": "DAADDAABCgABHNmonFBWANoKAAIc2aEMGdpAGwAIAAIAAAACCAADAAAAAAgABAAAAAQKAAUc2aioAAAnEAoABhzZqKf__zywAAA",
+          "tweet_count": 20
+        }
+      ],
+      "success_rate": 100.0,
+      "route_name": "latest_search_page"
+    }
+  ],
+  "curl_matrix": [
+    {
+      "query": "AI min_faves:100 min_retweets:10",
+      "product": "Top",
+      "referer": "https://x.com/explore",
+      "query_source": "typed_query",
+      "pages_fetched": 2,
+      "pages": [
+        {
+          "page": 1,
+          "status": 200,
+          "body_bytes": 208788,
+          "parsed_ok": true,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": "DAACCgACHNmot4uAJxAK...[ddf57269]",
+          "tweet_count": 20,
+          "elapsed_ms": 2592.5
+        },
+        {
+          "page": 2,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": "DAACCgACHNmot4uAJxAK...[ddf57269]",
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 349.2
+        }
+      ],
+      "success_rate": 50.0,
+      "route_name": "explore_page"
+    },
+    {
+      "query": "AI min_faves:100 min_retweets:10",
+      "product": "Top",
+      "referer": "https://x.com/search?q=AI%20min_faves%3A100%20min_retweets%3A10&src=typed_query",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 343.5
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "top_search_page"
+    },
+    {
+      "query": "AI min_faves:100 min_retweets:10",
+      "product": "Latest",
+      "referer": "https://x.com/search?q=AI%20min_faves%3A100%20min_retweets%3A10&f=live&src=typed_query",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 345.3
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "latest_search_page"
+    },
+    {
+      "query": "OpenAI",
+      "product": "Top",
+      "referer": "https://x.com/explore",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 353.8
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "explore_page"
+    },
+    {
+      "query": "OpenAI",
+      "product": "Top",
+      "referer": "https://x.com/search?q=OpenAI&src=typed_query",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 338.6
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "top_search_page"
+    },
+    {
+      "query": "OpenAI",
+      "product": "Latest",
+      "referer": "https://x.com/search?q=OpenAI&f=live&src=typed_query",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 349.5
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "latest_search_page"
+    },
+    {
+      "query": "Nvidia",
+      "product": "Top",
+      "referer": "https://x.com/explore",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 336.3
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "explore_page"
+    },
+    {
+      "query": "Nvidia",
+      "product": "Top",
+      "referer": "https://x.com/search?q=Nvidia&src=typed_query",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 342.3
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "top_search_page"
+    },
+    {
+      "query": "Nvidia",
+      "product": "Latest",
+      "referer": "https://x.com/search?q=Nvidia&f=live&src=typed_query",
+      "query_source": "typed_query",
+      "pages_fetched": 1,
+      "pages": [
+        {
+          "page": 1,
+          "status": 404,
+          "body_bytes": 0,
+          "parsed_ok": false,
+          "cursor_in_trunc": null,
+          "cursor_out_trunc": null,
+          "tweet_count": 0,
+          "elapsed_ms": 331.6
+        }
+      ],
+      "success_rate": 0.0,
+      "route_name": "latest_search_page"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ except ImportError:
     pytz_stub.UTC = None
     sys.modules["pytz"] = pytz_stub
 
-from diagnostics import traffic_sniffer as sniff_graphql
+from diagnostics import sniffer as sniff_mod
 from tweeter_data_fetcher.x_api.timeline import FetcherEngine
 
 
@@ -58,16 +58,12 @@ class UserByScreenNameContractTests(unittest.TestCase):
 
 
 class SnifferDefaultTests(unittest.TestCase):
-    def test_no_argument_run_uses_configured_home_and_cookies(self):
-        with patch.object(sniff_graphql, "observe") as observe:
-            self.assertEqual(sniff_graphql.main([]), 0)
+    def test_no_argument_run_uses_configured_home_and_default_config(self):
+        with patch.object(sniff_mod, "capture") as capture:
+            self.assertEqual(sniff_mod.main([]), 0)
 
-        self.assertEqual(observe.call_args.args, (sniff_graphql.START_URL,))
-        self.assertTrue(observe.call_args.kwargs["load_config_cookies"])
-        self.assertEqual(
-            observe.call_args.kwargs["endpoint_allowlist"],
-            sniff_graphql.CAPTURE_ENDPOINTS,
-        )
+        self.assertEqual(capture.call_args.kwargs["home_url"], sniff_mod.HOME_URL)
+        self.assertEqual(capture.call_args.kwargs["config_path"], sniff_mod.CONFIG_PATH)
 
 
 if __name__ == "__main__":

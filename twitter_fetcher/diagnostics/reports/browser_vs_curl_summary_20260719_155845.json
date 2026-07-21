@@ -1,0 +1,40 @@
+{
+  "stamp": "20260719_155845",
+  "query": "OpenAI",
+  "endpoint": "SearchTimeline",
+  "experiments": {
+    "browser_seq": {
+      "count": 4,
+      "statuses": [
+        200,
+        200,
+        200,
+        200
+      ]
+    },
+    "curl_seq": {
+      "count": 2,
+      "statuses": [
+        200,
+        404
+      ]
+    },
+    "replay": {
+      "count": 1,
+      "statuses": [
+        200
+      ]
+    },
+    "handoff": {
+      "count": 1,
+      "cursor_used": "DAADDAABCgABHNmjOj1b...[4d35132b]",
+      "statuses": [
+        404
+      ]
+    },
+    "crossover": {
+      "browser_cursor_to_curl": 404,
+      "curl_cursor_to_curl": 404
+    }
+  }
+}
