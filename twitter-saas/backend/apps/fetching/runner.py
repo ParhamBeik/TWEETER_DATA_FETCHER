@@ -1,4 +1,4 @@
-"""Run the vendored fetcher in an isolated subprocess and ingest results.
+"""Run the canonical fetcher in an isolated subprocess and ingest results.
 
 Each run gets an ephemeral scratch PROJECT_ROOT (TDF_PROJECT_ROOT) so the
 engine's on-disk layer never persists. Durable continuity (sync-state
@@ -15,21 +15,44 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
+from collections import Counter, deque
+from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 
 from django.conf import settings
+from django.utils import timezone
 
-from apps.tweets.models import KeyValueState, XSession
+from apps.tweets.models import EndpointState, FetchRun, KeyValueState, RawPage, XSession
+
+from .accounts import tracked_accounts_payload
 
 logger = logging.getLogger(__name__)
 
-VENDOR_DIR = Path(settings.BASE_DIR) / "apps" / "fetching" / "vendor"
 SEED_DIR = Path(settings.BASE_DIR) / "seed"
+FETCHER_SRC = next(
+    (
+        path
+        for path in (
+            Path(os.environ["TDF_FETCHER_SRC"]) if os.environ.get("TDF_FETCHER_SRC") else None,
+            Path("/app/fetcher"),
+            Path(settings.BASE_DIR).parents[1] / "twitter_fetcher" / "src",
+        )
+        if path is not None and path.is_dir()
+    ),
+    Path("/app/fetcher"),
+)
 
-# Mirrors SearchQueryBuilder.slug in the vendored engine so the runner can
-# predict the on-disk output path the engine writes processed search exports to.
+# Mirrors SearchQueryBuilder.slug so the runner can locate processed search exports.
 _SLUG_KEEP = re.compile(r"[^A-Za-z0-9_\\-]+")
+
+
+@dataclass(frozen=True)
+class FetcherRunResult:
+    root: Path
+    run: FetchRun
 
 
 def normalize_slug(raw: str) -> str:
@@ -47,7 +70,7 @@ def _active_session() -> XSession | None:
 
 
 def _search_def(search) -> dict:
-    """Minimal searches.json entry the vendored search pipeline understands."""
+    """Minimal searches.json entry the canonical search pipeline understands."""
     return {
         "name": search.name,
         "slug": search.slug,
@@ -55,7 +78,7 @@ def _search_def(search) -> dict:
         "product": search.product,
         "preserve_exact_query": True,
         "raw_query": search.raw_query,
-        "pagination_depth": 3,
+        "pagination_depth": 1,
         "max_retries": 3,
         "rolling_hours": 24,
     }
@@ -65,9 +88,9 @@ def _write_config(root: Path, searches: list | None = None) -> Path:
     """Materialize config/config.json from the shared XSession + seed files."""
     config_dir = root / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
-    src = SEED_DIR / "accounts.json"
-    if src.exists():
-        shutil.copy2(src, config_dir / "accounts.json")
+    (config_dir / "accounts.json").write_text(
+        json.dumps(tracked_accounts_payload(), indent=2), encoding="utf-8"
+    )
     # searches.json comes from the DB when provided, else the seed file.
     if searches is not None:
         (config_dir / "searches.json").write_text(
@@ -82,9 +105,12 @@ def _write_config(root: Path, searches: list | None = None) -> Path:
         base = json.loads(example.read_text(encoding="utf-8"))
     session = _active_session()
     if session:
-        base.setdefault("auth", {})
-        base["auth"]["cookies"] = session.cookies
-        base["auth"]["headers"] = session.headers
+        headers = {str(key): str(value) for key, value in session.headers.items() if value}
+        base["api_cookies"] = {str(key): str(value) for key, value in session.cookies.items() if value}
+        base["api_headers"] = headers
+        authorization = next((value for key, value in headers.items() if key.lower() == "authorization"), "")
+        if authorization.lower().startswith("bearer "):
+            base.setdefault("api_auth", {})["bearer_token"] = authorization[7:].strip()
     (config_dir / "config.json").write_text(json.dumps(base, indent=2), encoding="utf-8")
     return config_dir / "config.json"
 
@@ -119,8 +145,152 @@ def _persist_state(root: Path, subsystem: str) -> None:
         )
 
 
-def run_fetcher(module: str, args: list[str], subsystem: str, searches: list | None = None) -> Path:
-    """Run a vendored pipeline module as a subprocess; return the scratch root.
+def _read_json(path: Path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _persist_endpoint_states(root: Path, subsystem: str) -> int:
+    sub = "historical_live" if subsystem in ("historical", "live") else subsystem
+    state_dir = root / "data" / sub / "state"
+    count = 0
+    sync = _read_json(state_dir / "sync_state.json", {})
+    if isinstance(sync, dict):
+        for account, account_state in sync.items():
+            if not isinstance(account_state, dict):
+                continue
+            for endpoint in ("UserTweets", "UserTweetsAndReplies"):
+                data = account_state.get(endpoint)
+                if isinstance(data, dict):
+                    EndpointState.objects.update_or_create(
+                        account=str(account), endpoint=endpoint, defaults={"data": data}
+                    )
+                    count += 1
+    search_state = _read_json(state_dir / "search_state.json", {})
+    if isinstance(search_state, dict):
+        for target, data in search_state.items():
+            if isinstance(data, dict):
+                EndpointState.objects.update_or_create(
+                    account=str(target), endpoint="SearchTimeline", defaults={"data": data}
+                )
+                count += 1
+    return count
+
+
+def _persist_raw_pages(root: Path, subsystem: str, run: FetchRun) -> int:
+    sub = "historical_live" if subsystem in ("historical", "live") else subsystem
+    raw_root = root / "data" / sub / "raw"
+    count = 0
+    for path in raw_root.rglob("page_*.json") if raw_root.exists() else ():
+        payload = _read_json(path)
+        if not isinstance(payload, dict):
+            continue
+        relative = path.relative_to(raw_root).parts
+        if sub == "historical_live" and len(relative) >= 4:
+            endpoint, account, batch = relative[0], relative[1], relative[2]
+        elif sub == "search" and len(relative) >= 4:
+            endpoint, account, batch = "SearchTimeline", f"{relative[0]}:{relative[1]}", relative[2]
+        else:
+            continue
+        match = re.search(r"(\d+)$", path.stem)
+        if not match:
+            continue
+        RawPage.objects.update_or_create(
+            endpoint=endpoint,
+            account=account,
+            batch=batch,
+            page_number=int(match.group(1)),
+            defaults={"payload": payload, "fetch_run": run},
+        )
+        count += 1
+    cutoff = timezone.now() - timedelta(days=7)
+    while True:
+        stale_ids = list(
+            RawPage.objects.filter(created_at__lt=cutoff)
+            .order_by("id")
+            .values_list("id", flat=True)[:500]
+        )
+        if not stale_ids:
+            break
+        RawPage.objects.filter(id__in=stale_ids).delete()
+    return count
+
+
+def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[dict, dict, str]:
+    sub = "historical_live" if subsystem in ("historical", "live") else subsystem
+    base = root / "data" / sub
+    event_counts: Counter[str] = Counter()
+    recent_events = []
+    for event_file in (base / "logs").rglob("events.jsonl") if (base / "logs").exists() else ():
+        for line in event_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            event_counts[str(event.get("type") or "unknown")] += 1
+            recent_events.append(event)
+    recent_events = recent_events[-100:]
+
+    http_summary = _read_json(base / "logs" / "http_summary.json", {})
+    failure_ledger = http_summary.get("failure_ledger", {}) if isinstance(http_summary, dict) else {}
+    report_summaries = []
+    status_counts: Counter[str] = Counter()
+    for report_file in (base / "reports").glob("*.json") if (base / "reports").exists() else ():
+        report = _read_json(report_file, {})
+        if not isinstance(report, dict):
+            continue
+        if isinstance(report.get("summary"), dict):
+            report_summary = report["summary"]
+            status_counts["partial"] += int(report_summary.get("partial_endpoints", 0) or 0)
+            status_counts["failed"] += int(report_summary.get("failed_endpoints", 0) or 0)
+            status_counts["completed"] += int(report_summary.get("successful_endpoints", 0) or 0)
+        else:
+            report_summary = {
+                "status": report.get("status"),
+                "endpoint_status": report.get("endpoint_status"),
+                "counts": report.get("counts", {}),
+                "exhausted_reason": (report.get("metadata") or {}).get("exhausted_reason"),
+            }
+            status_counts[str(report.get("status") or "unknown")] += 1
+        report_summaries.append({"file": report_file.name, **report_summary})
+
+    by_status = http_summary.get("by_status_code", {}) if isinstance(http_summary, dict) else {}
+    if int(by_status.get("401", 0) or 0) or int(by_status.get("403", 0) or 0):
+        status = "auth_required"
+    elif return_code != 0 or status_counts["failed"]:
+        status = "failed"
+    elif status_counts["partial"]:
+        status = "partial"
+    else:
+        status = "completed"
+    return {
+        "return_code": return_code,
+        "event_counts": dict(event_counts),
+        "recent_events": recent_events,
+        "reports": report_summaries,
+        "status_counts": dict(status_counts),
+    }, failure_ledger, status
+
+
+def _persist_artifacts(root: Path, subsystem: str, run: FetchRun, return_code: int) -> tuple[dict, dict, str]:
+    summary, failure_ledger, status = _collect_run_summary(root, subsystem, return_code)
+    summary["raw_pages"] = _persist_raw_pages(root, subsystem, run)
+    summary["endpoint_states"] = _persist_endpoint_states(root, subsystem)
+    return summary, failure_ledger, status
+
+
+def run_fetcher(
+    module: str,
+    args: list[str],
+    subsystem: str,
+    searches: list | None = None,
+    *,
+    target: str = "",
+    task_id: str = "",
+) -> FetcherRunResult:
+    """Run a canonical pipeline and return its scratch root plus durable run row.
 
     Caller ingests from the returned root, then calls cleanup(root). On any
     internal failure (config write, state restore, persist) the scratch dir is
@@ -128,6 +298,12 @@ def run_fetcher(module: str, args: list[str], subsystem: str, searches: list | N
     does NOT raise — the engine may have written partial results before failing,
     and those are still worth ingesting.
     """
+    run = FetchRun.objects.create(
+        run_id=f"saas_{uuid.uuid4().hex}",
+        task_id=task_id,
+        subsystem=subsystem,
+        target=target,
+    )
     root = Path(tempfile.mkdtemp(prefix="tdf_run_"))
     try:
         config_path = _write_config(root, searches=searches)
@@ -136,33 +312,62 @@ def run_fetcher(module: str, args: list[str], subsystem: str, searches: list | N
         env = dict(os.environ)
         env["TDF_PROJECT_ROOT"] = str(root)
         env["TDF_CONFIG"] = str(config_path)
-        env["PYTHONPATH"] = str(VENDOR_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = str(FETCHER_SRC) + os.pathsep + env.get("PYTHONPATH", "")
 
-        result = subprocess.run(
+        process = subprocess.Popen(
             [sys.executable, "-m", module, *args],
             env=env,
             cwd=str(root),
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        lines: deque[str] = deque(maxlen=400)
+        for line in process.stdout or ():
+            clean = line.rstrip()
+            lines.append(clean)
+            logger.info("fetcher[%s] %s", subsystem, clean)
+        return_code = process.wait()
         _persist_state(root, subsystem)
-        if result.returncode != 0:
+        summary, failure_ledger, status = _persist_artifacts(root, subsystem, run, return_code)
+        run.return_code = return_code
+        run.log_excerpt = "\n".join(lines)[-20000:]
+        run.summary = summary
+        run.failure_ledger = failure_ledger
+        run.status = status
+        run.save(update_fields=["return_code", "log_excerpt", "summary", "failure_ledger", "status"])
+        if return_code != 0:
             logger.warning(
                 "fetcher %s exited with code %s for subsystem=%s; "
                 "ingesting whatever partial results exist",
                 module,
-                result.returncode,
+                return_code,
                 subsystem,
             )
-        return root
+        return FetcherRunResult(root=root, run=run)
     except Exception:
         # Never leak the scratch dir if something inside the try block raised
         # before the caller could take ownership of ``root``.
         shutil.rmtree(root, ignore_errors=True)
+        run.status = "failed"
+        run.finished_at = timezone.now()
+        run.save(update_fields=["status", "finished_at"])
         raise
 
 
 def cleanup(root: Path) -> None:
     shutil.rmtree(root, ignore_errors=True)
+
+
+def finalize_run(run: FetchRun, *, ingested_tweets: int = 0, task_failed: bool = False) -> None:
+    summary = dict(run.summary or {})
+    summary["ingested_tweets"] = int(ingested_tweets)
+    run.summary = summary
+    if task_failed:
+        run.status = "failed"
+    run.finished_at = timezone.now()
+    run.save(update_fields=["summary", "status", "finished_at"])
 
 
 def iter_processed_tweets(root: Path, subsystem: str) -> Iterable[dict]:
@@ -190,7 +395,7 @@ def iter_processed_tweets(root: Path, subsystem: str) -> Iterable[dict]:
 def iter_search_tweets(root: Path, slug: str) -> Iterable[dict]:
     """Yield tweets from a search run's export ({slug}.json with a tweets key).
 
-    ``slug`` is normalized the same way the vendored SearchQueryBuilder does it,
+    ``slug`` is normalized the same way SearchQueryBuilder does it,
     because the engine writes processed exports under the normalized slug, not
     the raw model slug.
     """

@@ -6,12 +6,14 @@ core of the "Postgres is the sole durable store" guarantee.
 """
 import json
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from django.utils import timezone
 
 from apps.fetching import runner
-from apps.tweets.models import KeyValueState
+from apps.tweets.models import EndpointState, FetchRun, KeyValueState, RawPage, XSession
 
 
 @pytest.mark.django_db
@@ -55,3 +57,97 @@ def test_request_state_files_round_trip():
         (dst / "data" / "search" / "state" / "tx_health.json").read_text()
     )
     assert restored == {"ok": True}
+
+
+@pytest.mark.django_db
+def test_active_session_maps_to_fetcher_config_keys(monkeypatch):
+    seed = Path(tempfile.mkdtemp(prefix="tdf_seed_"))
+    (seed / "config.example.json").write_text(
+        json.dumps({"api_auth": {"bearer_token": "old"}, "api_cookies": {"old": "cookie"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runner, "SEED_DIR", seed)
+    XSession.objects.create(
+        cookies={"auth_token": "cookie", "ct0": "csrf"},
+        headers={"authorization": "Bearer fresh-token", "x-csrf-token": "csrf"},
+    )
+
+    config = json.loads(runner._write_config(Path(tempfile.mkdtemp(prefix="tdf_cfg_"))).read_text())
+
+    assert config["api_cookies"]["auth_token"] == "cookie"
+    assert config["api_headers"]["x-csrf-token"] == "csrf"
+    assert config["api_auth"]["bearer_token"] == "fresh-token"
+    assert "auth" not in config
+
+
+@pytest.mark.django_db
+def test_write_config_materializes_tracked_db_tiers(monkeypatch):
+    from apps.tweets.models import TwitterUser
+
+    seed = Path(tempfile.mkdtemp(prefix="tdf_seed_"))
+    (seed / "config.example.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(runner, "SEED_DIR", seed)
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1, display_name="Jack")
+    TwitterUser.objects.create(handle="elon", tracking=False, priority=2)
+
+    root = Path(tempfile.mkdtemp(prefix="tdf_cfg_"))
+    runner._write_config(root)
+    accounts = json.loads((root / "config" / "accounts.json").read_text())
+    assert accounts["priority_1"] == [{"username": "jack", "display_name": "Jack"}]
+    assert accounts["priority_2"] == []
+
+
+@pytest.mark.django_db
+def test_run_artifacts_persist_raw_pages_state_ledger_and_retention():
+    root = Path(tempfile.mkdtemp(prefix="tdf_artifacts_"))
+    raw = root / "data" / "historical_live" / "raw" / "UserTweets" / "jack" / "batch"
+    raw.mkdir(parents=True)
+    (raw / "page_1.json").write_text(json.dumps({"data": {"ok": True}}), encoding="utf-8")
+    state = root / "data" / "historical_live" / "state"
+    state.mkdir(parents=True)
+    (state / "sync_state.json").write_text(
+        json.dumps({"jack": {"UserTweets": {"status": "completed"}}}), encoding="utf-8"
+    )
+    logs = root / "data" / "historical_live" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "http_summary.json").write_text(
+        json.dumps({"failure_ledger": {"UserTweets:404": {"count": 1}}}), encoding="utf-8"
+    )
+    reports = root / "data" / "historical_live" / "reports"
+    reports.mkdir(parents=True)
+    (reports / "run.json").write_text(
+        json.dumps({"summary": {"successful_endpoints": 1, "partial_endpoints": 0, "failed_endpoints": 0}}),
+        encoding="utf-8",
+    )
+    run = FetchRun.objects.create(run_id="test-run", subsystem="historical")
+    old = RawPage.objects.create(endpoint="Old", account="old", batch="old", page_number=1)
+    RawPage.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=8))
+
+    summary, ledger, status = runner._persist_artifacts(root, "historical", run, 0)
+
+    assert status == "completed"
+    assert summary["raw_pages"] == 1
+    assert ledger["UserTweets:404"]["count"] == 1
+    assert RawPage.objects.filter(endpoint="UserTweets", fetch_run=run).exists()
+    assert not RawPage.objects.filter(pk=old.pk).exists()
+    assert EndpointState.objects.get(account="jack", endpoint="UserTweets").data["status"] == "completed"
+
+
+@pytest.mark.django_db
+def test_nonzero_subprocess_exit_persists_failed_run(monkeypatch):
+    class FailedProcess:
+        stdout = ["fetch failed\n"]
+
+        @staticmethod
+        def wait():
+            return 7
+
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *args, **kwargs: FailedProcess())
+
+    result = runner.run_fetcher("fake.module", [], "search", target="test:Latest")
+    result.run.refresh_from_db()
+
+    assert result.run.status == "failed"
+    assert result.run.return_code == 7
+    assert "fetch failed" in result.run.log_excerpt
+    runner.cleanup(result.root)

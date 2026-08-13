@@ -3,6 +3,9 @@
 # jobs; beat schedules the periodic live/historical/search cycles; frontend
 # (nginx) serves the React SPA and reverse-proxies /api/ + /admin/ to web so
 # the browser uses a single origin on :8080.
+#
+# Build context is the git repo root so images install the canonical fetcher
+# from twitter_fetcher/src (no vendored copy).
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,98 +15,104 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Host 5434: portfolio uses 5432, bama defaults to 5433.
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    mem_limit: 512m
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    mem_limit: 128m
 
   web:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
-    # collectstatic is guarded with `|| true` so DEBUG=1 (no STATIC_ROOT need)
-    # or a missing staticfiles dir never aborts the container. Migrate then
-    # launch gunicorn.
+      context: ..
+      dockerfile: twitter-saas/backend/Dockerfile
     command: >
       sh -c "python manage.py collectstatic --noinput || true &&
              python manage.py migrate --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DJANGO_CACHE_URL: redis://redis:6379/2
+      PYTHONPATH: /app/fetcher
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "8002:8000"
     healthcheck:
-      # /admin/login/ returns 200 when Django is up; curl -f fails on 4xx/5xx.
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/admin/login/ > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+    mem_limit: 512m
 
   worker:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
-    command: celery -A config worker -l info
+      context: ..
+      dockerfile: twitter-saas/backend/Dockerfile
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=20
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DJANGO_CACHE_URL: redis://redis:6379/2
+      PYTHONPATH: /app/fetcher
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    mem_limit: 2g
 
   beat:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ..
+      dockerfile: twitter-saas/backend/Dockerfile
     command: celery -A config beat -l info
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DJANGO_CACHE_URL: redis://redis:6379/2
+      PYTHONPATH: /app/fetcher
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    mem_limit: 256m
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    # nginx can start before web — it returns 502 on /api/ until web is up,
-    # which is preferable to blocking the whole stack on gunicorn. Depends on
-    # web (service_healthy) is intentionally omitted for that reason.
+      context: ..
+      dockerfile: twitter-saas/frontend/Dockerfile
     ports:
       - "8080:80"
     depends_on:
       - web
+    mem_limit: 128m
 
 volumes:
   pgdata:

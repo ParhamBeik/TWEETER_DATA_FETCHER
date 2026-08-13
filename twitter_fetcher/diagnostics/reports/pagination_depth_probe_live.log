@@ -1,0 +1,85 @@
+[INFO] query_ids: {'UserTweets': '6r5OLCC_wFH4CpRyXKuAmQ', 'UserTweetsAndReplies': 'klja8a2iJX_3to5RdfVlgw', 'SearchTimeline': 'hz_94eVAtrtQo_vO3my7Rw', 'UserByScreenName': '2qvSHpkWTMS9i0zJAwDNiA'}
+[INFO] resolved @chigrl -> 20253024
+[INFO] resolved @KobeissiLetter -> 3316376038
+[INFO] === curl_cffi : UserTweets (2 target(s), 8 page(s)) ===
+[INFO]   [curl_cffi] UserTweets chigrl p1 -> 200 1482ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p2 -> 200 1334ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p3 -> 200 1238ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p4 -> 200 995ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p5 -> 200 1240ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p6 -> 200 896ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p7 -> 200 1235ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets chigrl p8 -> 200 880ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p1 -> 200 859ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p2 -> 200 879ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p3 -> 200 868ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p4 -> 200 1122ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p5 -> 200 1158ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p6 -> 200 1103ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p7 -> 200 845ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweets KobeissiLetter p8 -> 200 1181ms HTTP/2 parsed=True
+[INFO] === curl_cffi : UserTweetsAndReplies (2 target(s), 8 page(s)) ===
+[INFO]   [curl_cffi] UserTweetsAndReplies chigrl p1 -> 200 2010ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweetsAndReplies chigrl p2 -> 200 1540ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweetsAndReplies chigrl p3 -> 200 948ms HTTP/2 parsed=True
+[INFO]   [curl_cffi] UserTweetsAndReplies chigrl p4 -> 200 1274ms HTTP/2 parsed=True
+[WARNING] 404 on UserTweetsAndReplies for @chigrl
+[INFO]   [curl_cffi] UserTweetsAndReplies chigrl p5 -> 404 452ms HTTP/2 parsed=False
+[WARNING] 404 on UserTweetsAndReplies for @KobeissiLetter
+[INFO]   [curl_cffi] UserTweetsAndReplies KobeissiLetter p1 -> 404 465ms HTTP/2 parsed=False
+[INFO] === curl_cffi : SearchTimeline (1 target(s), 8 page(s)) ===
+[INFO]   [curl_cffi] SearchTimeline (Iran OR Hormuz OR Brent) lang:en min_faves:500 p1 -> 200 1644ms HTTP/2 parsed=True
+[WARNING] 404 on SearchTimeline for @default
+[INFO]   [curl_cffi] SearchTimeline (Iran OR Hormuz OR Brent) lang:en min_faves:500 p2 -> 404 488ms HTTP/2 parsed=False
+
+JSON: /Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/twitter_fetcher/diagnostics/reports/pagination_test_20260810_215022.json
+MD:   /Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/twitter_fetcher/diagnostics/reports/pagination_test_20260810_215022.md
+
+=== SUMMARY ===
+{
+  "curl_cffi/UserTweets": {
+    "requests": 16,
+    "success": 16,
+    "success_pct": 100.0,
+    "404s": 0,
+    "404_pct": 0.0,
+    "page1_404s": 0,
+    "page2plus_404s": 0,
+    "page2plus_total": 14,
+    "avg_ms": 1082.1,
+    "median_ms": 1112.7,
+    "http_versions": {
+      "HTTP/2": 16
+    }
+  },
+  "curl_cffi/UserTweetsAndReplies": {
+    "requests": 6,
+    "success": 4,
+    "success_pct": 66.7,
+    "404s": 2,
+    "404_pct": 33.3,
+    "page1_404s": 1,
+    "page2plus_404s": 1,
+    "page2plus_total": 4,
+    "avg_ms": 1114.8,
+    "median_ms": 1110.7,
+    "http_versions": {
+      "HTTP/2": 6
+    }
+  },
+  "curl_cffi/SearchTimeline": {
+    "requests": 2,
+    "success": 1,
+    "success_pct": 50.0,
+    "404s": 1,
+    "404_pct": 50.0,
+    "page1_404s": 0,
+    "page2plus_404s": 1,
+    "page2plus_total": 1,
+    "avg_ms": 1066.0,
+    "median_ms": 1066.0,
+    "http_versions": {
+      "HTTP/2": 2
+    }
+  }
+}

@@ -3,7 +3,8 @@ import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { getToken, setToken } from "./api";
 import Feed from "./pages/Feed";
 import Search from "./pages/Search";
-import Follows from "./pages/Follows";
+import Accounts from "./pages/Accounts";
+import Cycles from "./pages/Cycles";
 import Login from "./pages/Login";
 
 function RequireAuth({ children }) {
@@ -11,7 +12,6 @@ function RequireAuth({ children }) {
 }
 
 export default function App() {
-  // Re-render nav when auth changes by keying off a token snapshot.
   const [authed, setAuthed] = useState(Boolean(getToken()));
   const navigate = useNavigate();
 
@@ -24,12 +24,13 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Twitter SaaS</h1>
+        <h1>Fetcher</h1>
         {authed && (
           <nav>
             <Link to="/">Feed</Link>
+            <Link to="/accounts">Accounts</Link>
+            <Link to="/cycles">Cycles</Link>
             <Link to="/search">Search</Link>
-            <Link to="/follows">Follows</Link>
             <button className="link" onClick={logout}>
               Logout
             </button>
@@ -49,18 +50,26 @@ export default function App() {
             }
           />
           <Route
-            path="/search"
+            path="/accounts"
             element={
               <RequireAuth>
-                <Search />
+                <Accounts />
               </RequireAuth>
             }
           />
           <Route
-            path="/follows"
+            path="/cycles"
             element={
               <RequireAuth>
-                <Follows />
+                <Cycles />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/search"
+            element={
+              <RequireAuth>
+                <Search />
               </RequireAuth>
             }
           />

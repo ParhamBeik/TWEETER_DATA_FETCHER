@@ -1,6 +1,6 @@
 # TWEETER DATA FETCHER — Agent Guide
 
-Latest update: July 18, 2026.
+Latest update: August 11, 2026.
 
 This file is for coding agents. For human install/usage, see `README.md`.
 
@@ -8,7 +8,7 @@ This file is for coding agents. For human install/usage, see `README.md`.
 
 Canonical package: setuptools `src` layout under `twitter_fetcher/src/tweeter_data_fetcher/`.
 
-`twitter_fetcher/` holds all current-version code, tests, diagnostics, config, and runtime data. Repo root holds only that parent, `LEGACY/` (read-only archive), `.venv/`, `graphify-out/` (local, gitignored), and metadata (`README.md`, `AGENTS.md`, `pyproject.toml`, `.gitignore`).
+`twitter_fetcher/` holds all current-version code, tests, diagnostics, config, and runtime data. Repo root holds only that parent, `LEGACY/` (read-only archive), `.venv/`, `graphify-out/` (local, gitignored), `twitter-saas/` (Django + React operator console; imports canonical `twitter_fetcher/src`), and metadata (`README.md`, `AGENTS.md`, `pyproject.toml`, `.gitignore`).
 
 `paths.py` is the single path router. `PROJECT_ROOT` is `twitter_fetcher/` (not the git root). All `config/` and `data/` paths resolve from there.
 
@@ -31,6 +31,7 @@ Canonical package: setuptools `src` layout under `twitter_fetcher/src/tweeter_da
 | Configuration | `configuration.py`, `account_config.py`, `twitter_fetcher/config/` |
 | Diagnostics | `twitter_fetcher/diagnostics/` |
 | Tests | `twitter_fetcher/tests/{unit,integration,contract}/` |
+| SaaS (Postgres + Celery + UI) | `twitter-saas/` (one global cycle per beat tick; imports `twitter_fetcher/src`) |
 
 ### Rename map (do not resurrect old paths)
 
@@ -46,7 +47,8 @@ Canonical package: setuptools `src` layout under `twitter_fetcher/src/tweeter_da
 
 - Never commit `twitter_fetcher/config/config.json`, `twitter_fetcher/data/`, diagnostic run output, or `graphify-out/`.
 - Prefer root-cause fixes in canonical code under `twitter_fetcher/src/`.
-- Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` path shapes.
+- SaaS Docker/pytest import the same package via `PYTHONPATH` / `twitter_fetcher/src` (`TDF_PROJECT_ROOT` is the only SaaS path seam). Do not reintroduce a vendored copy.
+- Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` path shapes. CLI default is all seven folders; SaaS scratch may write union-only.
 - Keep Twitter/X request changes evidence-backed by diagnostic captures.
 - Do not add database layers, abstract repositories, ports, factories, or new dependencies without a current second implementation.
 - After meaningful code changes run `.venv/bin/python -m pytest -q`.
@@ -83,6 +85,13 @@ tdf-auth --interactive
 
 Entry points are defined in `pyproject.toml` (`package-dir` = `twitter_fetcher/src`). Pytest uses `testpaths = ["twitter_fetcher/tests"]`.
 
+SaaS (from `twitter-saas/backend`):
+
+```bash
+DJANGO_SETTINGS_MODULE=config.settings ../../.venv/bin/python -m pytest -q apps/fetching apps/tweets
+python manage.py backfill_tweet_payloads   # refresh author/rich columns from Tweet.payload (no X traffic)
+```
+
 ## Runtime Contracts
 
 Historical and live share `twitter_fetcher/data/historical_live/` and use global two-pass order:
@@ -103,6 +112,7 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 - Watermarks advance only after successful endpoint completion.
 - Partial/failed runs do not advance watermarks.
 - Overlap is expected and deduplicated.
+- Unavailable accounts quarantine after three consecutive user-ID resolution failures; quarantined targets are reported explicitly and excluded from eligible-cycle failure counts.
 
 Processed folders (unchanged):
 
@@ -124,11 +134,13 @@ Processed folders (unchanged):
 - Timeline endpoints use GET with compact JSON `variables`, `features`, and optional `fieldToggles`.
 - Search omits `fieldToggles`; profile timelines use `{"withArticlePlainText":false}`.
 - `UserTweetsAndReplies` requires `referer: https://x.com/{account}/with_replies` and `x-twitter-active-user: yes`.
-- `UserTweetsAndReplies` requires 1.0s–1.5s inter-page delay and 10s–12s inter-account cooldown to prevent IP/session 404 soft-blocks.
-- `SearchTimeline` Page 1 runs over HTTP; Page 2+ (cursor queries) automatically routes through Playwright Chromium SPA context (`FetcherEngine.bootstrap_browser_context`) to bypass server-side cursor 404 gates.
+- `UserTweetsAndReplies` requires 2.0s–3.0s inter-page delay, chunk cool + session reset every 2 pages (`replies_chunk_pages`), and 45s–60s inter-account cooldown to prevent density soft-blocks. Do not treat Playwright as a success path for Replies.
+- `SearchTimeline` Page 1 runs over HTTP; depth > 1 uses `http+browser` hybrid (Playwright for deeper pages). Mid-pagination HTTP cursor 404s must not burn multi-minute retry loops — early `_cursor_gate`. Prefer `pagination_depth: 1` when only HTTP speed matters.
 - Extract only bottom cursors; never reuse them across endpoint/account/query/product/session.
 - Validate status, JSON, GraphQL errors, endpoint data path, instruction types, and fresh cursor independently.
 - HTTP 429 sleeps to reset plus safety buffer, bounded by the configured maximum.
+- Status classification: `400` stop (contract); `401`/`403` pause for credential refresh; `404` classify by endpoint/cursor without auto secret mutation; `5xx`/network bounded retry.
+- Transport decision evidence: `twitter_fetcher/diagnostics/reports/ENDPOINT_TRANSPORT_DECISION_20260810.md`.
 
 ## Storage
 
@@ -160,7 +172,9 @@ Search must not create historical/live set folders.
 
 - `PipelineConsole` owns tagged terminal output and forwards every message to the package logger.
 - `configure_logging()` writes rotating subsystem logs under `data/<subsystem>/logs/` and stamps records with `run_id`.
-- `EventRecorder` writes structured `events.jsonl`, HTTP detail files under `logs/errors/`, and `http_summary.json`.
+- `EventRecorder` writes structured `events.jsonl`, HTTP detail files under `logs/errors/`, and `http_summary.json` (includes failure ledger).
+- Live cycles persist a durable JSON report under `reports/` with unique `report_id`.
+- SaaS `FetchRun.status` uses `running`, `completed`, `partial`, `failed`, `auth_required`. Celery worker concurrency is `1`. Raw pages retained ~7 days.
 - Historical emits run and phase events; live/search emit cycle events; timeline pagination emits page events; HTTP failures emit detail references.
 - Event/log write failures must be logged, not silently discarded.
 - Do not log cookies, bearer tokens, CSRF tokens, or full authorization headers in ordinary messages. HTTP detail files are local runtime artifacts and must remain ignored.
@@ -184,4 +198,4 @@ Reports: `twitter_fetcher/diagnostics/reports/` (curated findings). Run dirs (`s
 python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
 ```
 
-Current suite: **108 passed** on July 18, 2026.
+Current suite: **126 passed** (canonical `twitter_fetcher/tests`) on August 11, 2026. SaaS `apps/fetching` + `apps/tweets` add ~25 Django tests (run with `DJANGO_SETTINGS_MODULE=config.settings` from `twitter-saas/backend`).

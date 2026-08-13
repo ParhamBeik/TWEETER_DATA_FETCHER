@@ -244,3 +244,14 @@ class CurlCffiAPIManager:
         for sess in self._sessions.values():
             sess.close()
         self._sessions.clear()
+
+    def reset_transport_session(self, endpoint: Optional[str] = None, *, reason: str = "rotation") -> None:
+        """Drop curl_cffi pooled sessions so the next request opens a fresh HTTP/2 socket."""
+        if endpoint:
+            sess = self._sessions.pop(endpoint, None)
+            if sess is not None:
+                sess.close()
+                self._info(f"Reset curl_cffi session for {endpoint} ({reason})")
+            return
+        self.cleanup()
+        self._info(f"Reset all curl_cffi sessions ({reason})")

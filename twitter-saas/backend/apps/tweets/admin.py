@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     EndpointState,
+    FetchRun,
     KeyValueState,
     RawPage,
     Search,
@@ -14,8 +15,8 @@ from .models import (
 
 @admin.register(TwitterUser)
 class TwitterUserAdmin(admin.ModelAdmin):
-    list_display = ("handle", "display_name", "rest_id", "tracking", "created_at")
-    list_filter = ("tracking",)
+    list_display = ("handle", "display_name", "priority", "verified", "tracking", "quarantined", "created_at")
+    list_filter = ("tracking", "priority", "verified", "quarantined")
     search_fields = ("handle", "rest_id", "display_name")
 
 
@@ -47,3 +48,4 @@ class XSessionAdmin(admin.ModelAdmin):
 admin.site.register(RawPage)
 admin.site.register(EndpointState)
 admin.site.register(KeyValueState)
+admin.site.register(FetchRun)

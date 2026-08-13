@@ -21,6 +21,7 @@ from __future__ import annotations
 
 
 import argparse
+import hashlib
 import json
 import logging
 import re
@@ -61,6 +62,7 @@ from tweeter_data_fetcher.processing.sets import TweetSetProcessor
 from tweeter_data_fetcher.processing.parsing import parse_twitter_timestamp
 from tweeter_data_fetcher.storage.facade import StorageManager
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
+from tweeter_data_fetcher.observability.event_recorder import redact_exception
 from tweeter_data_fetcher.observability.logging_setup import attach_run_id
 from tweeter_data_fetcher.configuration import resolve_config_path
 
@@ -69,6 +71,10 @@ VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
 
 FROZEN_SEARCH_FEATURES: Dict[str, object] = dict(SEARCH_TIMELINE_FEATURES)
 logger = logging.getLogger(__name__)
+
+
+def _cursor_ref(cursor: Optional[str]) -> Optional[str]:
+    return hashlib.sha256(str(cursor).encode("utf-8")).hexdigest()[:12] if cursor else None
 
 
 def _agent_debug_log(hypothesis: str, location: str, event: str, fields: Dict[str, Any]) -> None:
@@ -243,14 +249,14 @@ class SearchTimelineMonitor:
         priority = int(search_def.get("polling_priority", 3))
         defaults = DEFAULT_PRIORITY_POLICIES.get(priority, DEFAULT_PRIORITY_POLICIES[7])
         default_cap = int(self.config.get("api_config", {}).get("pagination_safety_cap_pages", 50))
+        requested_depth = max(1, int(search_def.get("pagination_depth", 1)))
         if search_def.get("pagination_safety_cap_pages") is not None:
             page_cap = int(search_def["pagination_safety_cap_pages"])
-        elif search_def.get("pagination_depth") is not None:
-            page_cap = int(search_def["pagination_depth"])
         else:
             page_cap = default_cap
         return {
             "poll_interval_seconds": int(search_def.get("poll_interval_seconds", defaults["poll_interval_seconds"])),
+            "pagination_depth": requested_depth,
             "pagination_safety_cap_pages": max(1, page_cap),
             "max_retries": int(search_def.get("max_retries", 3)),
             "rolling_hours": int(search_def.get("rolling_hours", 24)),
@@ -279,10 +285,10 @@ class SearchTimelineMonitor:
         )
 
     def _build_frozen_headers(self, search_url: str) -> Dict[str, str]:
-        headers = dict(self.api_manager.session.headers)
-        headers["referer"] = search_url
-        headers["x-twitter-active-user"] = "yes"
-        return {str(key): str(value) for key, value in headers.items() if value is not None}
+        # APIManager supplies auth/session headers and the endpoint-pinned browser
+        # transaction ID. Freezing the whole session here used to overwrite that
+        # confirmed ID with a stale cross-endpoint value and caused page-1 404s.
+        return {"referer": search_url, "x-twitter-active-user": "yes"}
 
     def _extract_instructions(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         return (
@@ -472,6 +478,7 @@ class SearchTimelineMonitor:
         has_pages: bool = False,
         search_url: Optional[str] = None,
         browser_fallback_pages: int = 2,
+        account: str = "search",
     ) -> Dict[str, Any]:
         endpoint = "SearchTimeline"
         retry_policy = self.api_manager.retry_policy()
@@ -483,12 +490,12 @@ class SearchTimelineMonitor:
         )
         errors: List[Dict[str, Any]] = []
         attempts = 0
-        auth_refreshed = False
         context_refreshed = False
         cursor_refreshed = False
         active_headers = dict(frozen_headers)
         for attempt in range(max_attempts):
             attempts += 1
+            request_started = time.monotonic()
             try:
                 variables = dict(variables_template)
                 if cursor:
@@ -517,6 +524,7 @@ class SearchTimelineMonitor:
                     params=params,
                     headers=active_headers,
                 )
+                latency_ms = int((time.monotonic() - request_started) * 1000)
                 if response.status_code == 200:
                     try:
                         payload = response.json()
@@ -525,7 +533,7 @@ class SearchTimelineMonitor:
                             "_failure": "partial_parse_error" if has_pages else "failed_initial_parse_error",
                             "_status": response.status_code,
                             "_attempts": attempts,
-                            "_error_samples": [{"cursor": cursor, "attempt": attempt + 1, "exception": f"JSON parse error: {str(exc)[:500]}"}],
+                            "_error_samples": [{"cursor": _cursor_ref(cursor), "attempt": attempt + 1, "exception": f"JSON parse error: {str(exc)[:500]}"}],
                         }
                     validation = validate_graphql_payload(endpoint, payload)
                     if not validation.ok:
@@ -534,7 +542,7 @@ class SearchTimelineMonitor:
                             "_status": response.status_code,
                             "_attempts": attempts,
                             "_error_samples": [{
-                                "cursor": cursor,
+                                "cursor": _cursor_ref(cursor),
                                 "attempt": attempt + 1,
                                 "semantic_error": validation.reason,
                                 "graphql_errors": validation.errors[:3],
@@ -543,9 +551,22 @@ class SearchTimelineMonitor:
                     payload["_attempts"] = attempts
                     payload["_error_samples"] = errors[-5:]
                     payload["_status"] = response.status_code
+                    payload["_latency_ms"] = latency_ms
+                    if errors:
+                        self.fetcher.recorder.mark_http_recovered(account, endpoint)
                     return payload
+                self.fetcher.recorder.emit_http_error(
+                    account=account,
+                    endpoint=endpoint,
+                    status_code=int(response.status_code),
+                    cursor=cursor,
+                    request_url=graphql_url,
+                    request_headers=active_headers,
+                    variables=variables,
+                    response_text=str(response.text or ""),
+                )
                 if response.status_code == 429:
-                    errors.append({"status_code": 429, "cursor": cursor, "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
+                    errors.append({"status_code": 429, "cursor": _cursor_ref(cursor), "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
                     wait = self.api_manager.rate_limit_sleep_seconds(endpoint, response.headers)
                     if wait <= 0:
                         wait = int(retry_policy.get("rate_limit_safety_buffer_seconds", 5))
@@ -554,46 +575,26 @@ class SearchTimelineMonitor:
                     time.sleep(wait)
                     continue
                 if response.status_code in {400, 401, 403, 404}:
-                    errors.append({"status_code": int(response.status_code), "cursor": cursor, "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
+                    errors.append({"status_code": int(response.status_code), "cursor": _cursor_ref(cursor), "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
                     if response.status_code == 400:
                         return {"_failure": self._classify_http_failure(400, has_pages, cursor), "_status": 400, "_attempts": attempts, "_error_samples": errors[-5:]}
-                    if response.status_code in {401, 403} and not auth_refreshed:
-                        auth_refreshed = True
-                        refreshed = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
-                        if refreshed.ok:
-                            self._after_bootstrap(refreshed, endpoint)
-                            query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
-                            if query_id:
-                                graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
-                            if search_url:
-                                active_headers = self._build_frozen_headers(search_url)
-                            continue
-                    if response.status_code == 404 and cursor and has_pages and not cursor_refreshed and search_url:
-                        cursor_refreshed = True
-                        refreshed = self.fetcher.bootstrap_browser_context(
-                            search_url=search_url,
-                            capture_endpoint=endpoint,
-                            max_pages=2,
-                        )
-                        if refreshed.ok:
-                            self._after_bootstrap(refreshed, endpoint)
-                            query_id = str(self.api_manager.get_query_id(endpoint) or "").strip()
-                            if query_id:
-                                graphql_url = f"https://x.com/i/api/graphql/{query_id}/{endpoint}"
-                            active_headers = self._build_frozen_headers(search_url)
-                            # #region agent log
-                            _agent_debug_log(
-                                "A",
-                                "search_timeline.py:_request_page",
-                                "cursor_404_bootstrap",
-                                {
-                                    "bootstrap_ok": refreshed.ok,
-                                    "query_id": refreshed.query_ids.get(endpoint),
-                                    "endpoint_health": self.api_manager.get_endpoint_health(endpoint),
-                                },
-                            )
-                            # #endregion
-                            continue
+                    if response.status_code in {401, 403}:
+                        return {
+                            "_failure": self._classify_http_failure(response.status_code, has_pages, cursor),
+                            "_status": response.status_code,
+                            "_attempts": attempts,
+                            "_error_samples": errors[-5:],
+                            "_auth_required": True,
+                        }
+                    if response.status_code == 404 and cursor and has_pages:
+                        # Known server-side SearchTimeline cursor gate — do not burn HTTP retries.
+                        return {
+                            "_failure": self._classify_http_failure(404, has_pages, cursor),
+                            "_status": 404,
+                            "_attempts": attempts,
+                            "_error_samples": errors[-5:],
+                            "_cursor_gate": True,
+                        }
                     if response.status_code == 404 and not cursor and not has_pages and not context_refreshed:
                         context_refreshed = True
                         refreshed = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
@@ -605,15 +606,8 @@ class SearchTimelineMonitor:
                             if search_url:
                                 active_headers = self._build_frozen_headers(search_url)
                             continue
-                    client_attempts = int(retry_policy.get("client_error_attempts", self.fetcher.max_cursor_error_retries))
-                    if attempt < client_attempts - 1:
-                        self.api_manager.jitter_sleep(
-                            float(retry_policy.get("client_error_min_seconds", 10)),
-                            float(retry_policy.get("client_error_max_seconds", 20)),
-                            reason=f"SearchTimeline HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
-                        )
-                        continue
-                    if response.status_code == 404 and not cursor and not has_pages and search_url:
+                    # Initial SearchTimeline 404: one quick path to browser, no multi-second HTTP retry loop.
+                    if response.status_code == 404 and not cursor and not has_pages and search_url and browser_fallback_pages > 0:
                         fallback = self.fetcher.bootstrap_browser_context(
                             search_url=search_url,
                             capture_endpoint=endpoint,
@@ -635,9 +629,23 @@ class SearchTimelineMonitor:
                                 "_error_samples": errors[-5:],
                                 "_transport": "browser_fallback",
                             }
+                        return {
+                            "_failure": self._classify_http_failure(404, has_pages, cursor),
+                            "_status": 404,
+                            "_attempts": attempts,
+                            "_error_samples": errors[-5:],
+                        }
+                    client_attempts = int(retry_policy.get("client_error_attempts", self.fetcher.max_cursor_error_retries))
+                    if attempt < client_attempts - 1 and response.status_code != 404:
+                        self.api_manager.jitter_sleep(
+                            float(retry_policy.get("client_error_min_seconds", 10)),
+                            float(retry_policy.get("client_error_max_seconds", 20)),
+                            reason=f"SearchTimeline HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
+                        )
+                        continue
                     return {"_failure": self._classify_http_failure(int(response.status_code), has_pages, cursor), "_status": int(response.status_code), "_attempts": attempts, "_error_samples": errors[-5:]}
                 if 500 <= response.status_code < 600:
-                    errors.append({"status_code": int(response.status_code), "cursor": cursor, "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
+                    errors.append({"status_code": int(response.status_code), "cursor": _cursor_ref(cursor), "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
                     server_attempts = int(retry_policy.get("server_error_attempts", self.fetcher.max_cursor_error_retries))
                     if attempt < server_attempts - 1:
                         base = float(retry_policy.get("server_error_base_seconds", 5))
@@ -646,16 +654,30 @@ class SearchTimelineMonitor:
                         self.api_manager.jitter_sleep(wait, wait + base, reason=f"SearchTimeline HTTP {response.status_code}")
                         continue
                     return {"_failure": self._classify_http_failure(int(response.status_code), has_pages, cursor), "_status": int(response.status_code), "_attempts": attempts, "_error_samples": errors[-5:]}
-                errors.append({"status_code": int(response.status_code), "cursor": cursor, "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
+                errors.append({"status_code": int(response.status_code), "cursor": _cursor_ref(cursor), "attempt": attempt + 1, "response_text": str(response.text or "")[:500]})
                 return {"_failure": self._classify_http_failure(int(response.status_code), has_pages, cursor), "_status": int(response.status_code), "_attempts": attempts, "_error_samples": errors[-5:]}
             except Exception as exc:
-                errors.append({"cursor": cursor, "attempt": attempt + 1, "exception": str(exc)[:500]})
+                safe_exception = redact_exception(exc)
+                errors.append({"cursor": _cursor_ref(cursor), "attempt": attempt + 1, "exception": safe_exception})
+                self.fetcher.recorder.emit(
+                    "request_error",
+                    account=account,
+                    endpoint=endpoint,
+                    cursor=_cursor_ref(cursor),
+                    attempt=attempt + 1,
+                    exception_type=type(exc).__name__,
+                    exception=safe_exception,
+                )
                 request_attempts = int(retry_policy.get("request_error_attempts", self.fetcher.max_cursor_error_retries))
                 if attempt < request_attempts - 1:
                     base = float(retry_policy.get("request_error_base_seconds", 5))
                     max_sleep = float(retry_policy.get("request_error_max_seconds", 60))
                     wait = min(max_sleep, base * (2 ** attempt))
-                    self.api_manager.jitter_sleep(wait, wait + base, reason="SearchTimeline request error")
+                    self.api_manager.jitter_sleep(
+                        wait,
+                        wait + base,
+                        reason=f"SearchTimeline request error ({type(exc).__name__})",
+                    )
                     continue
                 return {
                     "_failure": "partial_request_error" if has_pages else "failed_initial_request_error",
@@ -703,6 +725,8 @@ class SearchTimelineMonitor:
         cursor_history: Set[str],
     ) -> Tuple[bool, Optional[str]]:
         next_cursor = page_result.get("next_cursor")
+        if self._page_crossed_search_window(page_result.get("tweets", []), window_start):
+            return True, "success_search_window_crossed"
         if cursor and next_cursor and str(next_cursor) in cursor_history:
             return True, "repeated_cursor_history"
         if not next_cursor:
@@ -756,132 +780,148 @@ class SearchTimelineMonitor:
         )
         features_json = self._compact_json(dict(search_features))
 
-        bootstrap = self.fetcher.bootstrap_browser_context(search_url=search_url, max_pages=1)
-        self._after_bootstrap(bootstrap, "SearchTimeline")
-        # #region agent log
-        _agent_debug_log(
-            "B",
-            "search_timeline.py:monitor_search",
-            "startup_bootstrap",
-            {
-                "bootstrap_ok": bootstrap.ok,
-                "query_id": str(self.api_manager.get_query_id("SearchTimeline") or ""),
-                "endpoint_health": self.api_manager.get_endpoint_health("SearchTimeline"),
-                "query_id_pool_size": len(self.api_manager.query_id_pools.get("SearchTimeline", [])),
-                "page_cap": int(policy["pagination_safety_cap_pages"]),
-            },
-        )
-        # #endregion
+        page_cap = int(policy["pagination_safety_cap_pages"])
+        requested_depth = max(1, int(policy.get("pagination_depth", search_def.get("pagination_depth", 1))))
+        deep_search = requested_depth > 1
+        bootstrap = None
+        payloads: List[Dict[str, Any]] = []
+
         query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
         if not query_id:
             raise RuntimeError("Missing api_config.search_timeline_query_id")
-        self.api_manager.warmup_url(search_url, timeout=int(self.config.get("api_config", {}).get("search_warmup_seconds", 30)))
-        if self.fetcher.first_request_warmup_seconds > 0:
-            time.sleep(self.fetcher.first_request_warmup_seconds)
-        for page in range(1, int(policy["pagination_safety_cap_pages"]) + 1):
-            query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
-            graphql_url = f"https://x.com/i/api/graphql/{query_id}/SearchTimeline"
-            frozen_headers = self._build_frozen_headers(search_url)
-            payload = self._request_page(
-                graphql_url,
-                variables_template,
-                features_json,
-                frozen_headers,
-                cursor,
-                int(policy["max_retries"]),
-                has_pages=bool(tweets),
-                search_url=search_url,
-                browser_fallback_pages=min(2, int(policy["pagination_safety_cap_pages"])),
-            )
-            attempts += int(payload.get("_attempts", 0) or 0)
-            last_http_status = payload.get("_status", last_http_status)
-            error_samples.extend(payload.get("_error_samples", []) if isinstance(payload.get("_error_samples"), list) else [])
-            browser_pages = payload.pop("_browser_pages", None)
-            if browser_pages:
-                transport = "browser_fallback"
-                for fallback_index, fallback_payload in enumerate(browser_pages, start=page):
-                    output_path = self.storage.save_search_result_page(slug, product, jalali_batch, fallback_index, fallback_payload)
-                    page_output_paths.append(str(output_path))
-                    page_result = self._parse_search_page(fallback_payload, seen_ids, capture_debug=(fallback_index == 1))
-                    tweets.extend(page_result["tweets"])
-                    if fallback_index == 1:
-                        debug = {key: page_result.get(key) for key in ["entry_type_counts", "cursor_candidates", "skipped_entries", "processed_entries", "selected_cursor_source"]}
-                    next_cursor = page_result.get("next_cursor") or extract_bottom_cursor(fallback_payload)
-                    cursor = str(next_cursor) if next_cursor else None
-                exhausted_reason = "verified_browser_fallback"
-                break
-            if payload.get("_failure"):
-                exhausted_reason = str(payload["_failure"])
-                if exhausted_reason == "partial_cursor_404" and tweets and search_url:
-                    remaining = max(1, int(policy["pagination_safety_cap_pages"]) - page + 1)
-                    fallback = self.fetcher.bootstrap_browser_context(
-                        search_url=search_url,
-                        capture_endpoint="SearchTimeline",
-                        max_pages=min(2, remaining),
-                    )
-                    if fallback.ok:
-                        self._after_bootstrap(fallback, "SearchTimeline")
-                    valid_pages = [
-                        page_payload
-                        for page_payload in (fallback.target_pages.get("SearchTimeline", []) if fallback.ok else [])
-                        if validate_graphql_payload("SearchTimeline", page_payload).ok
-                    ]
-                    if valid_pages:
-                        transport = "browser_fallback"
-                        for offset, fallback_payload in enumerate(valid_pages):
-                            page_number = page + offset
-                            output_path = self.storage.save_search_result_page(
-                                slug, product, jalali_batch, page_number, fallback_payload
-                            )
-                            page_output_paths.append(str(output_path))
-                            page_result = self._parse_search_page(fallback_payload, seen_ids, capture_debug=False)
-                            tweets.extend(page_result["tweets"])
-                        exhausted_reason = "verified_browser_fallback"
-                        # #region agent log
-                        _agent_debug_log(
-                            "A",
-                            "search_timeline.py:monitor_search",
-                            "partial_cursor_browser_recovery",
-                            {
-                                "recovered_pages": len(valid_pages),
-                                "tweets_after_recovery": len(tweets),
-                                "starting_page": page,
-                            },
-                        )
-                        # #endregion
-                        break
-                # #region agent log
-                _agent_debug_log(
-                    "A",
-                    "search_timeline.py:monitor_search",
-                    "pagination_failure",
-                    {
-                        "page": page,
-                        "failure": exhausted_reason,
-                        "last_http_status": payload.get("_status"),
-                        "tweets_so_far": len(tweets),
-                    },
+
+        # Always take HTTP page 1 (~1s). HTTP cursor pages 404 server-side — browser only for depth.
+        http_payload = self._request_page(
+            f"https://x.com/i/api/graphql/{query_id}/SearchTimeline",
+            variables_template,
+            features_json,
+            self._build_frozen_headers(search_url),
+            None,
+            int(policy["max_retries"]),
+            search_url=search_url,
+            browser_fallback_pages=1 if not deep_search else 0,
+            account=slug,
+        )
+        attempts = int(http_payload.pop("_attempts", 0) or 0)
+        last_http_status = http_payload.pop("_status", None)
+        http_latency_ms = http_payload.pop("_latency_ms", None)
+        error_samples.extend(http_payload.pop("_error_samples", []))
+        http_browser_pages = http_payload.pop("_browser_pages", None)
+        http_transport = http_payload.pop("_transport", None)
+        http_failure = http_payload.pop("_failure", None)
+
+        if http_browser_pages:
+            payloads = list(http_browser_pages)[:page_cap]
+            transport = str(http_transport or "browser_fallback")
+            exhausted_reason = "depth_one_complete" if not deep_search else "partial_browser_fallback"
+            self.fetcher.recorder.mark_http_recovered(slug, "SearchTimeline")
+        elif not http_failure:
+            payloads = [http_payload]
+            transport = "http"
+            if not deep_search:
+                exhausted_reason = "depth_one_complete"
+            else:
+                preview_seen: Set[str] = set()
+
+                def crossed_window(payload: Dict[str, Any]) -> bool:
+                    if not validate_graphql_payload("SearchTimeline", payload).ok:
+                        return False
+                    preview = self._parse_search_page(payload, preview_seen, capture_debug=False)
+                    return self._page_crossed_search_window(preview["tweets"], window_start)
+
+                # HTTP p1 kept; browser supplies deeper pages (skip duplicate first capture when possible).
+                bootstrap = self.fetcher.bootstrap_browser_context(
+                    search_url=search_url,
+                    capture_endpoint="SearchTimeline",
+                    max_pages=page_cap,
+                    stop_when=crossed_window,
                 )
-                # #endregion
-                break
-            payload.pop("_attempts", None)
-            payload.pop("_error_samples", None)
-            payload.pop("_status", None)
+                self._after_bootstrap(bootstrap, "SearchTimeline")
+                attempts += len(bootstrap.target_pages.get("SearchTimeline", []))
+                valid_pages = [
+                    page_payload
+                    for page_payload in bootstrap.target_pages.get("SearchTimeline", [])
+                    if validate_graphql_payload("SearchTimeline", page_payload).ok
+                ]
+                if bootstrap.ok and len(valid_pages) > 1:
+                    payloads = [http_payload] + valid_pages[1:page_cap]
+                    transport = "http+browser"
+                    self.fetcher.recorder.mark_http_recovered(slug, "SearchTimeline")
+                elif bootstrap.ok and valid_pages:
+                    # Browser only re-captured page 1 — keep fast HTTP page.
+                    payloads = [http_payload]
+                    transport = "http"
+                elif not bootstrap.ok:
+                    error_samples.append({"transport": "browser", "exception": bootstrap.error})
+        else:
+            exhausted_reason = str(http_failure)
+            if deep_search:
+                transport = "browser"
+                preview_seen = set()
+
+                def crossed_window_fallback(payload: Dict[str, Any]) -> bool:
+                    if not validate_graphql_payload("SearchTimeline", payload).ok:
+                        return False
+                    preview = self._parse_search_page(payload, preview_seen, capture_debug=False)
+                    return self._page_crossed_search_window(preview["tweets"], window_start)
+
+                bootstrap = self.fetcher.bootstrap_browser_context(
+                    search_url=search_url,
+                    capture_endpoint="SearchTimeline",
+                    max_pages=page_cap,
+                    stop_when=crossed_window_fallback,
+                )
+                self._after_bootstrap(bootstrap, "SearchTimeline")
+                attempts += len(bootstrap.target_pages.get("SearchTimeline", []))
+                valid_pages = [
+                    page_payload
+                    for page_payload in bootstrap.target_pages.get("SearchTimeline", [])
+                    if validate_graphql_payload("SearchTimeline", page_payload).ok
+                ]
+                if bootstrap.ok and valid_pages:
+                    payloads = valid_pages[:page_cap]
+                    last_http_status = 200
+                    exhausted_reason = "unknown"
+                    self.fetcher.recorder.mark_http_recovered(slug, "SearchTimeline")
+                else:
+                    exhausted_reason = f"failed_browser_{bootstrap.stop_reason or 'capture'}"
+                    if bootstrap.error:
+                        error_samples.append({"transport": "browser", "exception": bootstrap.error})
+
+        for page, payload in enumerate(payloads, start=1):
             output_path = self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_output_paths.append(str(output_path))
             page_result = self._parse_search_page(payload, seen_ids, capture_debug=(page == 1))
             tweets.extend(page_result["tweets"])
-            self.console.info(
-                f"  Page {page} fetched; tweets={len(page_result['tweets'])} "
-                f"next_cursor={'yes' if page_result.get('next_cursor') else 'no'}"
+            next_cursor = page_result.get("next_cursor") or extract_bottom_cursor(payload)
+            page_transport = "http" if page == 1 and transport == "http+browser" else (
+                "browser" if transport in {"browser", "http+browser", "browser_fallback"} else transport
+            )
+            page_latency_ms = http_latency_ms if page == 1 and page_transport == "http" else None
+            self.console.page_row(
+                account=slug,
+                endpoint="SearchTimeline",
+                page=page,
+                transport=page_transport,
+                items=len(page_result["tweets"]),
+                cursor_status="found" if next_cursor else "end",
+                http_status=200,
+                latency_ms=page_latency_ms,
+                next_page=page + 1 if next_cursor and page < len(payloads) else None,
+            )
+            self.fetcher.recorder.emit_page_fetched(
+                account=slug,
+                endpoint="SearchTimeline",
+                page=page,
+                cursor_in=cursor,
+                cursor_out=str(next_cursor) if next_cursor else None,
+                http_status=200,
+                items=len(page_result["tweets"]),
+                transport=page_transport,
+                latency_ms=page_latency_ms,
             )
             if page == 1:
                 debug = {key: page_result.get(key) for key in ["entry_type_counts", "cursor_candidates", "skipped_entries", "processed_entries", "selected_cursor_source"]}
-            next_cursor = page_result.get("next_cursor")
-            if self._page_crossed_search_window(page_result["tweets"], window_start):
-                self.console.info(
-                    f"  Page {page} is older than the rolling window, but the cursor is still active so pagination continues."
-                )
             stop_pagination, stop_reason = self.should_stop_search_pagination(
                 page_result=page_result,
                 window_start=window_start,
@@ -893,9 +933,13 @@ class SearchTimelineMonitor:
                 break
             cursor_history.add(str(next_cursor))
             cursor = str(next_cursor)
-            self.api_manager.human_delay("between_pages")
         else:
-            exhausted_reason = "partial_safety_cap_reached"
+            if payloads and not deep_search:
+                exhausted_reason = "depth_one_complete"
+            elif payloads and len(payloads) >= page_cap:
+                exhausted_reason = "partial_safety_cap_reached"
+            elif payloads:
+                exhausted_reason = f"partial_browser_{bootstrap.stop_reason or 'stalled'}"
 
         pages_on_disk = len(list(batch_dir.glob("page_*.json")))
         # #region agent log
@@ -914,10 +958,11 @@ class SearchTimelineMonitor:
         )
         # #endregion
         metadata = {
-            "pages_requested": int(policy["pagination_safety_cap_pages"]),
+            "pages_requested": requested_depth,
+            "safety_cap_pages": page_cap,
             "pages_saved": pages_on_disk,
             "exhausted_reason": exhausted_reason,
-            "cursor_history": sorted(cursor_history),
+            "cursor_history": sorted(filter(None, (_cursor_ref(value) for value in cursor_history))),
             "raw_batch_path": str(batch_dir),
             "rolling_hours": rolling_hours,
             "window_start_utc": window_start.isoformat() + "Z",
@@ -925,19 +970,26 @@ class SearchTimelineMonitor:
             "last_http_status": last_http_status,
             "error_samples": error_samples[-5:],
             "transport": transport,
-            "bootstrap_route": bootstrap.route,
+            "bootstrap_route": bootstrap.route if bootstrap else None,
             "browser_bootstrap": {
-                "ok": bootstrap.ok,
-                "support_request_count": bootstrap.support_request_count,
-                "error": bootstrap.error,
+                "ok": bootstrap.ok if bootstrap else None,
+                "support_request_count": bootstrap.support_request_count if bootstrap else 0,
+                "route_retry_count": bootstrap.route_retry_count if bootstrap else 0,
+                "stop_reason": bootstrap.stop_reason if bootstrap else None,
+                "error": bootstrap.error if bootstrap else None,
             },
             "rate_headers": self.api_manager.rate_limits.get("SearchTimeline", {}),
             "output_paths": {"raw_pages": page_output_paths},
         }
         outputs = self._save_exports(slug, product, raw_query, tweets, debug, metadata)
-        successful_reasons = {"success_search_window_crossed", "no_bottom_cursor", "verified_browser_fallback"}
+        successful_reasons = {
+            "success_search_window_crossed",
+            "no_bottom_cursor",
+            "repeated_cursor_history",
+            "depth_one_complete",
+        }
         status = "completed" if exhausted_reason in successful_reasons else ("partial" if tweets else "failed")
-        endpoint_status = "verified_browser_fallback" if transport == "browser_fallback" and status == "completed" else ("verified_http" if status == "completed" else "failed")
+        endpoint_status = f"verified_{transport}" if status == "completed" else status
         report = {
             "search": search_def.get("name", slug),
             "slug": slug,
@@ -950,11 +1002,8 @@ class SearchTimelineMonitor:
             "outputs": outputs,
         }
         
-        # ------------- تغییرات جدید سیستم State -------------
         state_key = self._state_key(search_def, product)
         current_state = self.search_state.get(state_key, {})
-        
-        # تشخیص اینکه آیا چرخه واقعاً موفق بوده یا به خاطر ارور متوقف شده (مثل 401، 403، 404)
         is_success = status == "completed"
         
         new_state = {
@@ -963,16 +1012,12 @@ class SearchTimelineMonitor:
         }
         
         if is_success:
-            # در صورت موفقیت کامل، زمان آپدیت می‌شود تا سیستم طبق Policy به خواب برود
             new_state["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
         else:
-            # در صورت بروز خطا، زمان قبلی حفظ می‌شود تا در رانِ بعدی فوراً مجدداً تلاش کند
             new_state["last_checked_at"] = current_state.get("last_checked_at")
             
         self.search_state[state_key] = new_state
         self._save_json(self.state_file, self.search_state)
-        # --------------------------------------------------
-
         self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._jalali_batch_name()}.json", report)
         return report
 

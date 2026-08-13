@@ -50,6 +50,7 @@ class LiveMonitor:
     """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
 
     ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")
+    QUARANTINE_FAILURE_THRESHOLD = 3
 
     def __init__(self, config_path: Optional[str] = None, validation_run_id: Optional[str] = None):
         self.project_root = PROJECT_ROOT
@@ -83,6 +84,31 @@ class LiveMonitor:
         user_id = self.fetcher._get_user_id(username)
         self.live_storage.update_account_state(username, {"user_id": str(user_id)})
         return str(user_id)
+
+    def _record_resolution_success(self, username: str) -> None:
+        self.live_storage.update_account_state(
+            username,
+            {"availability_failure_count": 0, "last_availability_evidence": None},
+        )
+
+    def _record_resolution_failure(self, username: str, reason: str) -> Dict[str, Any]:
+        state = self.live_storage.account_state(username)
+        count = int(state.get("availability_failure_count", 0) or 0) + 1
+        now = datetime.utcnow().isoformat() + "Z"
+        updates: Dict[str, Any] = {
+            "last_checked_at": now,
+            "last_status": "failed",
+            "availability_failure_count": count,
+            "last_availability_evidence": str(reason)[:300],
+        }
+        if count >= self.QUARANTINE_FAILURE_THRESHOLD:
+            updates.update({
+                "quarantined": True,
+                "quarantined_at": now,
+                "quarantine_reason": str(reason)[:300],
+            })
+        self.live_storage.update_account_state(username, updates)
+        return updates
 
     def should_fetch_account(self, username: str) -> bool:
         policy = get_priority_policy(username, self.account_map, self.priority_policies)
@@ -122,8 +148,15 @@ class LiveMonitor:
             "6_b_minus_a": self.processor.get_difference_b_minus_a(set_a, set_b),
             "7_symmetric_difference": self.processor.get_symmetric_difference(set_a, set_b),
         }
-        for key, tweets in outputs.items():
-            self.live_storage.save_processed_set(username, key, tweets)
+        storage_cfg = self.config.get("storage") or {}
+        write_set_diffs = bool(storage_cfg.get("write_set_diffs", True))
+        keys = list(outputs.keys()) if write_set_diffs else ["4_union"]
+        for key in keys:
+            self.live_storage.save_processed_set(username, key, outputs[key])
+        raw_keep = int(storage_cfg.get("raw_batch_retention_count", 0) or 0)
+        if raw_keep > 0:
+            for endpoint in self.ENDPOINTS:
+                self.live_storage.storage.prune_raw_batches(endpoint, username, keep=raw_keep)
         return outputs
 
     def _handle_new_tweets(self, username: str, tweets: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -182,8 +215,9 @@ class LiveMonitor:
             self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
             result["status"] = "failed"
             result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
-            self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
+            result["availability"] = self._record_resolution_failure(username, result["reason"])
             return result
+        self._record_resolution_success(username)
 
         endpoint_pages: Dict[str, List[Dict[str, Any]]] = {}
         for endpoint in self.ENDPOINTS:
@@ -227,10 +261,22 @@ class LiveMonitor:
         report = {
             "started_at": datetime.utcnow().isoformat() + "Z",
             "accounts": {},
-            "summary": {"checked": 0, "skipped": 0, "failed": 0},
+            "summary": {"checked": 0, "skipped": 0, "failed": 0, "quarantined": 0},
         }
         due_accounts: List[str] = []
         for username in selected:
+            availability = self.live_storage.account_state(username)
+            if availability.get("quarantined") is True:
+                report["summary"]["quarantined"] += 1
+                report["accounts"][username] = {
+                    "account": username,
+                    "status": "quarantined",
+                    "reason": availability.get("quarantine_reason") or "target unavailable",
+                    "last_evidence": availability.get("last_availability_evidence"),
+                    "quarantined_at": availability.get("quarantined_at"),
+                    "endpoints": {},
+                }
+                continue
             if not self.validation_run_id and not self.should_fetch_account(username):
                 report["summary"]["skipped"] += 1
                 continue
@@ -238,6 +284,12 @@ class LiveMonitor:
             due_accounts.append(username)
 
         user_ids: Dict[str, str] = {}
+        shared_bootstrap = None
+        if due_accounts:
+            try:
+                shared_bootstrap = self.fetcher.bootstrap_browser_context(username=due_accounts[0])
+            except Exception as exc:
+                self.console.warning(f"Shared browser bootstrap failed; using per-account fallback: {str(exc)[:200]}")
         for username in due_accounts:
             policy = get_priority_policy(username, self.account_map, self.priority_policies)
             report["accounts"][username] = {
@@ -247,14 +299,20 @@ class LiveMonitor:
                 "endpoints": {},
             }
             try:
-                bootstrap = self.fetcher.bootstrap_browser_context(username=username)
+                bootstrap = (
+                    shared_bootstrap
+                    if shared_bootstrap is not None and shared_bootstrap.ok
+                    else self.fetcher.bootstrap_browser_context(username=username)
+                )
                 report["accounts"][username]["browser_bootstrap"] = {
                     "ok": bootstrap.ok,
                     "route": bootstrap.route,
                     "support_request_count": bootstrap.support_request_count,
+                    "shared": bootstrap is shared_bootstrap,
                     "error": bootstrap.error,
                 }
                 user_ids[username] = self._get_live_user_id(username)
+                self._record_resolution_success(username)
             except Exception as exc:
                 self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
                 report["accounts"][username].update({
@@ -262,11 +320,15 @@ class LiveMonitor:
                     "reason": f"user_id_resolution_failed: {str(exc)[:300]}",
                     "finished_at": datetime.utcnow().isoformat() + "Z",
                 })
-                self.live_storage.update_account_state(username, {"last_checked_at": datetime.utcnow().isoformat() + "Z", "last_status": "failed"})
+                report["accounts"][username]["availability"] = self._record_resolution_failure(
+                    username, report["accounts"][username]["reason"]
+                )
                 report["summary"]["failed"] += 1
 
         endpoint_pages_by_account: Dict[str, Dict[str, List[Dict[str, Any]]]] = {username: {} for username in user_ids}
-        for endpoint in self.ENDPOINTS:
+        for endpoint_index, endpoint in enumerate(self.ENDPOINTS):
+            if endpoint == "UserTweetsAndReplies" and endpoint_index > 0 and user_ids:
+                self.api_manager.human_delay("between_accounts_replies")
             for idx, (username, user_id) in enumerate(user_ids.items()):
                 if idx > 0:
                     if endpoint == "UserTweetsAndReplies":
@@ -314,7 +376,16 @@ class LiveMonitor:
         if not report.get("accounts"):
             self.console.warning("No accounts were processed in this cycle")
 
-        self.fetcher.recorder.emit("cycle_end", summary=report["summary"])
+        report_id = (
+            f"{getattr(self, 'run_id', None) or self.validation_run_id or 'live'}_"
+            f"live_{datetime.utcnow().strftime('%Y%m%dT%H%M%S%fZ')}"
+        )
+        report["report_id"] = report_id
+        report_path = self.live_storage.storage.save_run_report_json(report, report_id)
+        report["report_path"] = str(report_path)
+        self.fetcher.recorder.emit(
+            "cycle_end", summary=report["summary"], report_path=str(report_path)
+        )
         return report
 
     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:

@@ -16,11 +16,12 @@ Code map:
 from __future__ import annotations
 
 
+import hashlib
 import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
 from tweeter_data_fetcher.paths import PROJECT_ROOT
@@ -37,7 +38,7 @@ from tweeter_data_fetcher.processing.windows import RollingWindowEvaluator
 from tweeter_data_fetcher.storage.facade import StorageManager
 from tweeter_data_fetcher.configuration import get_priority_policy, load_tier_config, ordered_accounts
 from tweeter_data_fetcher.observability.coverage_inventory import CoverageInventory
-from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext
+from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext, redact_exception
 from tweeter_data_fetcher.observability.logging_setup import attach_run_id, configure_logging
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
 from tweeter_data_fetcher.x_api.contract_verification import verify_contract
@@ -51,6 +52,24 @@ except ImportError:
 
 TIMEZONE = "Asia/Tehran"
 DEFAULT_HISTORICAL_MAX_PAGES = 15
+
+
+def _cursor_reference(cursor: Optional[str]) -> Optional[str]:
+    """Return a stable diagnostic fingerprint without exposing the cursor."""
+    if not cursor:
+        return None
+    return hashlib.sha256(cursor.encode("utf-8")).hexdigest()[:12]
+
+
+def _response_latency_ms(response: Any, request_started: float) -> int:
+    """Prefer transport time so rate-limit and pacing waits are not reported as latency."""
+    seconds = getattr(response, "elapsed_seconds", None)
+    if seconds is None:
+        total_seconds = getattr(getattr(response, "elapsed", None), "total_seconds", None)
+        seconds = total_seconds() if callable(total_seconds) else None
+    if seconds is None:
+        seconds = time.monotonic() - request_started
+    return max(0, int(float(seconds) * 1000))
 
 
 # Backward-compatible alias
@@ -268,12 +287,14 @@ class TimelineFetcher:
         search_url: Optional[str] = None,
         capture_endpoint: Optional[str] = None,
         max_pages: int = 2,
+        stop_when: Optional[Callable[[Dict[str, Any]], bool]] = None,
     ) -> BrowserBootstrapResult:
         result = self.browser_bootstrap.run(
             username=username,
             search_url=search_url,
             capture_endpoint=capture_endpoint,
             max_pages=max_pages,
+            stop_when=stop_when,
         )
         self.last_bootstrap = result
         if result.ok:
@@ -340,20 +361,9 @@ class TimelineFetcher:
         variables: Dict[str, Any],
         cursor: Optional[str],
     ):
-        block = {
-            "status_code": response.status_code,
-            "account": account,
-            "endpoint": endpoint,
-            "request_url": request_url,
-            "cursor": cursor,
-            "headers": request_headers,
-            "variables": variables,
-            "response_text": response.text[:4000],
-        }
-        body = json.dumps(block, indent=2, ensure_ascii=False)
-        self.logger.banner("CRITICAL 4xx ERROR - EXECUTION HALTED", body)
+        detail_ref = None
         try:
-            self.recorder.emit_http_error(
+            detail_ref = self.recorder.emit_http_error(
                 account=account,
                 endpoint=endpoint,
                 status_code=int(response.status_code),
@@ -366,6 +376,10 @@ class TimelineFetcher:
             )
         except Exception:  # pragma: no cover - best-effort, about to exit anyway
             pass
+        self.logger.error_one_liner(
+            f"HTTP {response.status_code} account=@{account} endpoint={endpoint} action=halt",
+            detail_ref=detail_ref,
+        )
         raise SystemExit(1)
 
     def _log_4xx_details(
@@ -380,33 +394,10 @@ class TimelineFetcher:
         cursor: Optional[str],
         title: str = "CRITICAL 4xx ERROR",
     ) -> None:
-        """Non-exiting version for cursor error handling with resume support.
-
-        In addition to printing a banner, emit a structured 404/4xx event to
-        the subsystem logs for later analysis and increment an in-dir summary
-        counter. This creates:
-          - data/.../logs/404_events.jsonl  (line-delimited JSON events)
-          - data/.../logs/404_summary.json  (aggregated counters)
-        """
-        block = {
-            "status_code": int(response.status_code),
-            "account": account,
-            "endpoint": endpoint,
-            "request_url": request_url,
-            "cursor": cursor,
-            "headers": request_headers,
-            "variables": variables,
-            "response_text": (response.text or "")[:4000],
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-        body = json.dumps(block, indent=2, ensure_ascii=False)
-        self.logger.banner(title, body)
-
-        # Record the structured event + error detail file via the single
-        # EventRecorder channel (logs/events.jsonl + logs/errors/*.json +
-        # logs/http_summary.json), replacing the bespoke 404 metric writer.
+        """Record a resumable 4xx without leaking request context to stdout."""
+        detail_ref = None
         try:
-            self.recorder.emit_http_error(
+            detail_ref = self.recorder.emit_http_error(
                 account=account,
                 endpoint=endpoint,
                 status_code=int(response.status_code),
@@ -418,6 +409,10 @@ class TimelineFetcher:
             )
         except Exception as exc:  # pragma: no cover - best-effort event recording
             self.logger.warning(f"Failed to record http error event: {exc}")
+        self.logger.error_one_liner(
+            f"HTTP {response.status_code} account=@{account} endpoint={endpoint} action=classify",
+            detail_ref=detail_ref,
+        )
 
     def _recover_404_context(
         self,
@@ -590,7 +585,7 @@ class TimelineFetcher:
             last_http_status = int(response.status_code)
             sample = {
                 "status_code": int(response.status_code),
-                "cursor": cursor_value,
+                "cursor_ref": _cursor_reference(cursor_value),
                 "attempt": attempt_number,
                 "response_text": str(response.text or "")[:500],
             }
@@ -726,10 +721,10 @@ class TimelineFetcher:
 
         policy = self.api_manager.retry_policy()
         recovery_counts: Dict[str, int] = {}
-        auth_refreshed = False
         context_refreshed = False
 
         while page <= safety_cap:
+            page_started = time.monotonic()
             cursor_termination_reason = None
             variables = self._timeline_variables(endpoint, user_id, cursor)
 
@@ -825,38 +820,51 @@ class TimelineFetcher:
                             cursor_termination_reason = "bad_request_contract"
                             status, outcome, reason = classify_http_failure(400, bool(all_items), cursor)
                             return finish_with_state(status=status, outcome=outcome, reason=reason, pages=all_items, cursor_value=cursor, raw_batch=batch_dir)
-                        if response.status_code in {401, 403} and not auth_refreshed:
-                            auth_refreshed = True
-                            refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
-                            if refreshed.ok:
-                                query_id = self.api_manager.get_query_id(endpoint) or query_id
-                                request_url = self._build_graphql_url(
-                                    endpoint=endpoint,
-                                    query_id=query_id,
-                                    variables=variables,
-                                    features=features,
-                                    field_toggles=field_toggles,
-                                )
-                                continue
-                        if response.status_code == 404 and not cursor and not all_items and not context_refreshed:
-                            context_refreshed = True
-                            refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
-                            if refreshed.ok:
-                                query_id = self.api_manager.get_query_id(endpoint) or query_id
-                                request_url = self._build_graphql_url(
-                                    endpoint=endpoint,
-                                    query_id=query_id,
-                                    variables=variables,
-                                    features=features,
-                                    field_toggles=field_toggles,
-                                )
-                                continue
-                        if response.status_code != 400 and attempt < client_attempts - 1:
-                            wait = self.api_manager.jitter_sleep(
-                                float(policy.get("client_error_min_seconds", 10)),
-                                float(policy.get("client_error_max_seconds", 20)),
-                                reason=f"@{account} {endpoint} HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
+                        if response.status_code in {401, 403}:
+                            cursor_termination_reason = "auth_required"
+                            return finish_with_state(
+                                status="partial" if all_items else "failed",
+                                outcome="auth_required",
+                                reason="X authentication expired; refresh the operator session manually",
+                                pages=all_items,
+                                cursor_value=cursor,
+                                raw_batch=batch_dir,
                             )
+                        if response.status_code == 404 and not cursor and not all_items and not context_refreshed:
+                            if endpoint == "UserTweetsAndReplies":
+                                # Density soft-block: stay on HTTP (cool/reset below), never bootstrap browser.
+                                pass
+                            else:
+                                context_refreshed = True
+                                refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
+                                if refreshed.ok:
+                                    query_id = self.api_manager.get_query_id(endpoint) or query_id
+                                    request_url = self._build_graphql_url(
+                                        endpoint=endpoint,
+                                        query_id=query_id,
+                                        variables=variables,
+                                        features=features,
+                                        field_toggles=field_toggles,
+                                    )
+                                    continue
+                        if response.status_code != 400 and attempt < client_attempts - 1:
+                            if response.status_code == 404 and endpoint == "UserTweetsAndReplies":
+                                # Empty 404s on Replies are density/context gates — escalate cool.
+                                factor = float(attempt + 1)
+                                wait = self.api_manager.jitter_sleep(
+                                    float(self.api_manager.simulation_config.get("delays_seconds", {}).get("replies_retry_min", 8)) * factor,
+                                    float(self.api_manager.simulation_config.get("delays_seconds", {}).get("replies_retry_max", 12)) * factor,
+                                    reason=f"@{account} {endpoint} HTTP 404 density cooldown {attempt + 1}/{client_attempts}",
+                                )
+                                reset = getattr(self.api_manager, "reset_transport_session", None)
+                                if callable(reset):
+                                    reset(endpoint, reason="density_404")
+                            else:
+                                wait = self.api_manager.jitter_sleep(
+                                    float(policy.get("client_error_min_seconds", 10)),
+                                    float(policy.get("client_error_max_seconds", 20)),
+                                    reason=f"@{account} {endpoint} HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
+                                )
                             self.logger.warning(
                                 f"@{account} {endpoint} got HTTP {response.status_code}; retried after {wait:.1f}s "
                                 f"(attempt {attempt + 1}/{client_attempts})"
@@ -865,6 +873,18 @@ class TimelineFetcher:
 
                         cursor_key = cursor or "__START__"
                         if response.status_code == 404 and not cursor and not all_items:
+                            # Replies: never burn Playwright on density soft-block — cool+retry later.
+                            if endpoint == "UserTweetsAndReplies":
+                                cursor_termination_reason = "replies_density_404_http_only"
+                                status, outcome, reason = classify_http_failure(404, False, None)
+                                return finish_with_state(
+                                    status=status,
+                                    outcome="failed_replies_density_404",
+                                    reason="Replies HTTP soft-block (empty 404); skipped browser for efficiency",
+                                    pages=[],
+                                    cursor_value="__START__",
+                                    raw_batch=batch_dir,
+                                )
                             fallback = self.bootstrap_browser_context(
                                 username=account,
                                 capture_endpoint=endpoint,
@@ -882,10 +902,12 @@ class TimelineFetcher:
                                     page_output_paths.append(str(output_path))
                                 last_cursor = extract_bottom_cursor(valid_pages[-1])
                                 cursor_termination_reason = "browser_fallback_initial_404"
+                                # Profile endpoints must stay on HTTP for efficiency; browser
+                                # recovery is evidence of a failed primary path, not success.
                                 return finish_with_state(
-                                    status="completed",
-                                    outcome="verified_browser_fallback",
-                                    reason="Initial HTTP 404 recovered through target-only browser capture",
+                                    status="partial",
+                                    outcome="partial_browser_fallback",
+                                    reason="HTTP failed; browser recovered partial pages (not an efficient success path)",
                                     pages=valid_pages,
                                     cursor_value=last_cursor or "__END__",
                                     raw_batch=batch_dir,
@@ -896,7 +918,8 @@ class TimelineFetcher:
                         ):
                             recovery_counts[cursor_key] = recovery_counts.get(cursor_key, 0) + 1
                             self.logger.warning(
-                                f"@{account} {endpoint} repeated HTTP 404 at cursor={cursor_key}; "
+                                f"@{account} {endpoint} repeated HTTP 404 at "
+                                f"cursor_ref={_cursor_reference(cursor)}; "
                                 "saving cursor and refreshing browser parameters"
                             )
                             if self._recover_404_context(
@@ -956,9 +979,9 @@ class TimelineFetcher:
                     break
                 except Exception as exc:
                     error_samples.append({
-                        "cursor": cursor,
+                        "cursor_ref": _cursor_reference(cursor),
                         "attempt": attempt + 1,
-                        "exception": str(exc)[:500],
+                        "exception": redact_exception(exc),
                     })
                     request_attempts = int(policy.get("request_error_attempts", self.max_cursor_error_retries))
                     if attempt < request_attempts - 1:
@@ -1014,7 +1037,7 @@ class TimelineFetcher:
                 payload = response.json()
             except Exception as exc:
                 error_samples.append({
-                    "cursor": cursor,
+                    "cursor_ref": _cursor_reference(cursor),
                     "page": page,
                     "exception": f"JSON parse error: {str(exc)[:500]}",
                 })
@@ -1032,7 +1055,7 @@ class TimelineFetcher:
             validation = validate_graphql_payload(endpoint, payload)
             if not validation.ok:
                 error_samples.append({
-                    "cursor": cursor,
+                    "cursor_ref": _cursor_reference(cursor),
                     "page": page,
                     "semantic_error": validation.reason,
                     "graphql_errors": validation.errors[:3],
@@ -1056,6 +1079,7 @@ class TimelineFetcher:
                 page_items = sum(len(instr.get("entries", [])) for instr in instructions)
             except Exception:
                 page_items = 0
+            latency_ms = _response_latency_ms(response, page_started)
             self.recorder.emit_page_fetched(
                 account=account,
                 endpoint=endpoint,
@@ -1064,6 +1088,25 @@ class TimelineFetcher:
                 cursor_out=next_cursor,
                 http_status=int(response.status_code),
                 items=page_items,
+                transport=transport,
+                latency_ms=latency_ms,
+                attempt=attempt + 1,
+                recovery="retried" if attempt else None,
+            )
+            if attempt:
+                self.recorder.mark_http_recovered(account, endpoint)
+            self.logger.page_row(
+                account=account,
+                endpoint=endpoint,
+                page=page,
+                transport=transport,
+                items=page_items,
+                cursor_status="found" if next_cursor else "end",
+                http_status=int(response.status_code),
+                latency_ms=latency_ms,
+                attempt=attempt + 1,
+                recovery="retried" if attempt else None,
+                next_page=page + 1 if next_cursor else None,
             )
             if cutoff is not None:
                 coverage = self.window_evaluator.evaluate_raw_pages_cutoff(
@@ -1105,15 +1148,25 @@ class TimelineFetcher:
                     raw_batch=batch_dir,
                 )
 
-            self.logger.pagination(account=account, endpoint=endpoint, page=page, cursor=next_cursor)
             if next_cursor:
-                self.logger.info(
-                    f"Page {page} fetched -> Cursor found: {next_cursor} -> Requesting Page {page + 1}"
-                )
                 cursor = next_cursor
                 page += 1
                 if endpoint == "UserTweetsAndReplies":
                     self.api_manager.human_delay("between_pages_replies")
+                    # Density gate trips around page 4-5; chunk + session reset keeps HTTP deep.
+                    chunk = int(
+                        self.api_manager.simulation_config.get("delays_seconds", {}).get(
+                            "replies_chunk_pages", 2
+                        )
+                    )
+                    if chunk > 0 and (page - 1) % chunk == 0:
+                        self.logger.info(
+                            f"@{account} {endpoint}: chunk cool after {page - 1} pages"
+                        )
+                        self.api_manager.human_delay("between_accounts_replies")
+                        reset = getattr(self.api_manager, "reset_transport_session", None)
+                        if callable(reset):
+                            reset(endpoint, reason="chunk_boundary")
                 else:
                     self.api_manager.human_delay("between_pages")
                 continue

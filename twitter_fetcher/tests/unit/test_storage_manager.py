@@ -85,6 +85,14 @@ class StorageManagerTests(unittest.TestCase):
         self.assertFalse((Path(self.temp_dir) / "data" / "search" / "raw" / "UserTweets").exists())
         self.assertFalse((Path(self.temp_dir) / "data" / "search" / "raw" / "UserTweetsAndReplies").exists())
 
+    def test_prune_raw_batches_keeps_newest(self):
+        for name in ("2026-01-01_00-00", "2026-01-02_00-00", "2026-01-03_00-00", "2026-01-04_00-00"):
+            self.storage.create_raw_batch_dir("UserTweets", "testuser", name)
+        removed = self.storage.prune_raw_batches("UserTweets", "testuser", keep=2)
+        self.assertEqual(removed, 2)
+        remaining = [p.name for p in self.storage.find_raw_batches("UserTweets", "testuser", include_legacy=False)]
+        self.assertEqual(remaining, ["2026-01-03_00-00", "2026-01-04_00-00"])
+
 
 if __name__ == "__main__":
     unittest.main()

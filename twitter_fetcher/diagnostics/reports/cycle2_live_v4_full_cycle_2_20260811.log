@@ -1,0 +1,2069 @@
+                        [LIVE] API / Tier Configuration                         
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Key                          ┃ Value                                         ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Config File                  │ /Users/parham/Downloads/GITHUB_PROJECTS/TWEE… │
+│ Accounts (tiered)            │ 68                                            │
+│ Priority Policies            │ 7                                             │
+│ UserByScreenName QueryID     │ 2qvSHpkWTMS9i0zJAwDN...                       │
+│ UserTweets QueryID           │ 6r5OLCC_wFH4CpRyXKuA...                       │
+│ UserTweetsAndReplies QueryID │ klja8a2iJX_3to5RdfVl...                       │
+│ Timeout (sec)                │ 20                                            │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+╭─ [LIVE] Cycle started: 68 account(s) ─╮
+│ Cycle started: 68 account(s)          │
+╰───────────────────────────────────────╯
+
+===== RESTART 2026-08-11T10:54:30Z =====
+                        [LIVE] API / Tier Configuration                         
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Key                          ┃ Value                                         ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Config File                  │ /Users/parham/Downloads/GITHUB_PROJECTS/TWEE… │
+│ Accounts (tiered)            │ 68                                            │
+│ Priority Policies            │ 7                                             │
+│ UserByScreenName QueryID     │ 2qvSHpkWTMS9i0zJAwDN...                       │
+│ UserTweets QueryID           │ 6r5OLCC_wFH4CpRyXKuA...                       │
+│ UserTweetsAndReplies QueryID │ klja8a2iJX_3to5RdfVl...                       │
+│ Timeout (sec)                │ 20                                            │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+╭─ [LIVE] Cycle started: 68 account(s) ─╮
+│ Cycle started: 68 account(s)          │
+╰───────────────────────────────────────╯
+
+===== DETACHED RESTART 2026-08-11T10:57:59Z =====
+(eval):32: command not found: setsid
+
+===== PYTHON DETACH 2026-08-11T10:59:22Z =====
+                        [LIVE] API / Tier Configuration                         
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Key                          ┃ Value                                         ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Config File                  │ /Users/parham/Downloads/GITHUB_PROJECTS/TWEE… │
+│ Accounts (tiered)            │ 68                                            │
+│ Priority Policies            │ 7                                             │
+│ UserByScreenName QueryID     │ 2qvSHpkWTMS9i0zJAwDN...                       │
+│ UserTweets QueryID           │ 6r5OLCC_wFH4CpRyXKuA...                       │
+│ UserTweetsAndReplies QueryID │ klja8a2iJX_3to5RdfVl...                       │
+│ Timeout (sec)                │ 20                                            │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+╭─ [LIVE] Cycle started: 68 account(s) ─╮
+│ Cycle started: 68 account(s)          │
+╰───────────────────────────────────────╯
+[LIVE] @realDonaldTrump UserTweets  page=1  transport=http  items=22  
+cursor=found  http=200  latency=2013ms → page 2
+[LIVE] @realDonaldTrump UserTweets rolling window complete: oldest=1404-10-03 
+targets=['1405-05-19']
+[LIVE] @SecScottBessent UserTweets  page=1  transport=http  items=22  
+cursor=found  http=200  latency=914ms → page 2
+[LIVE] @SecScottBessent UserTweets rolling window complete: oldest=1405-05-10 
+targets=['1405-05-19']
+[LIVE] @USTreasury UserTweets  page=1  transport=http  items=17  cursor=found  
+http=200  latency=1064ms → page 2
+[LIVE] @USTreasury UserTweets rolling window complete: oldest=1405-05-09 
+targets=['1405-05-19']
+[LIVE] @JDVance UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=984ms → page 2
+[LIVE] @JDVance UserTweets rolling window complete: oldest=1405-04-26 
+targets=['1405-05-19']
+[LIVE] @TankerTrackers UserTweets  page=1  transport=http  items=21  
+cursor=found  http=200  latency=1126ms → page 2
+[LIVE] @TankerTrackers UserTweets rolling window complete: oldest=1405-05-02 
+targets=['1405-05-19']
+[LIVE] @chigrl UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=1149ms → page 2
+[LIVE] @chigrl UserTweets rolling window complete: oldest=1405-05-18 
+targets=['1405-05-19']
+[LIVE] @KobeissiLetter UserTweets  page=1  transport=http  items=23  
+cursor=found  http=200  latency=876ms → page 2
+[LIVE] @KobeissiLetter UserTweets rolling window complete: oldest=1405-05-18 
+targets=['1405-05-19']
+[LIVE] @AAAnews UserTweets  page=1  transport=http  items=16  cursor=found  
+http=200  latency=662ms → page 2
+[LIVE] @AAAnews UserTweets rolling window complete: oldest=1403-11-08 
+targets=['1405-05-19']
+[LIVE] @EIAgov UserTweets  page=1  transport=http  items=20  cursor=found  
+http=200  latency=853ms → page 2
+[LIVE] @EIAgov UserTweets rolling window complete: oldest=1405-04-09 
+targets=['1405-05-19']
+[LIVE] @araghchi UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=973ms → page 2
+[LIVE] @araghchi UserTweets rolling window complete: oldest=1405-04-10 
+targets=['1405-05-19']
+[LIVE] @drpezeshkian UserTweets  page=1  transport=http  items=23  cursor=found 
+http=200  latency=720ms → page 2
+[LIVE] @drpezeshkian UserTweets rolling window complete: oldest=1405-04-10 
+targets=['1405-05-19']
+[LIVE] @MKhamenei_ir UserTweets  page=1  transport=http  items=16  cursor=found 
+http=200  latency=712ms → page 2
+[LIVE] @MKhamenei_ir UserTweets rolling window complete: oldest=1405-05-18 
+targets=['1405-05-19']
+[LIVE] @SteveWitkoff UserTweets  page=1  transport=http  items=23  cursor=found 
+http=200  latency=1053ms → page 2
+[LIVE] @SteveWitkoff UserTweets rolling window complete: oldest=1403-09-06 
+targets=['1405-05-19']
+[LIVE] @SecRubio UserTweets  page=1  transport=http  items=20  cursor=found  
+http=200  latency=894ms → page 2
+[LIVE] @SecRubio UserTweets rolling window complete: oldest=1405-05-01 
+targets=['1405-05-19']
+[LIVE] @LynAldenContact UserTweets  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2872ms → page 2
+[LIVE] @LynAldenContact UserTweets rolling window complete: oldest=1405-05-14 
+targets=['1405-05-19']
+[LIVE] @LukeGromen UserTweets  page=1  transport=http  items=20  cursor=found  
+http=200  latency=1118ms → page 2
+[LIVE] @LukeGromen UserTweets rolling window complete: oldest=1405-05-12 
+targets=['1405-05-19']
+[LIVE] @PeterSchiff UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=1121ms → page 2
+[LIVE] @PeterSchiff UserTweets rolling window complete: oldest=1405-05-17 
+targets=['1405-05-19']
+[LIVE] @JimRickards UserTweets  page=1  transport=http  items=6  cursor=found  
+http=200  latency=588ms → page 2
+[LIVE] @JimRickards UserTweets rolling window complete: oldest=1390-09-09 
+targets=['1405-05-19']
+[LIVE] @business UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=966ms → page 2
+[LIVE] @business UserTweets  page=2  transport=http  items=22  cursor=found  
+http=200  latency=1192ms → page 3
+[LIVE] @business UserTweets  page=3  transport=http  items=22  cursor=found  
+http=200  latency=1049ms → page 4
+[LIVE] @business UserTweets  page=4  transport=http  items=22  cursor=found  
+http=200  latency=1199ms → page 5
+[LIVE] @business UserTweets  page=5  transport=http  items=22  cursor=found  
+http=200  latency=894ms → page 6
+[LIVE] @business UserTweets  page=6  transport=http  items=22  cursor=found  
+http=200  latency=938ms → page 7
+[LIVE] @business UserTweets  page=7  transport=http  items=22  cursor=found  
+http=200  latency=896ms → page 8
+[LIVE] @business UserTweets  page=8  transport=http  items=22  cursor=found  
+http=200  latency=1119ms → page 9
+[LIVE] @business UserTweets  page=9  transport=http  items=21  cursor=found  
+http=200  latency=892ms → page 10
+[LIVE] @business UserTweets  page=10  transport=http  items=22  cursor=found  
+http=200  latency=889ms → page 11
+[LIVE] @business UserTweets  page=11  transport=http  items=22  cursor=found  
+http=200  latency=917ms → page 12
+[LIVE] @business UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-19']
+[LIVE] @Reuters UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=903ms → page 2
+[LIVE] @Reuters UserTweets  page=2  transport=http  items=21  cursor=found  
+http=200  latency=963ms → page 3
+[LIVE] @Reuters UserTweets  page=3  transport=http  items=2  cursor=found  
+http=200  latency=432ms → page 4
+[LIVE] @Reuters UserTweets  page=4  transport=http  items=21  cursor=found  
+http=200  latency=1007ms → page 5
+[LIVE] @Reuters UserTweets  page=5  transport=http  items=21  cursor=found  
+http=200  latency=955ms → page 6
+[LIVE] @Reuters UserTweets  page=6  transport=http  items=22  cursor=found  
+http=200  latency=832ms → page 7
+[LIVE] @Reuters UserTweets  page=7  transport=http  items=22  cursor=found  
+http=200  latency=989ms → page 8
+[LIVE] @Reuters UserTweets  page=8  transport=http  items=22  cursor=found  
+http=200  latency=958ms → page 9
+[LIVE] @Reuters UserTweets  page=9  transport=http  items=22  cursor=found  
+http=200  latency=972ms → page 10
+[LIVE] @Reuters UserTweets  page=10  transport=http  items=22  cursor=found  
+http=200  latency=867ms → page 11
+[LIVE] @Reuters UserTweets  page=11  transport=http  items=22  cursor=found  
+http=200  latency=911ms → page 12
+[LIVE] @Reuters UserTweets  page=12  transport=http  items=20  cursor=found  
+http=200  latency=1034ms → page 13
+[LIVE] @Reuters UserTweets  page=13  transport=http  items=21  cursor=found  
+http=200  latency=929ms → page 14
+[LIVE] @Reuters UserTweets  page=14  transport=http  items=22  cursor=found  
+http=200  latency=844ms → page 15
+[LIVE] @Reuters UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-19']
+[LIVE] @elonmusk UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1182ms → page 2
+[LIVE] @elonmusk UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-19']
+[LIVE] @Lagarde UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=928ms → page 2
+[LIVE] @Lagarde UserTweets rolling window complete: oldest=1405-04-16 
+targets=['1405-05-19']
+[LIVE] @IRIMFA_SPOX UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=823ms → page 2
+[LIVE] @IRIMFA_SPOX UserTweets rolling window complete: oldest=1405-04-31 
+targets=['1405-05-19']
+[LIVE] @IRIMFA_EN UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=931ms → page 2
+[LIVE] @IRIMFA_EN UserTweets rolling window complete: oldest=1405-04-31 
+targets=['1405-05-19']
+[LIVE] ⚠ UserTweets rate bucket exhausted; sleeping 175s until reset
+[LIVE] @Hemmati_ir UserTweets  page=1  transport=http  items=21  cursor=found  
+http=200  latency=1686ms → page 2
+[LIVE] @Hemmati_ir UserTweets rolling window complete: oldest=1403-09-24 
+targets=['1405-05-19']
+[LIVE] @netanyahu UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=879ms → page 2
+[LIVE] @netanyahu UserTweets rolling window complete: oldest=1405-05-07 
+targets=['1405-05-19']
+[LIVE] @Israel_katz UserTweets  page=1  transport=http  items=21  cursor=found  
+http=200  latency=799ms → page 2
+[LIVE] @Israel_katz UserTweets rolling window complete: oldest=1405-04-21 
+targets=['1405-05-19']
+[LIVE] @UANI UserTweets  page=1  transport=http  items=15  cursor=found  
+http=200  latency=848ms → page 2
+[LIVE] @UANI UserTweets rolling window complete: oldest=1405-05-14 
+targets=['1405-05-19']
+[LIVE] @farnazfassihi UserTweets  page=1  transport=http  items=15  cursor=found
+http=200  latency=784ms → page 2
+[LIVE] @farnazfassihi UserTweets rolling window complete: oldest=1405-05-12 
+targets=['1405-05-19']
+[LIVE] @mdubowitz UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=899ms → page 2
+[LIVE] @mdubowitz UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-19']
+[LIVE] @rich_goldberg UserTweets  page=1  transport=http  items=22  cursor=found
+http=200  latency=872ms → page 2
+[LIVE] @rich_goldberg UserTweets rolling window complete: oldest=1405-05-16 
+targets=['1405-05-19']
+[LIVE] @SGhasseminejad UserTweets  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1330ms → page 2
+[LIVE] @SGhasseminejad UserTweets rolling window complete: oldest=1405-05-17 
+targets=['1405-05-19']
+[LIVE] @J_Zarif UserTweets  page=1  transport=http  items=11  cursor=found  
+http=200  latency=608ms → page 2
+[LIVE] @J_Zarif UserTweets rolling window complete: oldest=1394-09-25 
+targets=['1405-05-20']
+[LIVE] @IDF UserTweets  page=1  transport=http  items=23  cursor=found  http=200
+latency=797ms → page 2
+[LIVE] @IDF UserTweets rolling window complete: oldest=1405-05-07 
+targets=['1405-05-20']
+[LIVE] @IDFFarsi UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1256ms → page 2
+[LIVE] @IDFFarsi UserTweets rolling window complete: oldest=1405-05-08 
+targets=['1405-05-20']
+[LIVE] @AvichayAdraee UserTweets  page=1  transport=http  items=22  cursor=found
+http=200  latency=828ms → page 2
+[LIVE] @AvichayAdraee UserTweets rolling window complete: oldest=1405-04-07 
+targets=['1405-05-20']
+[LIVE] @DAVIDHALBRIGHT1 UserTweets  page=1  transport=http  items=21  
+cursor=found  http=200  latency=1588ms → page 2
+[LIVE] @DAVIDHALBRIGHT1 UserTweets rolling window complete: oldest=1405-04-01 
+targets=['1405-05-20']
+[LIVE] @TheGoodISIS UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1417ms → page 2
+[LIVE] @TheGoodISIS UserTweets rolling window complete: oldest=1405-04-02 
+targets=['1405-05-20']
+[LIVE] @geoconfirmed UserTweets  page=1  transport=http  items=12  cursor=found 
+http=200  latency=12278ms → page 2
+[LIVE] @geoconfirmed UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-20']
+[LIVE] @ronenbergman UserTweets  page=1  transport=http  items=20  cursor=found 
+http=200  latency=3827ms → page 2
+[LIVE] @ronenbergman UserTweets rolling window complete: oldest=1405-05-16 
+targets=['1405-05-20']
+[LIVE] @AmosHarel UserTweets  page=1  transport=http  items=1  cursor=end  
+http=200  latency=4857ms
+[LIVE] Account: @AmosHarel | Endpoint: UserTweets | End of pagination reached
+[LIVE] @ksadjadpour UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1193ms → page 2
+[LIVE] @ksadjadpour UserTweets rolling window complete: oldest=1405-03-30 
+targets=['1405-05-20']
+[LIVE] @vali_nasr UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1587ms → page 2
+[LIVE] @vali_nasr UserTweets rolling window complete: oldest=1405-05-17 
+targets=['1405-05-20']
+[LIVE] @AliVaez UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=985ms → page 2
+[LIVE] @AliVaez UserTweets rolling window complete: oldest=1405-05-17 
+targets=['1405-05-20']
+[LIVE] @SEPeaceMissions UserTweets  page=1  transport=http  items=20  
+cursor=found  http=200  latency=825ms → page 2
+[LIVE] @SEPeaceMissions UserTweets rolling window complete: oldest=1404-10-10 
+targets=['1405-05-20']
+[LIVE] @PressSec UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1245ms → page 2
+[LIVE] @PressSec UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-20']
+[LIVE] @gidonsaar UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1820ms → page 2
+[LIVE] @gidonsaar UserTweets rolling window complete: oldest=1405-05-16 
+targets=['1405-05-20']
+[LIVE] @Shayan86 UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=1192ms → page 2
+[LIVE] @Shayan86 UserTweets rolling window complete: oldest=1405-05-12 
+targets=['1405-05-20']
+[LIVE] @bellingcat UserTweets  page=1  transport=http  items=6  cursor=found  
+http=200  latency=2245ms → page 2
+[LIVE] @bellingcat UserTweets  page=2  transport=http  items=10  cursor=found  
+http=200  latency=1424ms → page 3
+[LIVE] @bellingcat UserTweets rolling window complete: oldest=1404-09-24 
+targets=['1405-05-20']
+[LIVE] @LauraSecor UserTweets  page=1  transport=http  items=7  cursor=found  
+http=200  latency=1350ms → page 2
+[LIVE] @LauraSecor UserTweets rolling window complete: oldest=1401-10-17 
+targets=['1405-05-20']
+[LIVE] @MaloneySuzanne UserTweets  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1159ms → page 2
+[LIVE] @MaloneySuzanne UserTweets rolling window complete: oldest=1405-05-15 
+targets=['1405-05-20']
+[LIVE] @IranIntl UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=797ms → page 2
+[LIVE] @IranIntl UserTweets  page=2  transport=http  items=18  cursor=found  
+http=200  latency=829ms → page 3
+[LIVE] @IranIntl UserTweets  page=3  transport=http  items=22  cursor=found  
+http=200  latency=781ms → page 4
+[LIVE] @IranIntl UserTweets rolling window complete: oldest=1405-05-20 
+targets=['1405-05-20']
+[LIVE] @PahlaviReza UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=1353ms → page 2
+[LIVE] @PahlaviReza UserTweets rolling window complete: oldest=1405-04-21 
+targets=['1405-05-20']
+[LIVE] @WGC_News UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=718ms → page 2
+[LIVE] @WGC_News UserTweets rolling window complete: oldest=1397-01-17 
+targets=['1405-05-20']
+[LIVE] @SantiagoAuFund UserTweets  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1510ms → page 2
+[LIVE] @SantiagoAuFund UserTweets rolling window complete: oldest=1405-05-18 
+targets=['1405-05-20']
+[LIVE] @paulkrugman UserTweets  page=1  transport=http  items=22  cursor=found  
+http=200  latency=3745ms → page 2
+[LIVE] @paulkrugman UserTweets rolling window complete: oldest=1403-08-13 
+targets=['1405-05-20']
+[LIVE] @elerianm UserTweets  page=1  transport=http  items=23  cursor=found  
+http=200  latency=862ms → page 2
+[LIVE] @elerianm UserTweets rolling window complete: oldest=1405-05-15 
+targets=['1405-05-20']
+[LIVE] @NickTimiraos UserTweets  page=1  transport=http  items=17  cursor=found 
+http=200  latency=1273ms → page 2
+[LIVE] @NickTimiraos UserTweets rolling window complete: oldest=1405-05-14 
+targets=['1405-05-20']
+[LIVE] @federalreserve UserTweets  page=1  transport=http  items=22  
+cursor=found  http=200  latency=939ms → page 2
+[LIVE] @federalreserve UserTweets rolling window complete: oldest=1405-05-08 
+targets=['1405-05-20']
+[LIVE] @KitcoNewsNOW UserTweets  page=1  transport=http  items=14  cursor=found 
+http=200  latency=1331ms → page 2
+[LIVE] @KitcoNewsNOW UserTweets rolling window complete: oldest=1405-05-17 
+targets=['1405-05-20']
+[LIVE] @GoldTelegraph_ UserTweets  page=1  transport=http  items=19  
+cursor=found  http=200  latency=1145ms → page 2
+[LIVE] @GoldTelegraph_ UserTweets rolling window complete: oldest=1405-05-16 
+targets=['1405-05-20']
+[LIVE] @flightradar24 UserTweets  page=1  transport=http  items=23  cursor=found
+http=200  latency=1070ms → page 2
+[LIVE] @flightradar24 UserTweets rolling window complete: oldest=1405-05-16 
+targets=['1405-05-20']
+[LIVE] @RayDalio UserTweets  page=1  transport=http  items=20  cursor=found  
+http=200  latency=1243ms → page 2
+[LIVE] @RayDalio UserTweets rolling window complete: oldest=1405-05-08 
+targets=['1405-05-20']
+[LIVE] @PolymarketIntel UserTweets  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1247ms → page 2
+[LIVE] @PolymarketIntel UserTweets rolling window complete: oldest=1405-05-19 
+targets=['1405-05-20']
+[LIVE] @realDonaldTrump UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=907ms → page 2
+[LIVE] @realDonaldTrump UserTweetsAndReplies rolling window complete: 
+oldest=1404-10-03 targets=['1405-05-19']
+[LIVE] @SecScottBessent UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=2408ms → page 2
+[LIVE] @SecScottBessent UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-10 targets=['1405-05-19']
+[LIVE] @USTreasury UserTweetsAndReplies  page=1  transport=http  items=17  
+cursor=found  http=200  latency=758ms → page 2
+[LIVE] @USTreasury UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-09 targets=['1405-05-19']
+[LIVE] @JDVance UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2864ms → page 2
+[LIVE] @JDVance UserTweetsAndReplies rolling window complete: oldest=1405-04-26 
+targets=['1405-05-19']
+[LIVE] @TankerTrackers UserTweetsAndReplies  page=1  transport=http  items=20  
+cursor=found  http=200  latency=1418ms → page 2
+[LIVE] @TankerTrackers UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-04 targets=['1405-05-19']
+[LIVE] @chigrl UserTweetsAndReplies  page=1  transport=http  items=21  
+cursor=found  http=200  latency=1990ms → page 2
+[LIVE] @chigrl UserTweetsAndReplies rolling window complete: oldest=1405-05-19 
+targets=['1405-05-19']
+[LIVE] @KobeissiLetter UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=3047ms → page 2
+[LIVE] @KobeissiLetter UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-18 targets=['1405-05-19']
+[LIVE] @AAAnews UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=737ms → page 2
+[LIVE] @AAAnews UserTweetsAndReplies rolling window complete: oldest=1404-08-06 
+targets=['1405-05-19']
+[LIVE] @EIAgov UserTweetsAndReplies  page=1  transport=http  items=20  
+cursor=found  http=200  latency=17668ms → page 2
+[LIVE] @EIAgov UserTweetsAndReplies rolling window complete: oldest=1405-04-09 
+targets=['1405-05-19']
+[LIVE] @araghchi UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1923ms → page 2
+[LIVE] @araghchi UserTweetsAndReplies rolling window complete: oldest=1405-04-10
+targets=['1405-05-19']
+[LIVE] @drpezeshkian UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=883ms → page 2
+[LIVE] @drpezeshkian UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-10 targets=['1405-05-19']
+[LIVE] @MKhamenei_ir UserTweetsAndReplies  page=1  transport=http  items=16  
+cursor=found  http=200  latency=2068ms → page 2
+[LIVE] @MKhamenei_ir UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-18 targets=['1405-05-19']
+[LIVE] @SteveWitkoff UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1205ms → page 2
+[LIVE] @SteveWitkoff UserTweetsAndReplies rolling window complete: 
+oldest=1403-09-09 targets=['1405-05-19']
+[LIVE] @SecRubio UserTweetsAndReplies  page=1  transport=http  items=20  
+cursor=found  http=200  latency=1637ms → page 2
+[LIVE] @SecRubio UserTweetsAndReplies rolling window complete: oldest=1405-05-01
+targets=['1405-05-19']
+[LIVE] @LynAldenContact UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=1033ms → page 2
+[LIVE] @LynAldenContact UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-18 targets=['1405-05-19']
+[LIVE] @LukeGromen UserTweetsAndReplies  page=1  transport=http  items=19  
+cursor=found  http=200  latency=1487ms → page 2
+[LIVE] @LukeGromen UserTweetsAndReplies  page=2  transport=http  items=19  
+cursor=found  http=200  latency=719ms → page 3
+[LIVE] @LukeGromen UserTweetsAndReplies: chunk cool after 2 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @LukeGromen UserTweetsAndReplies  page=3  transport=http  items=18  
+cursor=found  http=200  latency=1402ms → page 4
+[LIVE] @LukeGromen UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-16 targets=['1405-05-19']
+[LIVE] @PeterSchiff UserTweetsAndReplies  page=1  transport=http  items=20  
+cursor=found  http=200  latency=714ms → page 2
+[LIVE] @PeterSchiff UserTweetsAndReplies  page=2  transport=http  items=21  
+cursor=found  http=200  latency=724ms → page 3
+[LIVE] @PeterSchiff UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-17 targets=['1405-05-19']
+[LIVE] @JimRickards UserTweetsAndReplies  page=1  transport=http  items=7  
+cursor=found  http=200  latency=532ms → page 2
+[LIVE] @JimRickards UserTweetsAndReplies rolling window complete: 
+oldest=1390-09-09 targets=['1405-05-19']
+[LIVE] @business UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=3748ms → page 2
+[LIVE] @business UserTweetsAndReplies  page=2  transport=http  items=22  
+cursor=found  http=200  latency=1078ms → page 3
+[LIVE] @business UserTweetsAndReplies: chunk cool after 2 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @business UserTweetsAndReplies  page=3  transport=http  items=22  
+cursor=found  http=200  latency=2274ms → page 4
+[LIVE] @business UserTweetsAndReplies  page=4  transport=http  items=22  
+cursor=found  http=200  latency=831ms → page 5
+[LIVE] @business UserTweetsAndReplies: chunk cool after 4 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @business UserTweetsAndReplies  page=5  transport=http  items=22  
+cursor=found  http=200  latency=3036ms → page 6
+[LIVE] @business UserTweetsAndReplies  page=6  transport=http  items=22  
+cursor=found  http=200  latency=986ms → page 7
+[LIVE] @business UserTweetsAndReplies: chunk cool after 6 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @business UserTweetsAndReplies  page=7  transport=http  items=22  
+cursor=found  http=200  latency=1824ms → page 8
+[LIVE] @business UserTweetsAndReplies  page=8  transport=http  items=22  
+cursor=found  http=200  latency=1464ms → page 9
+[LIVE] @business UserTweetsAndReplies: chunk cool after 8 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @business UserTweetsAndReplies  page=9  transport=http  items=21  
+cursor=found  http=200  latency=2522ms → page 10
+[LIVE] @business UserTweetsAndReplies  page=10  transport=http  items=22  
+cursor=found  http=200  latency=1164ms → page 11
+[LIVE] @business UserTweetsAndReplies: chunk cool after 10 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @business UserTweetsAndReplies  page=11  transport=http  items=22  
+cursor=found  http=200  latency=1489ms → page 12
+[LIVE] @business UserTweetsAndReplies rolling window complete: oldest=1405-05-19
+targets=['1405-05-19']
+[LIVE] @Reuters UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=915ms → page 2
+[LIVE] @Reuters UserTweetsAndReplies  page=2  transport=http  items=20  
+cursor=found  http=200  latency=839ms → page 3
+[LIVE] @Reuters UserTweetsAndReplies: chunk cool after 2 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @Reuters UserTweetsAndReplies  page=3  transport=http  items=20  
+cursor=found  http=200  latency=2874ms → page 4
+[LIVE] @Reuters UserTweetsAndReplies  page=4  transport=http  items=22  
+cursor=found  http=200  latency=767ms → page 5
+[LIVE] @Reuters UserTweetsAndReplies: chunk cool after 4 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @Reuters UserTweetsAndReplies  page=5  transport=http  items=22  
+cursor=found  http=200  latency=1368ms → page 6
+[LIVE] @Reuters UserTweetsAndReplies  page=6  transport=http  items=22  
+cursor=found  http=200  latency=722ms → page 7
+[LIVE] @Reuters UserTweetsAndReplies: chunk cool after 6 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @Reuters UserTweetsAndReplies  page=7  transport=http  items=22  
+cursor=found  http=200  latency=1596ms → page 8
+[LIVE] @Reuters UserTweetsAndReplies  page=8  transport=http  items=22  
+cursor=found  http=200  latency=848ms → page 9
+[LIVE] @Reuters UserTweetsAndReplies: chunk cool after 8 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @Reuters UserTweetsAndReplies  page=9  transport=http  items=2  
+cursor=found  http=200  latency=1259ms → page 10
+[LIVE] @Reuters UserTweetsAndReplies  page=10  transport=http  items=22  
+cursor=found  http=200  latency=798ms → page 11
+[LIVE] @Reuters UserTweetsAndReplies: chunk cool after 10 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @Reuters UserTweetsAndReplies  page=11  transport=http  items=19  
+cursor=found  http=200  latency=1539ms → page 12
+[LIVE] @Reuters UserTweetsAndReplies  page=12  transport=http  items=21  
+cursor=found  http=200  latency=715ms → page 13
+[LIVE] @Reuters UserTweetsAndReplies: chunk cool after 12 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @Reuters UserTweetsAndReplies  page=13  transport=http  items=22  
+cursor=found  http=200  latency=1870ms → page 14
+[LIVE] @Reuters UserTweetsAndReplies rolling window complete: oldest=1405-05-19 
+targets=['1405-05-19']
+[LIVE] @elonmusk UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=854ms → page 2
+[LIVE] @elonmusk UserTweetsAndReplies rolling window complete: oldest=1405-05-19
+targets=['1405-05-19']
+[LIVE] @Lagarde UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=2099ms → page 2
+[LIVE] @Lagarde UserTweetsAndReplies rolling window complete: oldest=1405-04-16 
+targets=['1405-05-19']
+[LIVE] @IRIMFA_SPOX UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=2081ms → page 2
+[LIVE] @IRIMFA_SPOX UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-31 targets=['1405-05-19']
+[LIVE] @IRIMFA_EN UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1405ms → page 2
+[LIVE] @IRIMFA_EN UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-31 targets=['1405-05-19']
+[LIVE] @Hemmati_ir UserTweetsAndReplies  page=1  transport=http  items=21  
+cursor=found  http=200  latency=671ms → page 2
+[LIVE] @Hemmati_ir UserTweetsAndReplies rolling window complete: 
+oldest=1403-09-24 targets=['1405-05-19']
+[LIVE] @netanyahu UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2491ms → page 2
+[LIVE] @netanyahu UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-07 targets=['1405-05-19']
+[LIVE] @Israel_katz UserTweetsAndReplies  page=1  transport=http  items=21  
+cursor=found  http=200  latency=717ms → page 2
+[LIVE] @Israel_katz UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-21 targets=['1405-05-19']
+[LIVE] @UANI UserTweetsAndReplies  page=1  transport=http  items=15  
+cursor=found  http=200  latency=1726ms → page 2
+[LIVE] @UANI UserTweetsAndReplies rolling window complete: oldest=1405-05-14 
+targets=['1405-05-19']
+[LIVE] @farnazfassihi UserTweetsAndReplies  page=1  transport=http  items=16  
+cursor=found  http=200  latency=1299ms → page 2
+[LIVE] @farnazfassihi UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-13 targets=['1405-05-19']
+[LIVE] @mdubowitz UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2455ms → page 2
+[LIVE] @mdubowitz UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-19 targets=['1405-05-19']
+[LIVE] @rich_goldberg UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=893ms → page 2
+[LIVE] @rich_goldberg UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-16 targets=['1405-05-19']
+[LIVE] @SGhasseminejad UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2150ms → page 2
+[LIVE] @SGhasseminejad UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-17 targets=['1405-05-19']
+[LIVE] @J_Zarif UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=793ms → page 2
+[LIVE] @J_Zarif UserTweetsAndReplies rolling window complete: oldest=1396-06-31 
+targets=['1405-05-20']
+[LIVE] @IDF UserTweetsAndReplies  page=1  transport=http  items=23  cursor=found
+http=200  latency=2480ms → page 2
+[LIVE] @IDF UserTweetsAndReplies rolling window complete: oldest=1405-05-07 
+targets=['1405-05-20']
+[LIVE] @IDFFarsi UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1320ms → page 2
+[LIVE] @IDFFarsi UserTweetsAndReplies rolling window complete: oldest=1405-05-08
+targets=['1405-05-20']
+[LIVE] @AvichayAdraee UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=2519ms → page 2
+[LIVE] @AvichayAdraee UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-07 targets=['1405-05-20']
+[LIVE] @DAVIDHALBRIGHT1 UserTweetsAndReplies  page=1  transport=http  items=19  
+cursor=found  http=200  latency=810ms → page 2
+[LIVE] @DAVIDHALBRIGHT1 UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-24 targets=['1405-05-20']
+[LIVE] @TheGoodISIS UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2106ms → page 2
+[LIVE] @TheGoodISIS UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-02 targets=['1405-05-20']
+[LIVE] @geoconfirmed UserTweetsAndReplies  page=1  transport=http  items=12  
+cursor=found  http=200  latency=991ms → page 2
+[LIVE] @geoconfirmed UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-19 targets=['1405-05-20']
+[LIVE] @ronenbergman UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=1158ms → page 2
+[LIVE] @ronenbergman UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-16 targets=['1405-05-20']
+[LIVE] @AmosHarel UserTweetsAndReplies  page=1  transport=http  items=1  
+cursor=end  http=200  latency=1945ms
+[LIVE] Account: @AmosHarel | Endpoint: UserTweetsAndReplies | End of pagination 
+reached
+[LIVE] @ksadjadpour UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=812ms → page 2
+[LIVE] @ksadjadpour UserTweetsAndReplies rolling window complete: 
+oldest=1405-03-30 targets=['1405-05-20']
+[LIVE] @vali_nasr UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1614ms → page 2
+[LIVE] @vali_nasr UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-18 targets=['1405-05-20']
+[LIVE] @AliVaez UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=860ms → page 2
+[LIVE] @AliVaez UserTweetsAndReplies rolling window complete: oldest=1405-05-17 
+targets=['1405-05-20']
+[LIVE] @SEPeaceMissions UserTweetsAndReplies  page=1  transport=http  items=20  
+cursor=found  http=200  latency=950ms → page 2
+[LIVE] @SEPeaceMissions UserTweetsAndReplies rolling window complete: 
+oldest=1404-10-10 targets=['1405-05-20']
+[LIVE] @PressSec UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1953ms → page 2
+[LIVE] @PressSec UserTweetsAndReplies rolling window complete: oldest=1405-05-19
+targets=['1405-05-20']
+[LIVE] @gidonsaar UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=908ms → page 2
+[LIVE] @gidonsaar UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-16 targets=['1405-05-20']
+[LIVE] @Shayan86 UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2658ms → page 2
+[LIVE] @Shayan86 UserTweetsAndReplies rolling window complete: oldest=1405-05-12
+targets=['1405-05-20']
+[LIVE] @bellingcat UserTweetsAndReplies  page=1  transport=http  items=6  
+cursor=found  http=200  latency=696ms → page 2
+[LIVE] @bellingcat UserTweetsAndReplies  page=2  transport=http  items=10  
+cursor=found  http=200  latency=670ms → page 3
+[LIVE] @bellingcat UserTweetsAndReplies rolling window complete: 
+oldest=1404-09-24 targets=['1405-05-20']
+[LIVE] @LauraSecor UserTweetsAndReplies  page=1  transport=http  items=8  
+cursor=found  http=200  latency=615ms → page 2
+[LIVE] @LauraSecor UserTweetsAndReplies rolling window complete: 
+oldest=1401-10-17 targets=['1405-05-20']
+[LIVE] @MaloneySuzanne UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=2068ms → page 2
+[LIVE] @MaloneySuzanne UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-15 targets=['1405-05-20']
+[LIVE] @IranIntl UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=767ms → page 2
+[LIVE] @IranIntl UserTweetsAndReplies  page=2  transport=http  items=19  
+cursor=found  http=200  latency=854ms → page 3
+[LIVE] @IranIntl UserTweetsAndReplies: chunk cool after 2 pages
+[LIVE] Reset HTTP session for UserTweetsAndReplies (chunk_boundary)
+[LIVE] @IranIntl UserTweetsAndReplies  page=3  transport=http  items=21  
+cursor=found  http=200  latency=2499ms → page 4
+[LIVE] @IranIntl UserTweetsAndReplies rolling window complete: oldest=1405-05-20
+targets=['1405-05-20']
+[LIVE] @PahlaviReza UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=1801ms → page 2
+[LIVE] @PahlaviReza UserTweetsAndReplies rolling window complete: 
+oldest=1405-04-21 targets=['1405-05-20']
+[LIVE] @WGC_News UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=683ms → page 2
+[LIVE] @WGC_News UserTweetsAndReplies rolling window complete: oldest=1397-01-17
+targets=['1405-05-20']
+[LIVE] @SantiagoAuFund UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=1693ms → page 2
+[LIVE] @SantiagoAuFund UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-20 targets=['1405-05-20']
+[LIVE] @paulkrugman UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=772ms → page 2
+[LIVE] @paulkrugman UserTweetsAndReplies rolling window complete: 
+oldest=1403-08-13 targets=['1405-05-20']
+[LIVE] @elerianm UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=1623ms → page 2
+[LIVE] @elerianm UserTweetsAndReplies rolling window complete: oldest=1405-05-15
+targets=['1405-05-20']
+[LIVE] @NickTimiraos UserTweetsAndReplies  page=1  transport=http  items=18  
+cursor=found  http=200  latency=696ms → page 2
+[LIVE] @NickTimiraos UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-16 targets=['1405-05-20']
+[LIVE] @federalreserve UserTweetsAndReplies  page=1  transport=http  items=22  
+cursor=found  http=200  latency=1255ms → page 2
+[LIVE] @federalreserve UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-08 targets=['1405-05-20']
+[LIVE] @KitcoNewsNOW UserTweetsAndReplies  page=1  transport=http  items=15  
+cursor=found  http=200  latency=694ms → page 2
+[LIVE] @KitcoNewsNOW UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-17 targets=['1405-05-20']
+[LIVE] @GoldTelegraph_ UserTweetsAndReplies  page=1  transport=http  items=19  
+cursor=found  http=200  latency=2216ms → page 2
+[LIVE] @GoldTelegraph_ UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-16 targets=['1405-05-20']
+[LIVE] @flightradar24 UserTweetsAndReplies  page=1  transport=http  items=21  
+cursor=found  http=200  latency=749ms → page 2
+[LIVE] @flightradar24 UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-17 targets=['1405-05-20']
+[LIVE] @RayDalio UserTweetsAndReplies  page=1  transport=http  items=18  
+cursor=found  http=200  latency=1388ms → page 2
+[LIVE] @RayDalio UserTweetsAndReplies rolling window complete: oldest=1405-05-10
+targets=['1405-05-20']
+[LIVE] @PolymarketIntel UserTweetsAndReplies  page=1  transport=http  items=23  
+cursor=found  http=200  latency=803ms → page 2
+[LIVE] @PolymarketIntel UserTweetsAndReplies rolling window complete: 
+oldest=1405-05-19 targets=['1405-05-20']
+[LIVE] ✓ New tweets for @realDonaldTrump: 18
+[LIVE] ✓ New tweets for @SecScottBessent: 18
+[LIVE] ✓ New tweets for @USTreasury: 8
+[LIVE] ✓ New tweets for @JDVance: 20
+[LIVE] ✓ New tweets for @TankerTrackers: 17
+[LIVE] ✓ New tweets for @chigrl: 20
+[LIVE] ✓ New tweets for @KobeissiLetter: 20
+[LIVE] ✓ New tweets for @AAAnews: 13
+[LIVE] ✓ New tweets for @EIAgov: 16
+[LIVE] ✓ New tweets for @araghchi: 20
+[LIVE] ✓ New tweets for @drpezeshkian: 20
+[LIVE] ✓ New tweets for @MKhamenei_ir: 9
+[LIVE] ✓ New tweets for @SteveWitkoff: 20
+[LIVE] ✓ New tweets for @SecRubio: 16
+[LIVE] ✓ New tweets for @LynAldenContact: 20
+[LIVE] ✓ New tweets for @LukeGromen: 14
+[LIVE] ✓ New tweets for @PeterSchiff: 19
+[LIVE] ✓ New tweets for @JimRickards: 4
+[LIVE] ✓ New tweets for @business: 225
+[LIVE] ✓ New tweets for @Reuters: 236
+[LIVE] ✓ New tweets for @elonmusk: 20
+[LIVE] ✓ New tweets for @Lagarde: 18
+[LIVE] ✓ New tweets for @IRIMFA_SPOX: 19
+[LIVE] ✓ New tweets for @IRIMFA_EN: 20
+[LIVE] ✓ New tweets for @Hemmati_ir: 18
+[LIVE] ✓ New tweets for @netanyahu: 20
+[LIVE] ✓ New tweets for @Israel_katz: 18
+[LIVE] ✓ New tweets for @UANI: 8
+[LIVE] ✓ New tweets for @farnazfassihi: 10
+[LIVE] ✓ New tweets for @mdubowitz: 21
+[LIVE] ✓ New tweets for @rich_goldberg: 19
+[LIVE] ✓ New tweets for @SGhasseminejad: 20
+[LIVE] ✓ New tweets for @J_Zarif: 9
+[LIVE] ✓ New tweets for @IDF: 20
+[LIVE] ✓ New tweets for @IDFFarsi: 20
+[LIVE] ✓ New tweets for @AvichayAdraee: 19
+[LIVE] ✓ New tweets for @DAVIDHALBRIGHT1: 16
+[LIVE] ✓ New tweets for @TheGoodISIS: 20
+[LIVE] ✓ New tweets for @geoconfirmed: 1
+[LIVE] ✓ New tweets for @ronenbergman: 16
+[LIVE] ✓ New tweets for @ksadjadpour: 20
+[LIVE] ✓ New tweets for @vali_nasr: 23
+[LIVE] ✓ New tweets for @AliVaez: 21
+[LIVE] ✓ New tweets for @SEPeaceMissions: 16
+[LIVE] ✓ New tweets for @PressSec: 23
+[LIVE] ✓ New tweets for @gidonsaar: 20
+[LIVE] ✓ New tweets for @Shayan86: 19
+[LIVE] ✓ New tweets for @bellingcat: 3
+[LIVE] ✓ New tweets for @LauraSecor: 4
+[LIVE] ✓ New tweets for @MaloneySuzanne: 20
+[LIVE] ✓ New tweets for @IranIntl: 65
+[LIVE] ✓ New tweets for @PahlaviReza: 19
+[LIVE] ✓ New tweets for @WGC_News: 20
+[LIVE] ✓ New tweets for @SantiagoAuFund: 20
+[LIVE] ✓ New tweets for @paulkrugman: 19
+[LIVE] ✓ New tweets for @elerianm: 20
+[LIVE] ✓ New tweets for @NickTimiraos: 9
+[LIVE] ✓ New tweets for @federalreserve: 18
+[LIVE] ✓ New tweets for @KitcoNewsNOW: 2
+[LIVE] ✓ New tweets for @GoldTelegraph_: 13
+[LIVE] ✓ New tweets for @flightradar24: 20
+[LIVE] ✓ New tweets for @RayDalio: 15
+[LIVE] ✓ New tweets for @PolymarketIntel: 21
+╭─ [LIVE] Cycle complete: {'checked': 64, 'skipped': 0, 'failed': 0, 'quaranti─╮
+│ Cycle complete: {'checked': 64, 'skipped': 0, 'failed': 0, 'quarantined': 4} │
+╰──────────────────────────────────────────────────────────────────────────────╯
+                          @realDonaldTrump [COMPLETED]                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 18                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 18                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-10-03..1405-05-06                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-10-03..1405-05-06                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @SecScottBessent [COMPLETED]                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 18                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 18                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-10..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-10..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @USTreasury [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 8                                           │
+│ Tweets (intersection)          │ 8                                           │
+│ New this cycle                 │ 8                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-09..1405-05-17                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-09..1405-05-17                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @JDVance [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-26..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-26..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @TankerTrackers [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 17                                          │
+│ Tweets (intersection)          │ 10                                          │
+│ New this cycle                 │ 17                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-02..1405-05-17                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-04..1405-05-17                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @chigrl [COMPLETED]                               
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 12                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @KobeissiLetter [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @AAAnews [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 13                                          │
+│ Tweets (intersection)          │ 1                                           │
+│ New this cycle                 │ 13                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-11-08..1404-08-06                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-08-06..1404-08-06                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @EIAgov [COMPLETED]                               
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 1                                           │
+│ Tweets (union)                 │ 16                                          │
+│ Tweets (intersection)          │ 16                                          │
+│ New this cycle                 │ 16                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-09..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-09..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @araghchi [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-10..1405-05-16                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-10..1405-05-16                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @drpezeshkian [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-10..1405-05-16                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-10..1405-05-16                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @MKhamenei_ir [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 9                                           │
+│ Tweets (intersection)          │ 9                                           │
+│ New this cycle                 │ 9                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @SteveWitkoff [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-09-06..1404-07-18                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-09-09..1404-07-18                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @SecRubio [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 16                                          │
+│ Tweets (intersection)          │ 16                                          │
+│ New this cycle                 │ 16                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-01..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-01..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @LynAldenContact [COMPLETED]                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 5                                           │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-14..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @LukeGromen [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 14                                          │
+│ Tweets (intersection)          │ 3                                           │
+│ New this cycle                 │ 14                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-12..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=3 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-18                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @PeterSchiff [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 15                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=2 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @JimRickards [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 4                                           │
+│ Tweets (intersection)          │ 3                                           │
+│ New this cycle                 │ 4                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1390-09-09..1393-08-05                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1390-09-09..1396-07-28                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @business [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 225                                         │
+│ Tweets (intersection)          │ 213                                         │
+│ New this cycle                 │ 225                                         │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=11 http=200                           │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=11 http=200                           │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @Reuters [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 236                                         │
+│ Tweets (intersection)          │ 219                                         │
+│ New this cycle                 │ 236                                         │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=14 http=200                           │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=13 http=200                           │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @elonmusk [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 15                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @Lagarde [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 2                                           │
+│ Tweets (union)                 │ 18                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 18                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-16..1405-05-07                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-16..1405-05-07                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @IRIMFA_SPOX [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-31..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-31..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @IRIMFA_EN [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-31..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-31..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @Hemmati_ir [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 18                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 18                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-09-24..1403-12-03                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-09-24..1403-12-03                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @netanyahu [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-07..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-07..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @Israel_katz [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 18                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 18                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-21..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-21..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                               @UANI [COMPLETED]                                
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 8                                           │
+│ Tweets (intersection)          │ 8                                           │
+│ New this cycle                 │ 8                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-14..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-14..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @farnazfassihi [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 10                                          │
+│ Tweets (intersection)          │ 8                                           │
+│ New this cycle                 │ 10                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-12..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-13..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @mdubowitz [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 21                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 21                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @rich_goldberg [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @SGhasseminejad [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 3                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @J_Zarif [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 4                                           │
+│ Tweets (union)                 │ 9                                           │
+│ Tweets (intersection)          │ 7                                           │
+│ New this cycle                 │ 9                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1394-09-25..1400-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1396-06-31..1400-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                                @IDF [COMPLETED]                                
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-07..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-07..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @IDFFarsi [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-08..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-08..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @AvichayAdraee [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-07..1405-05-14                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-07..1405-05-14                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @DAVIDHALBRIGHT1 [COMPLETED]                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 16                                          │
+│ Tweets (intersection)          │ 7                                           │
+│ New this cycle                 │ 16                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-01..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-24..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @TheGoodISIS [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-02..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-02..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @geoconfirmed [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 1                                           │
+│ Tweets (intersection)          │ 1                                           │
+│ New this cycle                 │ 1                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @ronenbergman [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 16                                          │
+│ Tweets (intersection)          │ 15                                          │
+│ New this cycle                 │ 16                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @AmosHarel [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 0                                           │
+│ Tweets (intersection)          │ 0                                           │
+│ New this cycle                 │ 0                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200 outcome=success_true_end   │
+│                                │ dates=None..None                            │
+│   UserTweets cursor            │ no_bottom_cursor                            │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200 outcome=success_true_end   │
+│                                │ dates=None..None                            │
+│   UserTweetsAndReplies cursor  │ no_bottom_cursor                            │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @ksadjadpour [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-03-30..1405-05-15                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-03-30..1405-05-15                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @vali_nasr [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 23                                          │
+│ Tweets (intersection)          │ 15                                          │
+│ New this cycle                 │ 23                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                              @AliVaez [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 5                                           │
+│ Tweets (union)                 │ 21                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 21                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @SEPeaceMissions [COMPLETED]                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 16                                          │
+│ Tweets (intersection)          │ 16                                          │
+│ New this cycle                 │ 16                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-10-10..1405-05-17                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-10-10..1405-05-17                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @PressSec [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 23                                          │
+│ Tweets (intersection)          │ 17                                          │
+│ New this cycle                 │ 23                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @gidonsaar [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 17                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @Shayan86 [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-12..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-12..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @bellingcat [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 3                                           │
+│ Tweets (intersection)          │ 3                                           │
+│ New this cycle                 │ 3                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=2 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-09-24..1404-09-29                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=2 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1404-09-24..1404-09-29                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @LauraSecor [COMPLETED]                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 4                                           │
+│ Tweets (intersection)          │ 4                                           │
+│ New this cycle                 │ 4                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1401-10-17..1405-01-21                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1401-10-17..1405-01-21                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @MaloneySuzanne [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-15..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-15..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @IranIntl [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 6                                           │
+│ Tweets (union)                 │ 65                                          │
+│ Tweets (intersection)          │ 47                                          │
+│ New this cycle                 │ 65                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=3 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-20..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=3 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-20..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+@BBCVerify [QUARANTINED]
+┏━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Metric ┃ Value       ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━┩
+│ Status │ quarantined │
+└────────┴─────────────┘
+      @bentallblu       
+     [QUARANTINED]      
+┏━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Metric ┃ Value       ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━┩
+│ Status │ quarantined │
+└────────┴─────────────┘
+      @HollyDagres      
+     [QUARANTINED]      
+┏━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Metric ┃ Value       ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━┩
+│ Status │ quarantined │
+└────────┴─────────────┘
+                            @PahlaviReza [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-21..1405-05-15                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-04-21..1405-05-15                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @WGC_News [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1397-01-17..1398-03-31                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1397-01-17..1398-03-31                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @SantiagoAuFund [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 3                                           │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-18..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-20..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                            @paulkrugman [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 19                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 19                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-08-13..1403-11-08                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1403-08-13..1403-11-08                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+    @RobinBrooksIIF     
+     [QUARANTINED]      
+┏━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Metric ┃ Value       ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━┩
+│ Status │ quarantined │
+└────────┴─────────────┘
+                             @elerianm [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 20                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-15..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-15..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @NickTimiraos [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 9                                           │
+│ Tweets (intersection)          │ 3                                           │
+│ New this cycle                 │ 9                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-14..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @federalreserve [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 18                                          │
+│ Tweets (intersection)          │ 18                                          │
+│ New this cycle                 │ 18                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-08..1405-05-17                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-08..1405-05-17                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @KitcoNewsNOW [COMPLETED]                            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 2                                           │
+│ Tweets (intersection)          │ 2                                           │
+│ New this cycle                 │ 2                                           │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @GoldTelegraph_ [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 13                                          │
+│ Tweets (intersection)          │ 11                                          │
+│ New this cycle                 │ 13                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                           @flightradar24 [COMPLETED]                           
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 20                                          │
+│ Tweets (intersection)          │ 12                                          │
+│ New this cycle                 │ 20                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-16..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-17..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                             @RayDalio [COMPLETED]                              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 15                                          │
+│ Tweets (intersection)          │ 11                                          │
+│ New this cycle                 │ 15                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-08..1405-05-19                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-10..1405-05-19                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘
+                          @PolymarketIntel [COMPLETED]                          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value                                       ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Status                         │ completed                                   │
+│ Priority                       │ 7                                           │
+│ Tweets (union)                 │ 21                                          │
+│ Tweets (intersection)          │ 19                                          │
+│ New this cycle                 │ 21                                          │
+│ Duplicates                     │ 0                                           │
+│ Viral Reports                  │ 0                                           │
+│ Endpoint: UserTweets           │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweets cursor            │ current_chain_window_crossed                │
+│ Endpoint: UserTweetsAndReplies │ pages=1 http=200                            │
+│                                │ outcome=success_window_complete             │
+│                                │ dates=1405-05-19..1405-05-20                │
+│   UserTweetsAndReplies cursor  │ current_chain_window_crossed                │
+└────────────────────────────────┴─────────────────────────────────────────────┘

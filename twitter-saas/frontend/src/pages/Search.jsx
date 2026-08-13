@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import InfiniteSentinel from "../InfiniteSentinel";
+import RunStatus from "../RunStatus";
 import TweetCard from "../TweetCard";
 
 // Search section: submit a query (enqueues a fetch job) and browse results
@@ -9,6 +11,8 @@ export default function Search() {
   const [searches, setSearches] = useState([]);
   const [selected, setSelected] = useState(null);
   const [results, setResults] = useState([]);
+  const [next, setNext] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -27,17 +31,30 @@ export default function Search() {
     loadSearches(product);
     setSelected(null);
     setResults([]);
+    setNext(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product]);
 
-  async function openResults(search) {
-    setSelected(search);
+  async function openResults(search, url) {
+    if (loading) return;
+    if (!url) {
+      setSelected(search);
+      setResults([]);
+      setNext(null);
+    }
+    setLoading(true);
     setError("");
     try {
-      const data = await api(`/searches/${search.id}/results/`);
-      setResults(data.results || []);
+      const path = url
+        ? url.replace(/^.*\/api/, "")
+        : `/searches/${search.id}/results/`;
+      const data = await api(path);
+      setResults((prev) => (url ? [...prev, ...(data.results || [])] : data.results || []));
+      setNext(data.next || null);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -71,6 +88,7 @@ export default function Search() {
   return (
     <section className="search">
       <h2>Search</h2>
+      <RunStatus />
 
       <div className="tabs">
         {["Top", "Latest"].map((p) => (
@@ -123,7 +141,12 @@ export default function Search() {
           {results.map((t) => (
             <TweetCard key={t.id} tweet={t} />
           ))}
-          {selected && results.length === 0 && (
+          <InfiniteSentinel
+            next={next}
+            loading={loading}
+            onLoad={(url) => selected && openResults(selected, url)}
+          />
+          {selected && !loading && results.length === 0 && (
             <p className="muted">No results yet — the job may still be running.</p>
           )}
         </div>

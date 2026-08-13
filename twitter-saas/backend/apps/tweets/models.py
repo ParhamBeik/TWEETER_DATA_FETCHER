@@ -1,5 +1,5 @@
 """Postgres models: the sole durable store for tweets, users, searches, and
-the vendored fetcher's internal state (raw pages, endpoint watermarks, tx/query
+the canonical fetcher's internal state (raw pages, endpoint watermarks, tx/query
 health). No filesystem data/ layer exists in this project.
 """
 from __future__ import annotations
@@ -13,7 +13,14 @@ class TwitterUser(models.Model):
     handle = models.CharField(max_length=100, unique=True)
     rest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
     display_name = models.CharField(max_length=255, blank=True, default="")
+    avatar_url = models.URLField(max_length=500, blank=True, default="")
+    verified = models.BooleanField(default=False)
+    verified_type = models.CharField(max_length=64, blank=True, default="")
     tracking = models.BooleanField(default=False)
+    priority = models.PositiveSmallIntegerField(default=7)
+    quarantined = models.BooleanField(default=False)
+    quarantine_reason = models.CharField(max_length=255, blank=True, default="")
+    quarantined_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:  # pragma: no cover - trivial
@@ -52,7 +59,8 @@ class Tweet(models.Model):
     conversation_id = models.CharField(max_length=64, blank=True, null=True)
 
     entities = models.JSONField(default=dict, blank=True)
-    payload = models.JSONField(default=dict, blank=True)  # full normalized dict
+    extras = models.JSONField(default=dict, blank=True)  # media/card/quote/RT for list APIs
+    payload = models.JSONField(default=dict, blank=True)  # full normalized dict (debug)
 
     ingested_at = models.DateTimeField(auto_now_add=True)
 
@@ -60,6 +68,7 @@ class Tweet(models.Model):
         ordering = ["-created_at", "-id"]
         indexes = [
             models.Index(fields=["account", "-created_at"]),
+            models.Index(fields=["-created_at", "-id"]),
         ]
 
     def __str__(self) -> str:  # pragma: no cover - trivial
@@ -105,6 +114,31 @@ class SearchResult(models.Model):
 # --- Fetcher internal state (replaces the on-disk data/ layer) --------------
 
 
+class FetchRun(models.Model):
+    STATUS_CHOICES = [
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("partial", "Partial"),
+        ("failed", "Failed"),
+        ("auth_required", "Auth required"),
+    ]
+
+    run_id = models.CharField(max_length=64, unique=True)
+    task_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    subsystem = models.CharField(max_length=32, db_index=True)
+    target = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="running", db_index=True)
+    return_code = models.IntegerField(null=True, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+    failure_ledger = models.JSONField(default=dict, blank=True)
+    log_excerpt = models.TextField(blank=True, default="")
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+
 class RawPage(models.Model):
     """A single raw GraphQL page, keyed like the on-disk batch/page layout."""
 
@@ -113,11 +147,17 @@ class RawPage(models.Model):
     batch = models.CharField(max_length=200, db_index=True)
     page_number = models.IntegerField()
     payload = models.JSONField(default=dict)
+    fetch_run = models.ForeignKey(
+        FetchRun, on_delete=models.SET_NULL, null=True, blank=True, related_name="raw_pages"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = [("endpoint", "account", "batch", "page_number")]
         ordering = ["page_number"]
+        indexes = [
+            models.Index(fields=["created_at"]),
+        ]
 
 
 class EndpointState(models.Model):

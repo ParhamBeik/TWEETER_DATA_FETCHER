@@ -22,17 +22,28 @@ def resolve_config_path(
     project_root: Path = PROJECT_ROOT,
     filename: str = "config.json",
 ) -> Path:
-    candidates = [
-        explicit,
-        os.environ.get("TDF_CONFIG"),
-        project_root / "config" / filename,
-    ]
+    candidates: List[str | Path] = []
+    if explicit:
+        raw = Path(explicit)
+        candidates.append(raw)
+        if not raw.is_absolute():
+            candidates.append(Path.cwd() / raw)
+            candidates.append(project_root / raw)
+            # CLI paths are often repo-root relative while PROJECT_ROOT is twitter_fetcher/.
+            candidates.append(project_root.parent / raw)
+            if raw.parts and raw.parts[0] == project_root.name:
+                candidates.append(project_root.parent / raw)
+                candidates.append(project_root / Path(*raw.parts[1:]))
+    candidates.extend(
+        [
+            os.environ.get("TDF_CONFIG"),
+            project_root / "config" / filename,
+        ]
+    )
     for candidate in candidates:
         if not candidate:
             continue
         path = Path(candidate)
-        if not path.is_absolute():
-            path = project_root / path
         if path.exists():
             return path.resolve()
     path = Path(explicit) if explicit else project_root / "config" / filename

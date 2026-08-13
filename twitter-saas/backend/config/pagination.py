@@ -1,13 +1,15 @@
 """Project-wide cursor pagination.
 
-DRF's CursorPagination defaults to ordering by "-created", which no model here
-defines, and it requires a unique, non-null, monotonic field. `created_at` is
-nullable and non-unique, so we paginate on the auto-increment `-id` (which also
-tracks ingestion/arrival order — newest first).
+Tweet feeds order by tweet time then id. FetchRun lists use started_at.
 """
 from rest_framework.pagination import CursorPagination
 
 
 class StandardCursorPagination(CursorPagination):
-    ordering = "-id"
+    ordering = ("-created_at", "-id")
+    page_size = 30
+
+
+class FetchRunCursorPagination(CursorPagination):
+    ordering = ("-started_at", "-id")
     page_size = 30

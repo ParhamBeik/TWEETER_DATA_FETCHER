@@ -185,19 +185,25 @@ class TweetSetProcessor:
             .get("user_results", {})
             .get("result", {})
         )
-        user_legacy = core_user.get("legacy", {}) if isinstance(core_user, dict) and isinstance(core_user.get("legacy"), dict) else {}
-        author_handle = user_legacy.get("screen_name") or username or "unknown"
+        author = self._user_summary(core_user)
+        author_handle = author.get("handle") or username or "unknown"
         tweet_id = str(tweet_obj.get("rest_id") or "")
+        entities = self._extract_entities(legacy)
 
         normalized: Dict[str, Any] = {
             "id": tweet_id,
             "rest_id": tweet_id,
-            "author_id": core_user.get("rest_id") if isinstance(core_user, dict) else None,
+            "author_id": author.get("id"),
             "account": str(author_handle).lstrip("@"),
+            "author": author,
+            "author_display_name": author.get("display_name"),
+            "author_avatar_url": author.get("avatar_url"),
+            "author_verified": author.get("verified", False),
+            "author_verified_type": author.get("verified_type"),
             "timestamp": self._format_timestamp(legacy.get("created_at")),
             "created_at": legacy.get("created_at"),
             "raw_timestamp": legacy.get("created_at"),
-            "text": legacy.get("full_text") or legacy.get("text") or "",
+            "text": self._tweet_text(tweet_obj),
             "url": f"https://x.com/{str(author_handle).lstrip('@')}/status/{tweet_id}" if tweet_id else "",
             "likes": legacy.get("favorite_count", 0),
             "retweets": legacy.get("retweet_count", 0),
@@ -205,13 +211,21 @@ class TweetSetProcessor:
             "quotes": legacy.get("quote_count", 0),
             "bookmarks": legacy.get("bookmark_count", 0),
             "views": self._view_count(tweet_obj),
-            "entities": self._extract_entities(legacy),
+            "entities": entities,
+            "media": entities.get("media", []),
+            "card": self._extract_card(tweet_obj),
+            "possibly_sensitive": bool(legacy.get("possibly_sensitive")),
             "source_language": legacy.get("lang"),
             "translation_meta": extract_translation_meta(tweet_obj),
             "conversation_id": legacy.get("conversation_id_str"),
             "in_reply_to_status_id": legacy.get("in_reply_to_status_id_str"),
             "in_reply_to_user_id": legacy.get("in_reply_to_user_id_str"),
             "in_reply_to_screen_name": legacy.get("in_reply_to_screen_name"),
+            "reply_to": {
+                "tweet_id": legacy.get("in_reply_to_status_id_str"),
+                "user_id": legacy.get("in_reply_to_user_id_str"),
+                "handle": legacy.get("in_reply_to_screen_name"),
+            } if legacy.get("in_reply_to_status_id_str") else None,
             "type": "Tweet",
         }
         if source_endpoint:
@@ -227,14 +241,15 @@ class TweetSetProcessor:
                 .get("user_results", {})
                 .get("result", {})
             )
-            retweet_user_legacy = retweet_user.get("legacy", {}) if isinstance(retweet_user, dict) and isinstance(retweet_user.get("legacy"), dict) else {}
+            retweet_author = self._user_summary(retweet_user)
             normalized.update({
                 "type": "Retweet",
                 "retweeted_tweet_id": str(retweeted.get("rest_id") or ""),
-                "retweeted_author": retweet_user_legacy.get("screen_name"),
-                "retweeted_text": retweet_legacy.get("full_text") or retweet_legacy.get("text") or "",
+                "retweeted_author": retweet_author.get("handle"),
+                "retweeted_text": self._tweet_text(retweeted),
                 "retweeted_timestamp": self._format_timestamp(retweet_legacy.get("created_at")),
                 "retweeted_translation_meta": extract_translation_meta(retweeted),
+                "retweeted_tweet": self._tweet_summary(retweeted),
             })
         elif str(normalized.get("text") or "").startswith("RT @"):
             normalized.update({
@@ -252,14 +267,15 @@ class TweetSetProcessor:
                 .get("user_results", {})
                 .get("result", {})
             )
-            quoted_user_legacy = quoted_user.get("legacy", {}) if isinstance(quoted_user, dict) and isinstance(quoted_user.get("legacy"), dict) else {}
+            quoted_author = self._user_summary(quoted_user)
             normalized.update({
                 "type": "Quote",
                 "quoted_tweet_id": str(quoted.get("rest_id") or ""),
-                "quoted_author": quoted_user_legacy.get("screen_name"),
-                "quoted_text": quoted_legacy.get("full_text") or quoted_legacy.get("text") or "",
+                "quoted_author": quoted_author.get("handle"),
+                "quoted_text": self._tweet_text(quoted),
                 "quoted_timestamp": self._format_timestamp(quoted_legacy.get("created_at")),
                 "quoted_translation_meta": extract_translation_meta(quoted),
+                "quoted_tweet": self._tweet_summary(quoted),
             })
         elif legacy.get("quoted_status_id_str"):
             normalized.update({
@@ -276,6 +292,63 @@ class TweetSetProcessor:
         return normalized
 
     @staticmethod
+    def _user_summary(user: Any) -> Dict[str, Any]:
+        user = user if isinstance(user, dict) else {}
+        legacy = user.get("legacy", {}) if isinstance(user.get("legacy"), dict) else {}
+        core = user.get("core", {}) if isinstance(user.get("core"), dict) else {}
+        avatar = user.get("avatar", {}) if isinstance(user.get("avatar"), dict) else {}
+        verification = user.get("verification", {}) if isinstance(user.get("verification"), dict) else {}
+        handle = core.get("screen_name") or legacy.get("screen_name")
+        return {
+            "id": str(user.get("rest_id")) if user.get("rest_id") is not None else None,
+            "handle": str(handle).lstrip("@") if handle else None,
+            "display_name": core.get("name") or legacy.get("name"),
+            "avatar_url": avatar.get("image_url") or legacy.get("profile_image_url_https") or legacy.get("profile_image_url"),
+            "verified": bool(user.get("is_blue_verified") or verification.get("verified") or legacy.get("verified")),
+            "verified_type": verification.get("verified_type") or verification.get("type"),
+        }
+
+    @staticmethod
+    def _tweet_text(tweet_obj: Dict[str, Any]) -> str:
+        note_result = (
+            tweet_obj.get("note_tweet", {})
+            .get("note_tweet_results", {})
+            .get("result", {})
+        )
+        legacy = tweet_obj.get("legacy", {}) if isinstance(tweet_obj.get("legacy"), dict) else {}
+        return str(
+            (note_result.get("text") if isinstance(note_result, dict) else None)
+            or legacy.get("full_text")
+            or legacy.get("text")
+            or ""
+        )
+
+    @classmethod
+    def _tweet_summary(cls, tweet_obj: Dict[str, Any]) -> Dict[str, Any]:
+        legacy = tweet_obj.get("legacy", {}) if isinstance(tweet_obj.get("legacy"), dict) else {}
+        user = (
+            tweet_obj.get("core", {})
+            .get("user_results", {})
+            .get("result", {})
+        )
+        entities = cls._extract_entities(legacy)
+        return {
+            "id": str(tweet_obj.get("rest_id") or ""),
+            "author": cls._user_summary(user),
+            "text": cls._tweet_text(tweet_obj),
+            "created_at": legacy.get("created_at"),
+            "media": entities.get("media", []),
+            "metrics": {
+                "likes": legacy.get("favorite_count", 0),
+                "retweets": legacy.get("retweet_count", 0),
+                "replies": legacy.get("reply_count", 0),
+                "quotes": legacy.get("quote_count", 0),
+                "bookmarks": legacy.get("bookmark_count", 0),
+                "views": cls._view_count(tweet_obj),
+            },
+        }
+
+    @staticmethod
     def _view_count(tweet_obj: Dict[str, Any]) -> int:
         views = tweet_obj.get("views", {}) if isinstance(tweet_obj, dict) else {}
         raw = views.get("count", 0) if isinstance(views, dict) else 0
@@ -289,6 +362,32 @@ class TweetSetProcessor:
         entities = legacy.get("entities", {}) if isinstance(legacy.get("entities"), dict) else {}
         extended = legacy.get("extended_entities", {}) if isinstance(legacy.get("extended_entities"), dict) else {}
         media = extended.get("media", entities.get("media", []))
+        normalized_media = []
+        for item in media if isinstance(media, list) else []:
+            if not isinstance(item, dict):
+                continue
+            video_info = item.get("video_info", {}) if isinstance(item.get("video_info"), dict) else {}
+            original = item.get("original_info", {}) if isinstance(item.get("original_info"), dict) else {}
+            normalized_media.append({
+                "id": str(item.get("id_str") or item.get("id") or ""),
+                "type": item.get("type"),
+                "url": item.get("media_url_https") or item.get("media_url"),
+                "expanded_url": item.get("expanded_url"),
+                "alt_text": item.get("ext_alt_text"),
+                "width": original.get("width"),
+                "height": original.get("height"),
+                "duration_ms": video_info.get("duration_millis"),
+                "aspect_ratio": video_info.get("aspect_ratio"),
+                "variants": [
+                    {
+                        "url": variant.get("url"),
+                        "content_type": variant.get("content_type"),
+                        "bitrate": variant.get("bitrate"),
+                    }
+                    for variant in video_info.get("variants", [])
+                    if isinstance(variant, dict) and variant.get("url")
+                ],
+            })
         return {
             "urls": [
                 {
@@ -306,6 +405,28 @@ class TweetSetProcessor:
             ],
             "media_links": [item.get("media_url_https") or item.get("expanded_url") for item in media if isinstance(item, dict) and (item.get("media_url_https") or item.get("expanded_url"))],
             "media_types": [item.get("type") for item in media if isinstance(item, dict) and item.get("type")],
+            "media": normalized_media,
+        }
+
+    @staticmethod
+    def _extract_card(tweet_obj: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        card = tweet_obj.get("card", {}) if isinstance(tweet_obj.get("card"), dict) else {}
+        legacy = card.get("legacy", {}) if isinstance(card.get("legacy"), dict) else {}
+        bindings = legacy.get("binding_values", []) if isinstance(legacy.get("binding_values"), list) else []
+        values: Dict[str, Any] = {}
+        for binding in bindings:
+            if not isinstance(binding, dict) or not binding.get("key"):
+                continue
+            value = binding.get("value", {}) if isinstance(binding.get("value"), dict) else {}
+            image = value.get("image_value", {}) if isinstance(value.get("image_value"), dict) else {}
+            values[str(binding["key"])] = value.get("string_value") or image.get("url")
+        if not values:
+            return None
+        return {
+            "title": values.get("title") or values.get("summary_title"),
+            "description": values.get("description") or values.get("summary_description"),
+            "url": values.get("card_url") or values.get("vanity_url"),
+            "image_url": values.get("photo_image_full_size_original") or values.get("summary_photo_image_original"),
         }
 
     @classmethod

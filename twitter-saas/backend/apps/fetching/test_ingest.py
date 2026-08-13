@@ -50,6 +50,23 @@ def test_upsert_creates_and_links_author():
 
 
 @pytest.mark.django_db
+def test_upsert_enriches_author_from_normalized_payload():
+    upsert_tweet(_item(author={
+        "id": "999",
+        "handle": "jack",
+        "display_name": "Jack",
+        "avatar_url": "https://img.example/jack.jpg",
+        "verified": True,
+        "verified_type": "Blue",
+    }))
+
+    author = TwitterUser.objects.get(handle="jack")
+    assert author.display_name == "Jack"
+    assert author.avatar_url == "https://img.example/jack.jpg"
+    assert author.verified is True
+
+
+@pytest.mark.django_db
 def test_upsert_parses_rfc2822_created_at():
     t = upsert_tweet(_item())
     assert t.created_at is not None

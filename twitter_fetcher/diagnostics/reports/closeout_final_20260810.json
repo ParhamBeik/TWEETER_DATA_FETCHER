@@ -1,0 +1,41 @@
+{
+  "replies_http_4pages": {
+    "status": "partial",
+    "outcome": "partial_safety_cap_reached",
+    "pages_fetched": 4,
+    "transport": "http",
+    "last_http_status": 200,
+    "cursor_termination_reason": "safety_cap_reached"
+  },
+  "search": {
+    "depth1": {
+      "depth": 1,
+      "status": "completed",
+      "transport": "browser_fallback",
+      "pages_saved": 1,
+      "exhausted_reason": "depth_one_complete",
+      "last_http_status": 200,
+      "elapsed_s": 85.4,
+      "browser_error": null,
+      "tweets": null
+    },
+    "depth3": {
+      "depth": 3,
+      "status": "partial",
+      "transport": "http",
+      "pages_saved": 1,
+      "exhausted_reason": "partial_browser_stalled",
+      "last_http_status": 200,
+      "elapsed_s": 67.7,
+      "browser_error": null,
+      "tweets": null
+    },
+    "ok": true
+  },
+  "done": true,
+  "notes": [
+    "UserTweets: HTTP deep \u2014 previously proven",
+    "Replies: HTTP chunk=2 \u2014 4/4 closeout",
+    "Search: depth-1 recovers via HTTP or browser_fallback; depth>1 uses HTTP p1 then browser (salvages HTTP if browser stalls); never HTTP p2"
+  ]
+}

@@ -511,6 +511,29 @@ class StorageManager:
                 batches.extend(path for path in root.iterdir() if path.is_dir())
         return sorted(batches)
 
+    def prune_raw_batches(
+        self,
+        endpoint_name: str,
+        username: str,
+        *,
+        keep: int = 3,
+        include_legacy: bool = False,
+    ) -> int:
+        """Delete older raw batch dirs, keeping the newest ``keep`` (0 = unlimited)."""
+        if keep <= 0:
+            return 0
+        batches = self.find_raw_batches(endpoint_name, username, include_legacy=include_legacy)
+        if len(batches) <= keep:
+            return 0
+        removed = 0
+        for batch_dir in batches[:-keep]:
+            try:
+                shutil.rmtree(batch_dir)
+                removed += 1
+            except OSError:
+                continue
+        return removed
+
     def load_all_raw_pages(self, endpoint_name: str, username: str, include_legacy: bool = True) -> List[Dict[str, Any]]:
         """Load all raw pages for an account/endpoint across known batches."""
         pages: List[Dict[str, Any]] = []
