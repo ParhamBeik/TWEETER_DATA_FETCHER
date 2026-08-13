@@ -29,14 +29,9 @@ class HistoricalOrchestrationTests(unittest.TestCase):
         # This is maintained in fetch_historical.py around line 435
         
         # This is a documentation test that validates the architecture
-        expected_order = [
-            "UserTweets",      # Pass 1: resolve user IDs, fetch UserTweets
-            "UserTweetsAndReplies",  # Pass 2: fetch UserTweetsAndReplies
-        ]
-        
-        self.assertEqual(len(expected_order), 2)
-        self.assertEqual(expected_order[0], "UserTweets")
-        self.assertEqual(expected_order[1], "UserTweetsAndReplies")
+        from tweeter_data_fetcher.pipelines.historical.service import ENDPOINTS
+
+        self.assertEqual(ENDPOINTS, ("UserTweets",))
     
     def test_watermark_only_advances_on_completion(self):
         """

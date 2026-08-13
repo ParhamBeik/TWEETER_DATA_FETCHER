@@ -88,25 +88,6 @@ class RepliesTransportPolicyTests(unittest.TestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_replies_initial_density_404_skips_browser(self):
-        empty_404 = SimpleNamespace(status_code=404, text="", headers={}, request=SimpleNamespace(headers={}))
-        self.engine.api_manager.perform_get = MagicMock(return_value=empty_404)
-        self.engine.bootstrap_browser_context = MagicMock()
-
-        result = self.engine._fetch_endpoint_result(
-            account="chigrl",
-            user_id="20253024",
-            endpoint="UserTweetsAndReplies",
-            max_pages=4,
-            window_days=None,
-            force_refetch=True,
-        )
-
-        self.assertEqual(result["outcome"], "failed_replies_density_404")
-        self.assertEqual(result["transport"], "http")
-        self.assertEqual(result["pages_fetched"], 0)
-        self.engine.bootstrap_browser_context.assert_not_called()
-
     def test_expired_auth_stops_without_browser_or_retry(self):
         unauthorized = SimpleNamespace(
             status_code=401,

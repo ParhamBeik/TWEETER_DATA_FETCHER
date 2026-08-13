@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, getToken } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import RunStatus from "../RunStatus";
 import TweetCard from "../TweetCard";
 
 const emptyFilters = {
+  q: "",
   account: "",
   tier: "",
-  endpoint: "",
-  type: "",
   since: "",
   until: "",
   run_id: "",
@@ -59,11 +58,39 @@ export default function Feed() {
     setApplied({ ...filters });
   }
 
+  async function downloadExport(fmt) {
+    const params = new URLSearchParams();
+    Object.entries(applied).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    params.set("format", fmt);
+    const headers = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Token ${token}`;
+    const res = await fetch(`/api/export/?${params}`, { headers });
+    if (!res.ok) {
+      setError("Export failed");
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tweets.${fmt}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <section>
       <h2>Feed</h2>
       <RunStatus />
       <form className="feed-filters" onSubmit={apply}>
+        <input
+          placeholder="search archive"
+          value={filters.q}
+          onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+        />
         <input
           placeholder="account"
           value={filters.account}
@@ -79,23 +106,6 @@ export default function Feed() {
               P{n}
             </option>
           ))}
-        </select>
-        <select
-          value={filters.endpoint}
-          onChange={(e) => setFilters({ ...filters, endpoint: e.target.value })}
-        >
-          <option value="">all endpoints</option>
-          <option value="UserTweets">UserTweets</option>
-          <option value="UserTweetsAndReplies">UserTweetsAndReplies</option>
-          <option value="SearchTimeline">SearchTimeline</option>
-        </select>
-        <select
-          value={filters.type}
-          onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-        >
-          <option value="">tweets + replies</option>
-          <option value="tweet">tweets</option>
-          <option value="reply">replies</option>
         </select>
         <input
           type="datetime-local"
@@ -113,6 +123,12 @@ export default function Feed() {
           onChange={(e) => setFilters({ ...filters, run_id: e.target.value })}
         />
         <button type="submit">Filter</button>
+        <button type="button" className="link" onClick={() => downloadExport("jsonl")}>
+          Export JSONL
+        </button>
+        <button type="button" className="link" onClick={() => downloadExport("csv")}>
+          Export CSV
+        </button>
       </form>
       {error && <p className="error">{error}</p>}
       {tweets.map((t) => (

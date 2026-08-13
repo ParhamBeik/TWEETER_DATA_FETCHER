@@ -52,14 +52,14 @@ from tweeter_data_fetcher.paths import PROJECT_ROOT
 
 from tweeter_data_fetcher.configuration import DEFAULT_PRIORITY_POLICIES
 from tweeter_data_fetcher.x_api.timeline import FetcherEngine
-from tweeter_data_fetcher.x_api.contracts import (
+from tweeter_data_fetcher.processing.core import (
     SEARCH_TIMELINE_FEATURES,
+    TweetSetProcessor,
     extract_bottom_cursor,
+    parse_twitter_timestamp,
     search_timeline_variables,
     validate_graphql_payload,
 )
-from tweeter_data_fetcher.processing.sets import TweetSetProcessor
-from tweeter_data_fetcher.processing.parsing import parse_twitter_timestamp
 from tweeter_data_fetcher.storage.facade import StorageManager
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
 from tweeter_data_fetcher.observability.event_recorder import redact_exception
@@ -183,12 +183,10 @@ class SearchTimelineMonitor:
         self,
         config_path: Optional[str] = None,
         search_config_path: Optional[str] = None,
-        validation_run_id: Optional[str] = None,
     ):
         self.project_root = PROJECT_ROOT
-        self.validation_run_id = validation_run_id
-        self.fetcher = FetcherEngine(config_path=config_path, subsystem="search", validation_run_id=validation_run_id)
-        self.run_id = validation_run_id or self.fetcher.storage_manager.create_run_id()
+        self.fetcher = FetcherEngine(config_path=config_path, subsystem="search")
+        self.run_id = self.fetcher.storage_manager.create_run_id()
         attach_run_id(self.run_id)
         self.fetcher.recorder.run_id = self.run_id
         self.api_manager = self.fetcher.api_manager
@@ -1042,7 +1040,7 @@ class SearchTimelineMonitor:
                 search_def,
                 product,
                 int(policy["poll_interval_seconds"]),
-                force_run=force_run or bool(self.validation_run_id),
+                force_run=force_run,
             ):
                 continue
                 
@@ -1077,9 +1075,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config")
     parser.add_argument("--search-config")
     parser.add_argument("--only", action="append", help="Limit to search name/slug; can be repeated.")
-    parser.add_argument("--once", action="store_true", help="Run one validation cycle instead of continuous mode.")
+    parser.add_argument("--once", action="store_true", help="Run one cycle instead of continuous mode.")
     parser.add_argument("--check-interval", type=int, default=60)
-    parser.add_argument("--validation-run-id", help="Write isolated output under data/validation/<run_id>/ and bypass polling state.")
     return parser.parse_args()
 
 
@@ -1088,7 +1085,6 @@ def main() -> None:
     monitor = SearchTimelineMonitor(
         config_path=args.config,
         search_config_path=args.search_config,
-        validation_run_id=args.validation_run_id,
     )
     only = set(args.only or []) or None
     if args.once:

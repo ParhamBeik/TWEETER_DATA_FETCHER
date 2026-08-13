@@ -1,11 +1,19 @@
 """Read APIs: feed, accounts, cycles, and searches."""
 from __future__ import annotations
 
-from django.db.models import Q
+import csv
+import json
+from datetime import timedelta
+from io import StringIO
+
+from django.db import connection
+from django.http import StreamingHttpResponse
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -13,7 +21,7 @@ from apps.fetching.accounts import clamp_priority, clear_live_quarantine, live_s
 
 from config.pagination import FetchRunCursorPagination
 
-from .models import FetchRun, Search, Tweet, TwitterUser
+from .models import FetchRun, Search, Tweet, TweetMetric, TwitterUser
 from .serializers import (
     AccountOpsSerializer,
     FetchRunDetailSerializer,
@@ -27,61 +35,64 @@ def _normalize_handle(raw: str) -> str:
     return (raw or "").strip().lstrip("@").lower()
 
 
+def feed_queryset(params):
+    tracked = list(
+        TwitterUser.objects.filter(tracking=True).values_list("handle", "priority")
+    )
+    handle_to_priority = {handle: priority for handle, priority in tracked}
+    search_ids = Search.objects.filter(enabled=True).values_list("id", flat=True)
+    qs = Tweet.objects.filter(account__in=list(handle_to_priority)) | Tweet.objects.filter(
+        search_results__search_id__in=list(search_ids)
+    )
+    account = _normalize_handle(params.get("account") or "")
+    if account:
+        qs = qs.filter(account=account)
+    tier = params.get("tier")
+    if tier:
+        try:
+            priority = int(tier)
+            tier_handles = [
+                handle for handle, value in handle_to_priority.items() if value == priority
+            ]
+            qs = qs.filter(account__in=tier_handles)
+        except ValueError:
+            pass
+    since = params.get("since")
+    if since:
+        qs = qs.filter(created_at__gte=since)
+    until = params.get("until")
+    if until:
+        qs = qs.filter(created_at__lte=until)
+    run_id = params.get("run_id")
+    if run_id:
+        run = FetchRun.objects.filter(run_id=run_id).first()
+        if run is not None:
+            qs = qs.filter(ingested_at__gte=run.started_at)
+            if run.finished_at:
+                qs = qs.filter(ingested_at__lte=run.finished_at)
+    query = (params.get("q") or "").strip()
+    if query:
+        if connection.vendor == "postgresql":
+            from django.contrib.postgres.search import SearchVector
+
+            qs = qs.annotate(_search=SearchVector("text")).filter(_search=query)
+        else:
+            qs = qs.filter(text__icontains=query)
+    return (
+        qs.distinct()
+        .select_related("author")
+        .defer("payload")
+        .order_by("-created_at", "-id")
+    )
+
+
 class FeedView(ListAPIView):
     """Merged latest tweets from tracked accounts + enabled searches."""
 
     serializer_class = TweetSerializer
 
     def get_queryset(self):
-        params = self.request.query_params
-        tracked = list(
-            TwitterUser.objects.filter(tracking=True).values_list("handle", "priority")
-        )
-        handle_to_priority = {handle: priority for handle, priority in tracked}
-        search_ids = Search.objects.filter(enabled=True).values_list("id", flat=True)
-        qs = Tweet.objects.filter(account__in=list(handle_to_priority)) | Tweet.objects.filter(
-            search_results__search_id__in=list(search_ids)
-        )
-        account = _normalize_handle(params.get("account") or "")
-        if account:
-            qs = qs.filter(account=account)
-        tier = params.get("tier")
-        if tier:
-            try:
-                priority = int(tier)
-                tier_handles = [
-                    handle for handle, value in handle_to_priority.items() if value == priority
-                ]
-                qs = qs.filter(account__in=tier_handles)
-            except ValueError:
-                pass
-        endpoint = params.get("endpoint")
-        if endpoint:
-            qs = qs.filter(source_endpoint=endpoint)
-        tweet_type = (params.get("type") or "").lower()
-        if tweet_type == "reply":
-            qs = qs.filter(Q(type__icontains="reply") | Q(extras__has_key="reply_to"))
-        elif tweet_type == "tweet":
-            qs = qs.exclude(Q(type__icontains="reply") | Q(extras__has_key="reply_to"))
-        since = params.get("since")
-        if since:
-            qs = qs.filter(created_at__gte=since)
-        until = params.get("until")
-        if until:
-            qs = qs.filter(created_at__lte=until)
-        run_id = params.get("run_id")
-        if run_id:
-            run = FetchRun.objects.filter(run_id=run_id).first()
-            if run is not None:
-                qs = qs.filter(ingested_at__gte=run.started_at)
-                if run.finished_at:
-                    qs = qs.filter(ingested_at__lte=run.finished_at)
-        return (
-            qs.distinct()
-            .select_related("author")
-            .defer("payload")
-            .order_by("-created_at", "-id")
-        )
+        return feed_queryset(self.request.query_params)
 
 
 class AccountTimelineView(ListAPIView):
@@ -105,6 +116,7 @@ class AccountViewSet(viewsets.ModelViewSet):
     serializer_class = AccountOpsSerializer
     lookup_field = "handle"
     pagination_class = None
+    http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
         return TwitterUser.objects.all().order_by("priority", "handle")
@@ -213,6 +225,7 @@ class SearchViewSet(viewsets.ModelViewSet):
     """List/create searches; creating one enqueues an on-demand fetch."""
 
     serializer_class = SearchSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
         qs = Search.objects.all()
@@ -225,7 +238,6 @@ class SearchViewSet(viewsets.ModelViewSet):
         raw_query = serializer.validated_data["raw_query"]
         name = serializer.validated_data.get("name") or raw_query[:60]
         search = serializer.save(
-            owner=self.request.user,
             name=name,
             slug=slugify(name)[:200] or "search",
         )
@@ -253,3 +265,87 @@ class SearchViewSet(viewsets.ModelViewSet):
 
         run_search.delay(search.id)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
+
+
+class TrendingView(ListAPIView):
+    """Tweets ranked by engagement delta per hour over the last 24 hours."""
+
+    serializer_class = TweetSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        window = timezone.now() - timedelta(hours=24)
+        series: dict[int, list[TweetMetric]] = {}
+        for metric in TweetMetric.objects.filter(captured_at__gte=window).order_by(
+            "tweet_id", "captured_at"
+        ):
+            series.setdefault(metric.tweet_id, []).append(metric)
+        ranked: list[tuple[float, int]] = []
+        for tweet_id, points in series.items():
+            if len(points) < 2:
+                continue
+            first, last = points[0], points[-1]
+            hours = max((last.captured_at - first.captured_at).total_seconds() / 3600, 1 / 60)
+            start = (first.likes or 0) + (first.retweets or 0) + (first.views or 0)
+            end = (last.likes or 0) + (last.retweets or 0) + (last.views or 0)
+            ranked.append(((end - start) / hours, tweet_id))
+        ranked.sort(reverse=True)
+        ids = [tweet_id for _rate, tweet_id in ranked[:50]]
+        tweets = {tweet.id: tweet for tweet in Tweet.objects.filter(id__in=ids).select_related("author").defer("payload")}
+        return [tweets[tweet_id] for tweet_id in ids if tweet_id in tweets]
+
+
+class ExportView(APIView):
+    """Stream the current feed as JSONL or CSV."""
+
+    renderer_classes = [JSONRenderer]
+
+    def perform_content_negotiation(self, request, force=False):
+        return JSONRenderer(), "json"
+
+    def get(self, request):
+        fmt = str(request.query_params.get("format") or "jsonl").lower()
+        if fmt not in {"jsonl", "csv"}:
+            return Response({"detail": "format must be jsonl or csv"}, status=400)
+        qs = feed_queryset(request.query_params)
+
+        def rows():
+            if fmt == "csv":
+                buffer = StringIO()
+                writer = csv.writer(buffer)
+                writer.writerow(["tweet_id", "account", "created_at", "likes", "retweets", "views", "text", "url"])
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+                for tweet in qs.iterator(chunk_size=200):
+                    writer.writerow([
+                        tweet.tweet_id,
+                        tweet.account,
+                        tweet.created_at.isoformat() if tweet.created_at else "",
+                        tweet.likes,
+                        tweet.retweets,
+                        tweet.views,
+                        tweet.text,
+                        tweet.url,
+                    ])
+                    yield buffer.getvalue()
+                    buffer.seek(0)
+                    buffer.truncate(0)
+                return
+            for tweet in qs.iterator(chunk_size=200):
+                yield json.dumps({
+                    "tweet_id": tweet.tweet_id,
+                    "account": tweet.account,
+                    "created_at": tweet.created_at.isoformat() if tweet.created_at else None,
+                    "likes": tweet.likes,
+                    "retweets": tweet.retweets,
+                    "views": tweet.views,
+                    "text": tweet.text,
+                    "url": tweet.url,
+                }, ensure_ascii=False) + "\n"
+
+        content_type = "text/csv" if fmt == "csv" else "application/x-ndjson"
+        filename = f"tweets.{fmt}"
+        response = StreamingHttpResponse(rows(), content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

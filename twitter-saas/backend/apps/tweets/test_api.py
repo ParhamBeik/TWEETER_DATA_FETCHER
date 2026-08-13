@@ -1,4 +1,5 @@
 """Integration tests: feed merge/order and search create enqueue, through DRF."""
+import json
 from unittest.mock import patch
 
 import pytest
@@ -38,7 +39,7 @@ def test_feed_merges_follows_and_searches_ordered_desc(client_user):
     _tweet("jack", "1", "Wed Oct 10 20:19:24 +0000 2018")
     _tweet("jack", "2", "Wed Oct 10 21:19:24 +0000 2018")
 
-    search = Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True, owner=user)
+    search = Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True)
     via_search = _tweet("someoneelse", "3", "Wed Oct 10 22:19:24 +0000 2018")
     SearchResult.objects.create(search=search, tweet=via_search, rank=0)
 
@@ -139,15 +140,15 @@ def test_create_search_enqueues_and_subscribes(client_user):
         )
     assert resp.status_code == 201
     search = Search.objects.get(raw_query="openai")
-    assert search.owner == user and search.slug  # slug auto-derived
+    assert search.slug
     delay.assert_called_once_with(search.id)
 
 
 @pytest.mark.django_db
 def test_search_list_filters_by_product(client_user):
     client, user = client_user
-    Search.objects.create(name="a", slug="a", raw_query="a", product="Top", owner=user)
-    Search.objects.create(name="b", slug="b", raw_query="b", product="Latest", owner=user)
+    Search.objects.create(name="a", slug="a", raw_query="a", product="Top")
+    Search.objects.create(name="b", slug="b", raw_query="b", product="Latest")
     resp = client.get("/api/searches/?product=Latest")
     assert [s["raw_query"] for s in resp.data["results"]] == ["b"]
 
@@ -156,8 +157,8 @@ def test_search_list_filters_by_product(client_user):
 def test_search_list_is_operator_wide(client_user):
     client, user = client_user
     other = User.objects.create_user(username="eve", password="pw")
-    Search.objects.create(name="mine", slug="mine", raw_query="mine", owner=user)
-    Search.objects.create(name="eves", slug="eves", raw_query="eves", owner=other)
+    Search.objects.create(name="mine", slug="mine", raw_query="mine")
+    Search.objects.create(name="eves", slug="eves", raw_query="eves")
     resp = client.get("/api/searches/")
     assert {s["raw_query"] for s in resp.data["results"]} == {"mine", "eves"}
 
@@ -214,7 +215,80 @@ def test_backfill_tweet_payloads_refreshes_author_from_stored_payload():
 
 
 @pytest.mark.django_db
-def test_feed_filters_by_tier_and_endpoint(client_user):
+def test_feed_filters_by_text_query(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+    upsert_tweet(
+        {
+            "rest_id": "1",
+            "author_id": "1",
+            "account": "jack",
+            "text": "openai ships gpt",
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        }
+    )
+    upsert_tweet(
+        {
+            "rest_id": "2",
+            "author_id": "1",
+            "account": "jack",
+            "text": "unrelated weather",
+            "created_at": "Wed Oct 10 21:19:24 +0000 2018",
+        }
+    )
+    ids = [t["tweet_id"] for t in client.get("/api/feed/?q=openai").data["results"]]
+    assert ids == ["1"]
+
+
+@pytest.mark.django_db
+def test_export_jsonl_shares_feed_filters(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+    upsert_tweet(
+        {
+            "rest_id": "1",
+            "author_id": "1",
+            "account": "jack",
+            "text": "hello",
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        }
+    )
+    resp = client.get("/api/export/?format=jsonl")
+    assert resp.status_code == 200
+    body = b"".join(resp.streaming_content).decode()
+    lines = [line for line in body.splitlines() if line]
+    assert json.loads(lines[0])["tweet_id"] == "1"
+
+
+@pytest.mark.django_db
+def test_trending_ranks_by_engagement_delta(client_user):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.tweets.models import TweetMetric
+
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+    tweet = upsert_tweet(
+        {
+            "rest_id": "9",
+            "author_id": "1",
+            "account": "jack",
+            "text": "hot",
+            "likes": 10,
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        }
+    )
+    now = timezone.now()
+    TweetMetric.objects.filter(tweet=tweet).update(captured_at=now - timedelta(hours=2))
+    TweetMetric.objects.create(tweet=tweet, likes=110, retweets=0, views=0, captured_at=now)
+    ids = [t["tweet_id"] for t in client.get("/api/trending/").data]
+    assert ids == ["9"]
+
+
+@pytest.mark.django_db
+def test_feed_filters_by_tier(client_user):
     client, _ = client_user
     TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
     TwitterUser.objects.create(handle="elon", tracking=True, priority=7)
@@ -239,7 +313,6 @@ def test_feed_filters_by_tier_and_endpoint(client_user):
         }
     )
     assert [t["tweet_id"] for t in client.get("/api/feed/?tier=1").data["results"]] == ["1"]
-    assert [t["tweet_id"] for t in client.get("/api/feed/?endpoint=UserTweets").data["results"]] == ["1"]
 
 
 @pytest.mark.django_db
@@ -251,6 +324,14 @@ def test_accounts_list_exposes_priority_and_policy(client_user):
     assert rows[0]["handle"] == "jack"
     assert rows[0]["priority"] == 1
     assert rows[0]["poll_interval_seconds"] == 120
+
+
+@pytest.mark.django_db
+def test_account_delete_is_disabled(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    assert client.delete("/api/accounts/jack/").status_code == 405
+    assert TwitterUser.objects.filter(handle="jack").exists()
 
 
 @pytest.mark.django_db

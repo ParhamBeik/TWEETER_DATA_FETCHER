@@ -30,10 +30,14 @@ def _task_id() -> str:
 
 @contextmanager
 def _cycle_lock(name: str, ttl: int):
-    """Skip overlapping beat ticks; lock expires after ttl (do not clear early)."""
+    """Skip overlapping beat ticks. TTL is a crash backstop; release in finally."""
     key = f"fetch_cycle_lock:{name}"
     acquired = cache.add(key, "1", timeout=max(ttl, 60))
-    yield acquired
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            cache.delete(key)
 
 
 def _run_and_ingest(module: str, args: list[str], subsystem: str, target: str) -> int:
@@ -70,7 +74,7 @@ def _run_cycle(
         if subsystem == "search":
             for search in searches or []:
                 count += ingest_search_results(
-                    search, runner.iter_search_tweets(result.root, search.slug)
+                    search, runner.iter_search_tweets(result.root, search.slug, search.product)
                 )
                 if result.run.status == "completed":
                     search.last_run_at = timezone.now()
@@ -102,8 +106,9 @@ def fetch_account_live(handle: str) -> int:
 def poll_live_all() -> int:
     with _cycle_lock("poll_live_all", settings.FETCH_LIVE_INTERVAL_SECONDS) as acquired:
         if not acquired:
-            logger.info("poll_live_all: skipped overlapping cycle")
+            logger.warning("poll_live_all: skipped overlapping cycle")
             return 0
+        reap_orphaned_fetch_runs()
         return _run_cycle(LIVE_MODULE, ["--once"], "live")
 
 
@@ -113,8 +118,9 @@ def backfill_historical_all() -> int:
         "backfill_historical_all", settings.FETCH_HISTORICAL_INTERVAL_SECONDS
     ) as acquired:
         if not acquired:
-            logger.info("backfill_historical_all: skipped overlapping cycle")
+            logger.warning("backfill_historical_all: skipped overlapping cycle")
             return 0
+        reap_orphaned_fetch_runs()
         return _run_cycle(HISTORICAL_MODULE, [], "historical")
 
 
@@ -136,8 +142,9 @@ def run_search(search_id: int) -> int:
 def repoll_searches() -> int:
     with _cycle_lock("repoll_searches", settings.FETCH_SEARCH_INTERVAL_SECONDS) as acquired:
         if not acquired:
-            logger.info("repoll_searches: skipped overlapping cycle")
+            logger.warning("repoll_searches: skipped overlapping cycle")
             return 0
+        reap_orphaned_fetch_runs()
         searches = list(Search.objects.filter(enabled=True))
         if not searches:
             return 0
@@ -157,10 +164,16 @@ def purge_expired_search_tweets() -> int:
     return deleted
 
 
+def reap_orphaned_fetch_runs() -> int:
+    cutoff = timezone.now() - timedelta(seconds=settings.FETCH_CYCLE_TIMEOUT_SECONDS)
+    return FetchRun.objects.filter(status="running", started_at__lt=cutoff).update(
+        status="failed", finished_at=timezone.now()
+    )
+
+
 @shared_task(name="apps.fetching.tasks.purge_old_fetch_runs")
 def purge_old_fetch_runs() -> int:
+    reap_orphaned_fetch_runs()
     cutoff = timezone.now() - timedelta(days=settings.FETCH_RUN_RETENTION_DAYS)
-    deleted, _ = FetchRun.objects.filter(started_at__lt=cutoff).exclude(
-        status="running"
-    ).delete()
+    deleted, _ = FetchRun.objects.filter(started_at__lt=cutoff).delete()
     return deleted

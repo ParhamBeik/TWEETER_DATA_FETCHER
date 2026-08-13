@@ -48,7 +48,7 @@ def test_request_state_files_round_trip():
 
     runner._persist_state(src, "search")
     assert KeyValueState.objects.filter(
-        namespace="request_state", name="tx_health.json"
+        namespace="request_state", name="search:tx_health.json"
     ).exists()
 
     dst = Path(tempfile.mkdtemp(prefix="tdf_dst_"))
@@ -151,3 +151,62 @@ def test_nonzero_subprocess_exit_persists_failed_run(monkeypatch):
     assert result.run.return_code == 7
     assert "fetch failed" in result.run.log_excerpt
     runner.cleanup(result.root)
+
+
+@pytest.mark.django_db
+def test_request_state_is_keyed_by_subsystem():
+    live = Path(tempfile.mkdtemp(prefix="tdf_live_"))
+    search = Path(tempfile.mkdtemp(prefix="tdf_search_"))
+    (live / "data" / "historical_live" / "state").mkdir(parents=True)
+    (search / "data" / "search" / "state").mkdir(parents=True)
+    (live / "data" / "historical_live" / "state" / "live_state.json").write_text(
+        json.dumps({"jack": {"ok": True}}), encoding="utf-8"
+    )
+    (search / "data" / "search" / "state" / "live_state.json").write_text(
+        json.dumps({"should_not_leak": True}), encoding="utf-8"
+    )
+
+    runner._persist_state(live, "live")
+    runner._persist_state(search, "search")
+
+    dst = Path(tempfile.mkdtemp(prefix="tdf_dst_"))
+    runner._restore_state(dst, "search")
+    restored = (dst / "data" / "search" / "state" / "live_state.json").read_text()
+    assert json.loads(restored) == {"should_not_leak": True}
+
+
+@pytest.mark.django_db
+def test_persist_session_reads_refreshed_scratch_config():
+    root = Path(tempfile.mkdtemp(prefix="tdf_sess_"))
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "config.json").write_text(
+        json.dumps({
+            "api_cookies": {"auth_token": "new", "ct0": "csrf"},
+            "api_headers": {"authorization": "Bearer new"},
+        }),
+        encoding="utf-8",
+    )
+    session = XSession.objects.create(
+        cookies={"auth_token": "old"},
+        headers={"authorization": "Bearer old"},
+    )
+    runner._persist_session(root)
+    session.refresh_from_db()
+    assert session.cookies["auth_token"] == "new"
+    assert session.headers["authorization"] == "Bearer new"
+
+
+def test_iter_search_tweets_scopes_to_product():
+    root = Path(tempfile.mkdtemp(prefix="tdf_search_prod_"))
+    latest = root / "data" / "search" / "processed" / "ai" / "latest"
+    top = root / "data" / "search" / "processed" / "ai" / "top"
+    latest.mkdir(parents=True)
+    top.mkdir(parents=True)
+    (latest / "ai.json").write_text(
+        json.dumps({"tweets": [{"id": "latest"}]}), encoding="utf-8"
+    )
+    (top / "ai.json").write_text(
+        json.dumps({"tweets": [{"id": "top"}]}), encoding="utf-8"
+    )
+    ids = [item["id"] for item in runner.iter_search_tweets(root, "ai", "Latest")]
+    assert ids == ["latest"]

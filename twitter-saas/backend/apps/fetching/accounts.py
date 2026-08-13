@@ -44,7 +44,12 @@ def tracked_accounts_payload(cap: int | None = None) -> dict:
 
 
 def live_state_map() -> dict[str, dict]:
-    row = KeyValueState.objects.filter(namespace="request_state", name="live_state.json").first()
+    row = (
+        KeyValueState.objects.filter(
+            namespace="request_state", name="historical_live:live_state.json"
+        ).first()
+        or KeyValueState.objects.filter(namespace="request_state", name="live_state.json").first()
+    )
     if row is None or not isinstance(row.data, dict):
         return {}
     return {
@@ -83,7 +88,12 @@ def sync_quarantine_from_live_state() -> int:
 
 def clear_live_quarantine(handle: str) -> None:
     key = handle.lower().lstrip("@")
-    row = KeyValueState.objects.filter(namespace="request_state", name="live_state.json").first()
+    row = (
+        KeyValueState.objects.filter(
+            namespace="request_state", name="historical_live:live_state.json"
+        ).first()
+        or KeyValueState.objects.filter(namespace="request_state", name="live_state.json").first()
+    )
     if row is None or not isinstance(row.data, dict):
         return
     current = dict(row.data)
@@ -103,19 +113,20 @@ def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
     state = (live or live_state_map()).get(user.handle.lower(), {})
     last_checked = _parse_when(state.get("last_checked_at"))
     interval = int(policy["poll_interval_seconds"])
-    next_check = last_checked + timedelta(seconds=interval) if last_checked else None
     watermarks = {}
     for row in EndpointState.objects.filter(account__iexact=user.handle):
         data = row.data if isinstance(row.data, dict) else {}
         watermarks[row.endpoint] = data.get("fetch_watermark") or data.get("watermark")
+    recent_since = timezone.now() - timedelta(hours=24)
     return {
         "poll_interval_seconds": interval,
         "live_window_hours": policy["live_window_hours"],
         "historical_window_days": policy["historical_window_days"],
         "last_checked_at": last_checked,
-        "next_check_at": next_check,
         "last_status": state.get("last_status") or "",
-        "recent_tweet_count": Tweet.objects.filter(account=user.handle).count(),
+        "recent_tweet_count": Tweet.objects.filter(
+            account=user.handle, created_at__gte=recent_since
+        ).count(),
         "watermarks": watermarks,
     }
 

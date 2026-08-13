@@ -1,6 +1,6 @@
 # TWEETER DATA FETCHER — Agent Guide
 
-Latest update: August 11, 2026.
+Latest update: August 13, 2026. One endpoint (`UserTweets`) plus search. SaaS surfaces: Feed, archive search, Trending, Export.
 
 This file is for coding agents. For human install/usage, see `README.md`.
 
@@ -15,16 +15,15 @@ Canonical package: setuptools `src` layout under `twitter_fetcher/src/tweeter_da
 | Responsibility | Canonical location |
 |---|---|
 | Historical pipeline | `twitter_fetcher/src/tweeter_data_fetcher/pipelines/historical/service.py` |
-| Live pipeline | `pipelines/live/service.py`, `state.py`, `viral.py` |
-| Search pipeline | `pipelines/search/service.py`, `query.py` |
+| Live pipeline | `pipelines/live/service.py`, `state.py` |
+| Search pipeline | `pipelines/search/service.py` |
 | Runnable entrypoints | Pipeline `service` modules, `x_api/auth.py`, `observability/coverage_inventory.py` |
 | HTTP transport | `x_api/client.py` (`APIManager`) |
-| curl_cffi transport | `x_api/curl_cffi_client.py` |
 | Request persistence | `x_api/request_state.py` |
-| GraphQL contracts | `x_api/contracts.py`, `contract_verification.py` |
+| GraphQL contracts | `x_api/contract_verification.py` |
 | Pagination | `x_api/timeline.py` (`FetcherEngine`) |
 | Auth/browser | `x_api/auth.py`, `browser.py` |
-| Tweet processing | `processing/` (`core.py`, `parsing.py`, `sets.py`, `windows.py`) |
+| Tweet processing | `processing/core.py` |
 | Storage | `storage/` (`facade.py` = `StorageManager`) |
 | Observability | `observability/` |
 | Path constants | `paths.py` |
@@ -48,7 +47,7 @@ Canonical package: setuptools `src` layout under `twitter_fetcher/src/tweeter_da
 - Never commit `twitter_fetcher/config/config.json`, `twitter_fetcher/data/`, diagnostic run output, or `graphify-out/`.
 - Prefer root-cause fixes in canonical code under `twitter_fetcher/src/`.
 - SaaS Docker/pytest import the same package via `PYTHONPATH` / `twitter_fetcher/src` (`TDF_PROJECT_ROOT` is the only SaaS path seam). Do not reintroduce a vendored copy.
-- Preserve endpoint result dictionaries, reports, state schemas, watermarks, seven processed folders, validation-run isolation, and all `data/` path shapes. CLI default is all seven folders; SaaS scratch may write union-only.
+- Preserve endpoint result dictionaries, reports, state schemas, watermarks, and the `4_union` processed path. Do not resurrect `UserTweetsAndReplies` or seven-set algebra.
 - Keep Twitter/X request changes evidence-backed by diagnostic captures.
 - Do not add database layers, abstract repositories, ports, factories, or new dependencies without a current second implementation.
 - After meaningful code changes run `.venv/bin/python -m pytest -q`.
@@ -88,7 +87,7 @@ Entry points are defined in `pyproject.toml` (`package-dir` = `twitter_fetcher/s
 SaaS (from `twitter-saas/backend`):
 
 ```bash
-DJANGO_SETTINGS_MODULE=config.settings ../../.venv/bin/python -m pytest -q apps/fetching apps/tweets
+DJANGO_SETTINGS_MODULE=config.settings_test ../../.venv/bin/python -m pytest --rootdir=. -q apps/fetching apps/tweets apps/accounts
 python manage.py backfill_tweet_payloads   # refresh author/rich columns from Tweet.payload (no X traffic)
 ```
 
@@ -98,8 +97,7 @@ Historical and live share `twitter_fetcher/data/historical_live/` and use global
 
 1. Resolve user IDs.
 2. Fetch `UserTweets` for every active/due account.
-3. Fetch `UserTweetsAndReplies` for every active/due account.
-4. Build processed sets.
+3. Write `4_union`.
 
 Rolling cutoff:
 
@@ -114,17 +112,7 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 - Overlap is expected and deduplicated.
 - Unavailable accounts quarantine after three consecutive user-ID resolution failures; quarantined targets are reported explicitly and excluded from eligible-cycle failure counts.
 
-Processed folders (unchanged):
-
-1. `1_user_tweets`
-2. `2_user_tweets_and_replies`
-3. `3_intersection`
-4. `4_union`
-5. `5_a_minus_b`
-6. `6_b_minus_a`
-7. `7_symmetric_difference`
-
-`StorageManager.merge_processed_items()` deduplicates by `author_id:tweet_id`, falling back to tweet ID. Legacy `5_replies_only` maps to `6_b_minus_a`.
+Processed output is `4_union` only. `StorageManager.merge_processed_items()` deduplicates by `author_id:tweet_id`, falling back to tweet ID.
 
 ## HTTP And GraphQL
 
@@ -133,8 +121,6 @@ Processed folders (unchanged):
 - Tx/query candidates are suspect on failures one and two, stale on failure three, and healthy/reset on HTTP 200.
 - Timeline endpoints use GET with compact JSON `variables`, `features`, and optional `fieldToggles`.
 - Search omits `fieldToggles`; profile timelines use `{"withArticlePlainText":false}`.
-- `UserTweetsAndReplies` requires `referer: https://x.com/{account}/with_replies` and `x-twitter-active-user: yes`.
-- `UserTweetsAndReplies` requires 2.0s–3.0s inter-page delay, chunk cool + session reset every 2 pages (`replies_chunk_pages`), and 45s–60s inter-account cooldown to prevent density soft-blocks. Do not treat Playwright as a success path for Replies.
 - `SearchTimeline` Page 1 runs over HTTP; depth > 1 uses `http+browser` hybrid (Playwright for deeper pages). Mid-pagination HTTP cursor 404s must not burn multi-minute retry loops — early `_cursor_gate`. Prefer `pagination_depth: 1` when only HTTP speed matters.
 - Extract only bottom cursors; never reuse them across endpoint/account/query/product/session.
 - Validate status, JSON, GraphQL errors, endpoint data path, instruction types, and fresh cursor independently.
@@ -150,12 +136,10 @@ Runtime root is `twitter_fetcher/data/` (`DATA_DIR` in `paths.py`):
 twitter_fetcher/data/
   historical_live/
     raw/UserTweets/{account}/{batch}/page_N.json
-    raw/UserTweetsAndReplies/{account}/{batch}/page_N.json
-    processed/{seven set folders}/
+    processed/4_union/
     reports/
     state/
     logs/
-    viral/
   search/
     raw/{search_slug}/{product}/{batch}/page_N.json
     processed/{search_slug}/{product}/
@@ -163,7 +147,6 @@ twitter_fetcher/data/
     reports/
     logs/
     state/search_state.json
-  validation/{run_id}/
 ```
 
 Search must not create historical/live set folders.
@@ -183,7 +166,7 @@ Search must not create historical/live set folders.
 
 ```bash
 python twitter_fetcher/diagnostics/verify_contract.py    # config-vs-baseline drift guard (production-wired)
-python twitter_fetcher/diagnostics/pagination_test.py     # curl-cffi + warmup/active-user pagination harness
+python twitter_fetcher/diagnostics/pagination_test.py     # APIManager warmup/active-user pagination harness
 python twitter_fetcher/diagnostics/sniffer.py             # headful Playwright request capture → sniffer_runs/
 ```
 
@@ -198,4 +181,4 @@ Reports: `twitter_fetcher/diagnostics/reports/` (curated findings). Run dirs (`s
 python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
 ```
 
-Current suite: **126 passed** (canonical `twitter_fetcher/tests`) on August 11, 2026. SaaS `apps/fetching` + `apps/tweets` add ~25 Django tests (run with `DJANGO_SETTINGS_MODULE=config.settings` from `twitter-saas/backend`).
+Run `.venv/bin/python -m pytest -q` and SaaS `apps/fetching apps/tweets apps/accounts` after code changes.

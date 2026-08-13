@@ -38,7 +38,7 @@ python -m tweeter_data_fetcher.observability.coverage_inventory --help
 python -m tweeter_data_fetcher.x_api.auth --help
 ```
 
-All pipelines accept `--validation-run-id <id>` and isolate output under `twitter_fetcher/data/validation/<id>/`.
+Live and historical fetch `UserTweets` only and write `4_union`. Search stays isolated under `twitter_fetcher/data/search/`.
 
 ## Layout
 
@@ -49,8 +49,8 @@ twitter_fetcher/
   src/tweeter_data_fetcher/
     pipelines/            historical, live, search orchestration
     x_api/                HTTP, auth/browser, contracts, pagination
-    processing/           parsing, seven-set ops, rolling windows
-    storage/              filesystem, state, exports, StorageManager
+    processing/           tweet parse + rolling windows
+    storage/              StorageManager + filesystem helpers
     observability/        console, file logs, NDJSON events, reports
     paths.py              single source of truth for project paths
   tests/                  unit, integration, contract, fixtures
@@ -78,22 +78,11 @@ Never commit `twitter_fetcher/config/config.json`.
 
 ## What The Pipelines Do
 
-Historical and live share `twitter_fetcher/data/historical_live/` and run in global two-pass order:
+Historical and live share `twitter_fetcher/data/historical_live/`:
 
 1. Resolve user IDs for active/due accounts
 2. Fetch `UserTweets` for all accounts
-3. Fetch `UserTweetsAndReplies` for all accounts
-4. Build seven processed sets per account
-
-| Folder | Set (`A` = UserTweets, `B` = UserTweetsAndReplies) |
-|---|---|
-| `1_user_tweets` | `A` |
-| `2_user_tweets_and_replies` | `B` |
-| `3_intersection` | `A ∩ B` |
-| `4_union` | `A ∪ B` |
-| `5_a_minus_b` | `A - B` |
-| `6_b_minus_a` | `B - A` |
-| `7_symmetric_difference` | `A △ B` |
+3. Write `processed/4_union` (the only ingest path)
 
 Rolling cutoff:
 
@@ -127,9 +116,8 @@ The pipelines use evidence-backed request contracts and pacing to maintain high 
 
 | Endpoint | Primary Transport | Referer Header | Pacing & Strategy |
 |---|---|---|---|
-| `UserTweets` | `curl_cffi` HTTP/2 | `https://x.com/{account}` | Direct HTTP/2 GET, 0.2s–0.6s inter-page sleep |
-| `UserTweetsAndReplies` | `curl_cffi` HTTP/2 | `https://x.com/{account}/with_replies` | `x-twitter-active-user: yes`, 1.0s–1.5s inter-page delay, 10s–12s inter-account cooldown to prevent 404 density soft-blocks |
-| `SearchTimeline` | `APIManager` + Playwright | `https://x.com/search?...` | Page 1 via HTTP; Page 2+ (cursor-bearing queries) automatically fall back to Playwright Chromium SPA context (`FetcherEngine.bootstrap_browser_context`) |
+| `UserTweets` | `APIManager` (`requests`) | `https://x.com/{account}` | Direct GET, short inter-page sleep |
+| `SearchTimeline` | `APIManager` + Playwright | `https://x.com/search?...` | Page 1 via HTTP; deeper pages use Playwright |
 
 Detailed request templates, variable definitions, and diagnostic findings are documented in [`ENDPOINT_TEMPLATES_AND_PACING_GUIDE.md`](file:///Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/twitter_fetcher/diagnostics/reports/ENDPOINT_TEMPLATES_AND_PACING_GUIDE.md).
 
@@ -139,9 +127,7 @@ Evidence-gathering scripts (not the pytest suite):
 
 ```bash
 python twitter_fetcher/diagnostics/verify_contract.py            # config-vs-baseline drift guard (production-wired)
-python twitter_fetcher/diagnostics/pagination_test.py             # multi-account UserTweets & UserTweetsAndReplies harness
-python twitter_fetcher/diagnostics/probe_search_timeline_matrix.py # SearchTimeline multi-route & multi-product probe
-python twitter_fetcher/diagnostics/probe_browser_vs_curl.py       # browser-vs-curl differential experiment harness
+python twitter_fetcher/diagnostics/pagination_test.py             # multi-account UserTweets + SearchTimeline harness
 python twitter_fetcher/diagnostics/sniffer.py                     # headful Playwright request capture → sniffer_runs/
 ```
 
@@ -156,4 +142,4 @@ Curated findings live in `twitter_fetcher/diagnostics/reports/`; the live `sniff
 python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
 ```
 
-Current baseline: **108 passed** on July 18, 2026.
+SaaS operator console (`twitter-saas/`): Feed, archive search (`q=`), Trending, Export. One shared X session, one worker.

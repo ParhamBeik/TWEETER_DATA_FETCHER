@@ -25,10 +25,9 @@ class LiveStatusTests(unittest.TestCase):
             error=None,
         )
         monitor._get_live_user_id = MagicMock(return_value="1")
-        monitor._fetch_live_endpoint = MagicMock(side_effect=[
-            {"endpoint": "UserTweets", "status": "completed", "pages": []},
-            {"endpoint": "UserTweetsAndReplies", "status": "failed", "pages": []},
-        ])
+        monitor._fetch_live_endpoint = MagicMock(
+            return_value={"endpoint": "UserTweets", "status": "failed", "pages": []}
+        )
         monitor._process_sets = MagicMock(return_value={"4_union": []})
         monitor._handle_new_tweets = MagicMock(return_value={"new": 0})
 

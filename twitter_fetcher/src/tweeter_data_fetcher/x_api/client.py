@@ -548,37 +548,6 @@ class APIManager:
         except requests.exceptions.RequestException:
             return
 
-    def warmup_session(self, username: str) -> bool:
-        """
-        Human-like warm-up flow:
-        1) Visit home page
-        2) Visit user profile page
-        3) Pin session referer to the user profile
-
-        Dormant by default: warm-up GETs add 500-800ms with zero success-rate
-        benefit (see tests/reports/COLD_VS_WARM_FINDINGS.md). Re-enable per
-        deployment via simulation_config.browse_warmup_enabled=true if needed.
-        """
-        if not self.simulation_config.get("browse_warmup_enabled", False):
-            return False
-        username = (username or "").strip().lstrip("@")
-        if not username:
-            return False
-        home_url = "https://x.com/"
-        profile_url = f"https://x.com/{username}"
-        try:
-            self._get(home_url)
-            self._get(profile_url)
-            self.session.headers["referer"] = profile_url
-            return True
-        except requests.exceptions.RequestException as exc:
-            self._warning(f"Warm-up navigation failed for @{username}: {exc}")
-            return False
-
-    def warmup_user_context(self, username: Optional[str] = None):
-        """Backward-compatible profile warmup wrapper."""
-        self.warmup_navigation_context(username=username, endpoint="UserTweets")
-
     def warmup_url(self, url: str, timeout: int = 30):
         """Best-effort warmup for non-profile routes (e.g., search pages)."""
         if not self.simulation_config.get("enabled", True):
@@ -688,32 +657,6 @@ class APIManager:
             Path(tmp_path).unlink(missing_ok=True)
             raise
 
-    def hot_swap_auth(self, updates: Dict[str, Any]) -> bool:
-        """Apply fresh browser auth/query parameters to config and active session."""
-        if not isinstance(updates, dict) or not updates:
-            return False
-
-        cookies = updates.get("api_cookies")
-        if isinstance(cookies, dict) and cookies:
-            self.config.setdefault("api_cookies", {}).update({k: str(v) for k, v in cookies.items() if v})
-
-        headers = updates.get("api_headers")
-        if isinstance(headers, dict) and headers:
-            self.config.setdefault("api_headers", {}).update({k: str(v) for k, v in headers.items() if v})
-
-        api_config = updates.get("api_config")
-        if isinstance(api_config, dict) and api_config:
-            self.config.setdefault("api_config", {}).update({k: str(v) for k, v in api_config.items() if v})
-
-        bearer = updates.get("bearer_token")
-        if bearer:
-            self.config.setdefault("api_auth", {})["bearer_token"] = str(bearer)
-
-        self._save_config()
-        self.refresh_session()
-        self.refresh_config_and_query_ids()
-        return True
-    
     def _load_rate_limits(self) -> Dict[str, Dict]:
         """Load rate limit state from disk or initialize"""
         loaded: Dict[str, Dict] = self._request_state_store().load("rate_limits.json", {})
@@ -802,34 +745,6 @@ class APIManager:
         self.query_ids[endpoint] = query_id
         return query_id
     
-    def check_rate_limit(self, endpoint: str, safety_margin: float = 0.9) -> Tuple[bool, Optional[int]]:
-        """
-        Check if we have budget for this endpoint
-        
-        Returns:
-            (can_proceed, seconds_until_reset)
-        """
-        if endpoint not in self.rate_limits:
-            return True, None
-        
-        limit_data = self.rate_limits[endpoint]
-        now = int(time.time())
-        
-        # Check if reset time has passed
-        if now >= limit_data["reset"]:
-            # Reset the bucket
-            limit_data["remaining"] = limit_data["limit"]
-            limit_data["reset"] = now + 900  # 15 minutes
-            self._save_rate_limits()
-            return True, None
-        
-        if limit_data["remaining"] > 0:
-            return True, None
-        
-        # Rate limited
-        seconds_until_reset = limit_data["reset"] - now
-        return False, seconds_until_reset
-
     def wait_for_rate_limit(self, endpoint: str, safety_buffer_seconds: Optional[int] = None) -> int:
         """Sleep until a persisted exhausted endpoint bucket resets."""
         if safety_buffer_seconds is None:
@@ -1011,134 +926,6 @@ class APIManager:
             raise last_exception
         raise RuntimeError(f"Request loop exited unexpectedly for endpoint={endpoint}")
 
-    def _auto_refresh_params(self, endpoint: str, username: Optional[str] = None) -> bool:
-        """
-        Launch auto-refresh via Playwright to get fresh tx-ids + query-ids.
-        Returns True on success.
-        """
-        key = (str(endpoint), str(username or "__default__"))
-        if key in self.auto_refresh_attempts:
-            self._warning(
-                f"Auto-refresh already attempted for {endpoint} for @{username or 'default'}; "
-                "skipping another refresh loop."
-            )
-            return False
-
-        self.auto_refresh_attempts[key] = 1
-        recorder = getattr(self, "recorder", None)
-        if recorder:
-            recorder.emit_auto_refresh_start(
-                trigger="candidate_pool_exhausted",
-                endpoint=endpoint,
-                username=username,
-            )
-
-        try:
-            from tweeter_data_fetcher.x_api.auth import auto_refresh_session
-        except ImportError:
-            self._error("Auto-refresh module not available")
-            if recorder:
-                recorder.emit_auto_refresh_done(
-                    endpoint=endpoint,
-                    updated=[],
-                    success=False,
-                    username=username,
-                )
-            return False
-        
-        success = auto_refresh_session(self.config_path, endpoints=[endpoint])
-        if not success:
-            if recorder:
-                recorder.emit_auto_refresh_done(
-                    endpoint=endpoint,
-                    updated=[],
-                    success=False,
-                    username=username,
-                )
-            return False
-        
-        # Reload config and tx-id pools
-        self.config = getattr(self, "config", {})
-        self.refresh_config_and_query_ids()
-        self.real_tx_ids = self.config.get("real_transaction_ids_by_endpoint", {})
-        if not self.real_tx_ids:
-            self.real_tx_ids = {"_default": self.config.get("real_transaction_ids", [])}
-        
-        # Reset tx-id state for this endpoint (mark all new tx-ids as healthy)
-        if endpoint in self.real_tx_ids:
-            self.tx_id_state[endpoint] = {tx_id: "healthy" for tx_id in self.real_tx_ids[endpoint]}
-            self._save_tx_id_state()
-        if endpoint in self.query_id_pools:
-            self.query_id_state[endpoint] = {
-                query_id: {"status": "healthy", "failures": 0}
-                for query_id in self.query_id_pools[endpoint]
-            }
-            self._save_query_id_state()
-        if recorder:
-            recorder.emit_auto_refresh_done(
-                endpoint=endpoint,
-                updated=[endpoint],
-                success=True,
-                username=username,
-            )
-        
-        return True
-    
-    def make_request(
-        self,
-        endpoint: str,
-        url: str,
-        max_retries: int = 3,
-        retry_delay: float = 2.0,
-        context: Optional[Union[RequestContext, Dict]] = None,
-        username: Optional[str] = None,
-        **kwargs
-    ) -> Optional[requests.Response]:
-        """
-        Backward-compatible request helper returning None on non-successful states.
-        
-        Args:
-            endpoint: Endpoint name for rate limiting
-            url: Full URL to request
-            max_retries: Maximum retry attempts for 5xx errors
-            retry_delay: Base delay between retries (exponential backoff)
-            **kwargs: Additional arguments for requests.get()
-        
-        Returns:
-            Response object or None if failed
-        """
-        try:
-            response = self.perform_get(
-                endpoint=endpoint,
-                url=url,
-                max_retries=max_retries,
-                retry_delay=retry_delay,
-                context=context,
-                username=username,
-                **kwargs,
-            )
-        except requests.exceptions.RequestException as e:
-            self._error(f"Request failed on {endpoint} after {max_retries} attempts: {e}")
-            return None
-
-        if response.status_code == 200:
-            return response
-
-        if response.status_code == 404:
-            self._warning(f"404 on {endpoint}: request context or query ID rejected")
-            return None
-
-        if response.status_code == 429:
-            retry_after = int(response.headers.get("retry-after", 900))
-            self._warning(f"Rate limited on {endpoint}; retry after {retry_after}s")
-            return None
-
-        if 500 <= response.status_code < 600:
-            return None
-
-        self._warning(f"Unexpected status {response.status_code} on {endpoint}")
-        return None
-    
     def get_query_id(self, endpoint: str) -> Optional[str]:
         """Get the run-pinned query ID for an endpoint."""
         return self._next_query_id(endpoint)
