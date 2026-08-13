@@ -2,7 +2,7 @@
 
 Standalone Django + React + Postgres operator console around the canonical CLI
 fetcher. Celery beat runs one global live/historical/search cycle (the same
-two-pass `tdf-*` modules). The UI is **Feed**, **Accounts** (tiers/schedule),
+two-pass `tdf-*` modules). The UI is **Feed** (with archive search + export), **Trending**, **Accounts**,
 **Cycles**, and **Search**.
 
 This project is self-contained at runtime: Docker installs the canonical

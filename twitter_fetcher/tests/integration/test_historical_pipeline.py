@@ -60,23 +60,7 @@ class HistoricalPipelineTests(unittest.TestCase):
     def test_endpoint_handling(self):
         """Test that all endpoints are handled."""
         from tweeter_data_fetcher.pipelines.historical.service import ENDPOINTS
-        self.assertIn("UserTweets", ENDPOINTS)
-        self.assertIn("UserTweetsAndReplies", ENDPOINTS)
-
-    @patch('tweeter_data_fetcher.pipelines.historical.service.FetcherEngine')
-    @patch('tweeter_data_fetcher.pipelines.historical.service.StorageManager')
-    def test_validation_run(self, mock_storage, mock_engine):
-        """Test validation run mode."""
-        mock_engine_instance = MagicMock()
-        mock_engine.return_value = mock_engine_instance
-        
-        mock_storage_instance = MagicMock()
-        mock_storage.return_value = mock_storage_instance
-        
-        # Validation run should work without errors
-        # This tests the structure
-        self.assertTrue(True)  # Placeholder
-
+        self.assertEqual(ENDPOINTS, ("UserTweets",))
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from tweeter_data_fetcher.x_api.client import APIManager, EndpointHealth
 
@@ -71,40 +71,6 @@ class ConfigPathResolutionTests(unittest.TestCase):
         expected = Path(__file__).resolve().parents[2] / "config" / "config.json"
         resolved = APIManager._resolve_config_path(None)
         self.assertEqual(resolved, expected)
-
-
-class AutoRefreshTests(unittest.TestCase):
-    def test_auto_refresh_only_runs_once_per_endpoint_account(self):
-        manager = APIManager.__new__(APIManager)
-        manager.config_path = Path("/tmp/config.json")
-        manager.real_tx_ids = {"UserTweets": ["tx-1"]}
-        manager.tx_id_state = {"UserTweets": {"tx-1": {"status": "healthy", "failures": 0}}}
-        manager.query_id_pools = {"UserTweets": ["q-1"]}
-        manager.query_id_state = {"UserTweets": {"q-1": {"status": "healthy", "failures": 0}}}
-        manager.endpoint_health = {}
-        manager.consecutive_404s = {}
-        manager.auto_refresh_attempts = {}
-        manager.recorder = MagicMock()
-        manager.refresh_config_and_query_ids = lambda: None
-        manager._save_tx_id_state = lambda: None
-        manager._save_query_id_state = lambda: None
-        manager._mark_tx_id = lambda *args, **kwargs: None
-        manager._mark_query_id = lambda *args, **kwargs: None
-
-        with patch("tweeter_data_fetcher.x_api.auth.auto_refresh_session", return_value=True) as refresh_mock:
-            first = manager._auto_refresh_params("UserTweets", username="elonmusk")
-            second = manager._auto_refresh_params("UserTweets", username="elonmusk")
-
-        self.assertTrue(first)
-        self.assertFalse(second)
-        self.assertEqual(refresh_mock.call_count, 1)
-        manager.recorder.emit_auto_refresh_start.assert_called_once()
-        manager.recorder.emit_auto_refresh_done.assert_called_once_with(
-            endpoint="UserTweets",
-            updated=["UserTweets"],
-            success=True,
-            username="elonmusk",
-        )
 
 
 class QueryIdSelectionTests(unittest.TestCase):

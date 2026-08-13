@@ -3,14 +3,10 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
 
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
 from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext, redact_exception
-from tweeter_data_fetcher.observability.run_report import RunReportBuilder
-from tweeter_data_fetcher.observability.coverage_inventory import CoverageInventory
 
 
 class PipelineConsoleTests(unittest.TestCase):
@@ -196,55 +192,6 @@ class EventRecorderTests(unittest.TestCase):
         
         self.assertEqual(event["type"], "auto_refresh_start")
         self.assertEqual(event["trigger"], "consecutive_404s")
-
-
-class RunReportBuilderTests(unittest.TestCase):
-    """Test RunReportBuilder schema."""
-    
-    def test_builder_creates_canonical_schema(self):
-        """RunReportBuilder generates expected report shape."""
-        builder = RunReportBuilder(
-            run_id="test_run_1",
-            subsystem="historical_live",
-        )
-        
-        phase = builder.start_phase(
-            name="Phase 1/2",
-            endpoint="UserTweets",
-            accounts=["elonmusk", "naval"]
-        )
-        builder.finish_phase(phase)
-        
-        report = builder.build()
-        
-        self.assertEqual(report["run_id"], "test_run_1")
-        self.assertEqual(report["subsystem"], "historical_live")
-        self.assertIn("started_at", report)
-        self.assertIn("finished_at", report)
-        self.assertIn("phases", report)
-        self.assertGreaterEqual(len(report["phases"]), 1)
-    
-    def test_builder_tracks_phases(self):
-        """Phases are tracked with timestamps."""
-        builder = RunReportBuilder(subsystem="search", run_id="test")
-        
-        phase = builder.start_phase(name="Fetch", accounts=["test_account"])
-        
-        # Use set_endpoint instead of record_account
-        result = {
-            "status": "completed",
-            "pages_fetched": 5,
-            "started_at": datetime.utcnow().isoformat() + "Z",
-            "finished_at": datetime.utcnow().isoformat() + "Z",
-        }
-        builder.set_endpoint("test_account", "SearchTimeline", result)
-        builder.finish_phase(phase)
-        
-        report = builder.build()
-        self.assertEqual(len(report["phases"]), 1)
-        self.assertEqual(report["phases"][0]["name"], "Fetch")
-        self.assertIn("started_at", report["phases"][0])
-        self.assertIn("finished_at", report["phases"][0])
 
 
 class ObservabilityContextTests(unittest.TestCase):

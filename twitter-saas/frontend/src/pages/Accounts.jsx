@@ -118,7 +118,7 @@ export default function Accounts() {
                 <th>Account</th>
                 <th>Tier</th>
                 <th>Interval</th>
-                <th>Last / next</th>
+                <th>Last checked</th>
                 <th>Status</th>
                 <th>Tweets</th>
                 <th />
@@ -150,7 +150,6 @@ export default function Accounts() {
                   <td>{a.poll_interval_seconds}s</td>
                   <td>
                     <div>{formatWhen(a.last_checked_at)}</div>
-                    <div className="muted">{formatWhen(a.next_check_at)}</div>
                   </td>
                   <td>
                     {a.quarantined ? (

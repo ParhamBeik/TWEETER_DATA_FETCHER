@@ -14,7 +14,6 @@ Flags:
     --account <user>           limit to account(s) (repeatable / comma-separated)
     --once                     run a single poll cycle then exit
     --check-interval <sec>     seconds between cycles in continuous mode (default 60)
-    --validation-run-id <id>   isolate output under data/validation/<id>/
 """
 from __future__ import annotations
 
@@ -36,27 +35,24 @@ from tweeter_data_fetcher.paths import PROJECT_ROOT
 
 from tweeter_data_fetcher.configuration import get_priority_policy, load_tier_config, ordered_accounts
 from tweeter_data_fetcher.x_api.timeline import FetcherEngine
-from tweeter_data_fetcher.processing.sets import TweetSetProcessor
-from tweeter_data_fetcher.processing.windows import window_cutoff
+from tweeter_data_fetcher.processing.core import TweetSetProcessor, window_cutoff
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
 from tweeter_data_fetcher.observability.logging_setup import attach_run_id
 from tweeter_data_fetcher.pipelines.live.state import LiveStorageManager
-from tweeter_data_fetcher.pipelines.live.viral import ViralDetector
 
 # Live polling ---------------------------------------------------------------
 
 
 class LiveMonitor:
-    """Poll UserTweets and UserTweetsAndReplies shallowly per account."""
+    """Poll UserTweets shallowly per account."""
 
-    ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")
+    ENDPOINTS = ("UserTweets",)
     QUARANTINE_FAILURE_THRESHOLD = 3
 
-    def __init__(self, config_path: Optional[str] = None, validation_run_id: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None):
         self.project_root = PROJECT_ROOT
-        self.validation_run_id = validation_run_id
-        self.fetcher = FetcherEngine(config_path=config_path, subsystem="live", validation_run_id=validation_run_id)
-        self.run_id = validation_run_id or self.fetcher.storage_manager.create_run_id()
+        self.fetcher = FetcherEngine(config_path=config_path, subsystem="live")
+        self.run_id = self.fetcher.storage_manager.create_run_id()
         attach_run_id(self.run_id)
         self.fetcher.recorder.run_id = self.run_id
         self.console = PipelineConsole(subsystem="live", verbosity="normal")
@@ -66,10 +62,6 @@ class LiveMonitor:
         self.accounts = ordered_accounts(self.account_map)
         self.processor = TweetSetProcessor()
         self.live_storage = LiveStorageManager(self.project_root, data_root_override=self.fetcher.data_root)
-        self.viral_detector = ViralDetector(config_path=config_path, storage=self.live_storage)
-        viral_cfg = self.config.get("viral_detection", {})
-        self.snapshot_min_delta = int(viral_cfg.get("snapshot_min_metric_delta", 25))
-        self.snapshot_min_minutes = int(viral_cfg.get("snapshot_min_minutes", 10))
 
     @staticmethod
     def _compact_json(payload: Dict[str, Any]) -> str:
@@ -133,27 +125,14 @@ class LiveMonitor:
             max_pages=safety_cap_pages,
             window_days=None,
             cutoff=cutoff,
-            force_refetch=bool(self.validation_run_id),
+            force_refetch=False,
         )
 
     def _process_sets(self, username: str, endpoint_pages: Dict[str, List[Dict[str, Any]]], live_window_hours: int) -> Dict[str, List[Dict[str, Any]]]:
         set_a = self.processor.extract_tweets_from_raw(endpoint_pages.get("UserTweets", []), username=username, source_endpoint="UserTweets")
-        set_b = self.processor.extract_tweets_from_raw(endpoint_pages.get("UserTweetsAndReplies", []), username=username, source_endpoint="UserTweetsAndReplies")
-        outputs = {
-            "1_user_tweets": list(set_a.values()),
-            "2_user_tweets_and_replies": list(set_b.values()),
-            "3_intersection": self.processor.get_intersection(set_a, set_b),
-            "4_union": self.processor.get_union(set_a, set_b),
-            "5_a_minus_b": self.processor.get_difference_a_minus_b(set_a, set_b),
-            "6_b_minus_a": self.processor.get_difference_b_minus_a(set_a, set_b),
-            "7_symmetric_difference": self.processor.get_symmetric_difference(set_a, set_b),
-        }
-        storage_cfg = self.config.get("storage") or {}
-        write_set_diffs = bool(storage_cfg.get("write_set_diffs", True))
-        keys = list(outputs.keys()) if write_set_diffs else ["4_union"]
-        for key in keys:
-            self.live_storage.save_processed_set(username, key, outputs[key])
-        raw_keep = int(storage_cfg.get("raw_batch_retention_count", 0) or 0)
+        outputs = {"4_union": list(set_a.values())}
+        self.live_storage.save_processed_set(username, "4_union", outputs["4_union"])
+        raw_keep = int((self.config.get("storage") or {}).get("raw_batch_retention_count", 0) or 0)
         if raw_keep > 0:
             for endpoint in self.ENDPOINTS:
                 self.live_storage.storage.prune_raw_batches(endpoint, username, keep=raw_keep)
@@ -162,7 +141,6 @@ class LiveMonitor:
     def _handle_new_tweets(self, username: str, tweets: List[Dict[str, Any]]) -> Dict[str, int]:
         new_count = 0
         duplicate_count = 0
-        viral_reports = 0
         for tweet in tweets:
             tweet_id = str(tweet.get("id") or tweet.get("rest_id") or "").strip()
             if not tweet_id:
@@ -173,21 +151,9 @@ class LiveMonitor:
             else:
                 new_count += 1
             self.live_storage.register_tweet(tweet, [f"live/{username}"])
-            self.live_storage.save_snapshot(
-                tweet,
-                force=not was_seen,
-                min_delta=self.snapshot_min_delta,
-                min_minutes=self.snapshot_min_minutes,
-            )
-            analysis = self.viral_detector.analyze_tweet(tweet_id, str(tweet.get("account") or username), tweet)
-            if analysis:
-                self.live_storage.save_viral_report(analysis)
-                viral_reports += 1
         if new_count > 0:
             self.console.success(f"New tweets for @{username}: {new_count}")
-        if viral_reports > 0:
-            self.console.info(f"Viral reports for @{username}: {viral_reports}")
-        return {"new": new_count, "duplicates": duplicate_count, "viral_reports": viral_reports}
+        return {"new": new_count, "duplicates": duplicate_count}
 
     def monitor_account(self, username: str) -> Dict[str, Any]:
         policy = get_priority_policy(username, self.account_map, self.priority_policies)
@@ -277,7 +243,7 @@ class LiveMonitor:
                     "endpoints": {},
                 }
                 continue
-            if not self.validation_run_id and not self.should_fetch_account(username):
+            if not self.should_fetch_account(username):
                 report["summary"]["skipped"] += 1
                 continue
             report["summary"]["checked"] += 1
@@ -326,15 +292,10 @@ class LiveMonitor:
                 report["summary"]["failed"] += 1
 
         endpoint_pages_by_account: Dict[str, Dict[str, List[Dict[str, Any]]]] = {username: {} for username in user_ids}
-        for endpoint_index, endpoint in enumerate(self.ENDPOINTS):
-            if endpoint == "UserTweetsAndReplies" and endpoint_index > 0 and user_ids:
-                self.api_manager.human_delay("between_accounts_replies")
+        for endpoint in self.ENDPOINTS:
             for idx, (username, user_id) in enumerate(user_ids.items()):
                 if idx > 0:
-                    if endpoint == "UserTweetsAndReplies":
-                        self.api_manager.human_delay("between_accounts_replies")
-                    else:
-                        self.api_manager.human_delay("between_accounts")
+                    self.api_manager.human_delay("between_accounts")
                 policy = get_priority_policy(username, self.account_map, self.priority_policies)
                 endpoint_result = self._fetch_live_endpoint(
                     username,
@@ -377,7 +338,7 @@ class LiveMonitor:
             self.console.warning("No accounts were processed in this cycle")
 
         report_id = (
-            f"{getattr(self, 'run_id', None) or self.validation_run_id or 'live'}_"
+            f"{getattr(self, 'run_id', None) or 'live'}_"
             f"live_{datetime.utcnow().strftime('%Y%m%dT%H%M%S%fZ')}"
         )
         report["report_id"] = report_id
@@ -410,15 +371,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run isolated v4 live monitoring.")
     parser.add_argument("--config")
     parser.add_argument("--account", action="append", dest="accounts", help="Limit to one account; can be repeated.")
-    parser.add_argument("--once", action="store_true", help="Run one internal validation cycle instead of continuous mode.")
+    parser.add_argument("--once", action="store_true", help="Run one cycle instead of continuous mode.")
     parser.add_argument("--check-interval", type=int, default=60)
-    parser.add_argument("--validation-run-id", help="Write isolated output under data/validation/<run_id>/ and bypass polling state.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    monitor = LiveMonitor(config_path=args.config, validation_run_id=args.validation_run_id)
+    monitor = LiveMonitor(config_path=args.config)
     if args.once:
         report = monitor.run_cycle(only_accounts=args.accounts)
     else:

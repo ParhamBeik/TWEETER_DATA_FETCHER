@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Iterable
 
-from apps.tweets.models import Search, SearchResult, Tweet, TwitterUser
+from apps.tweets.models import Search, SearchResult, Tweet, TweetMetric, TwitterUser
 
 _EXTRAS_KEYS = (
     "media",
@@ -68,7 +68,7 @@ def _parse_created_at(value) -> datetime | None:
 
 
 def _extras_from_item(item: dict) -> dict:
-    return {key: item.get(key) for key in _EXTRAS_KEYS if key in item}
+    return {key: item.get(key) for key in _EXTRAS_KEYS}
 
 
 def _author_defaults(item: dict, account: str) -> dict | None:
@@ -175,13 +175,21 @@ def upsert_tweet(item: dict) -> Tweet | None:
     row = _tweet_row(item, authors)
     if row is None:
         return None
+    previous = {
+        t.dedup_key: t
+        for t in Tweet.objects.filter(dedup_key=row.dedup_key).only(
+            "dedup_key", "likes", "retweets", "views"
+        )
+    }
     Tweet.objects.bulk_create(
         [row],
         update_conflicts=True,
         unique_fields=["dedup_key"],
         update_fields=_TWEET_UPDATE_FIELDS,
     )
-    return Tweet.objects.filter(dedup_key=row.dedup_key).first()
+    saved = Tweet.objects.filter(dedup_key=row.dedup_key).first()
+    _record_metrics([row], previous)
+    return saved
 
 
 def ingest_tweets(items) -> int:
@@ -199,13 +207,48 @@ def ingest_tweets(items) -> int:
         rows.append(row)
     if not rows:
         return 0
+    previous = {
+        t.dedup_key: t
+        for t in Tweet.objects.filter(dedup_key__in=[r.dedup_key for r in rows]).only(
+            "dedup_key", "likes", "retweets", "views"
+        )
+    }
     Tweet.objects.bulk_create(
         rows,
         update_conflicts=True,
         unique_fields=["dedup_key"],
         update_fields=_TWEET_UPDATE_FIELDS,
     )
+    _record_metrics(rows, previous)
     return len(batch)
+
+
+def _record_metrics(rows: list[Tweet], previous: dict[str, Tweet]) -> None:
+    keys = [row.dedup_key for row in rows]
+    saved = {
+        t.dedup_key: t
+        for t in Tweet.objects.filter(dedup_key__in=keys).only("id", "dedup_key")
+    }
+    snapshots = []
+    for row in rows:
+        old = previous.get(row.dedup_key)
+        if old is not None and (old.likes, old.retweets, old.views) == (
+            row.likes, row.retweets, row.views
+        ):
+            continue
+        tweet = saved.get(row.dedup_key)
+        if tweet is None:
+            continue
+        snapshots.append(
+            TweetMetric(
+                tweet=tweet,
+                likes=row.likes or 0,
+                retweets=row.retweets or 0,
+                views=row.views or 0,
+            )
+        )
+    if snapshots:
+        TweetMetric.objects.bulk_create(snapshots)
 
 
 def ingest_search_results(search: Search, items) -> int:

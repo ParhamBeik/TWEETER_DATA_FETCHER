@@ -14,7 +14,6 @@ Flags:
     --only-account <user>      alias for --only
     --no-user-tweets           skip UserTweets (on by default)
     --no-with-replies          skip UserTweetsAndReplies (on by default)
-    --validation-run-id <id>   isolate output under data/validation/<id>/
 """
 from __future__ import annotations
 
@@ -34,14 +33,13 @@ from tweeter_data_fetcher.paths import PROJECT_ROOT
 
 from tweeter_data_fetcher.configuration import get_priority_policy, ordered_accounts
 from tweeter_data_fetcher.x_api.timeline import FetcherEngine
-from tweeter_data_fetcher.processing.sets import TweetSetProcessor
-from tweeter_data_fetcher.processing.windows import RollingWindowEvaluator, window_cutoff
+from tweeter_data_fetcher.processing.core import RollingWindowEvaluator, TweetSetProcessor, window_cutoff
 from tweeter_data_fetcher.storage.facade import StorageManager
 from tweeter_data_fetcher.observability.logging_setup import attach_run_id
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
 
 
-ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")
+ENDPOINTS = ("UserTweets",)
 CONSOLE = PipelineConsole("historical")
 
 
@@ -121,71 +119,21 @@ def _process_account(
     processor: TweetSetProcessor,
     username: str,
     raw_pages_by_endpoint: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-    write_set_diffs: bool = True,
 ) -> Tuple[bool, Dict[str, int]]:
     raw_pages_by_endpoint = raw_pages_by_endpoint or {}
-    raw_replies = raw_pages_by_endpoint.get("UserTweetsAndReplies") or _endpoint_pages(
-        storage, username, "UserTweetsAndReplies"
-    )
     raw_tweets = raw_pages_by_endpoint.get("UserTweets") or _endpoint_pages(
         storage, username, "UserTweets"
     )
-
     set_a = processor.extract_tweets_from_raw(
         raw_tweets,
         username=username,
         source_endpoint="UserTweets",
     )
-    set_b = processor.extract_tweets_from_raw(
-        raw_replies,
-        username=username,
-        source_endpoint="UserTweetsAndReplies",
-    )
-
-    list_a = list(set_a.values())
-    list_b = list(set_b.values())
-    list_intersection = processor.get_intersection(set_a, set_b)
-    list_union = processor.get_union(set_a, set_b)
-    list_a_minus_b = processor.get_difference_a_minus_b(set_a, set_b)
-    list_b_minus_a = processor.get_difference_b_minus_a(set_a, set_b)
-    list_symmetric_difference = processor.get_symmetric_difference(set_a, set_b)
-
-    sets_to_write = {
-        "4_union": list_union,
-        "1_user_tweets": list_a,
-        "2_user_tweets_and_replies": list_b,
-        "3_intersection": list_intersection,
-        "5_a_minus_b": list_a_minus_b,
-        "6_b_minus_a": list_b_minus_a,
-        "7_symmetric_difference": list_symmetric_difference,
-    }
-    if not write_set_diffs:
-        sets_to_write = {"4_union": list_union}
-
-    txt_outputs = {
-        name: storage.save_processed_set_merged(items, name, username)
-        for name, items in sets_to_write.items()
-    }
-    verified = all(_verify_txt_files(username, set_name, paths) for set_name, paths in txt_outputs.items())
-
-    CONSOLE.success(
-        f"@{username} processed | "
-        f"tweets={len(list_a)} replies_endpoint={len(list_b)} "
-        f"intersection={len(list_intersection)} union={len(list_union)} "
-        f"a_minus_b={len(list_a_minus_b)} b_minus_a={len(list_b_minus_a)} "
-        f"symmetric_difference={len(list_symmetric_difference)} "
-        f"wrote={','.join(sorted(sets_to_write))}"
-    )
-    return verified, {
-        "tweets": len(list_a),
-        "replies_endpoint": len(list_b),
-        "intersection": len(list_intersection),
-        "union": len(list_union),
-        "a_minus_b": len(list_a_minus_b),
-        "b_minus_a": len(list_b_minus_a),
-        "symmetric_difference": len(list_symmetric_difference),
-        "sets_written": sorted(sets_to_write),
-    }
+    list_union = list(set_a.values())
+    paths = storage.save_processed_set_merged(list_union, "4_union", username)
+    verified = _verify_txt_files(username, "4_union", paths)
+    CONSOLE.success(f"@{username} processed | union={len(list_union)}")
+    return verified, {"union": len(list_union), "sets_written": ["4_union"]}
 
 
 # Processed output and reporting --------------------------------------------
@@ -201,7 +149,7 @@ def _save_endpoint_processed_txt(
 ) -> bool:
     if not raw_pages:
         raw_pages = _endpoint_pages(storage, username, endpoint)
-    set_name = "2_user_tweets_and_replies" if endpoint == "UserTweetsAndReplies" else "1_user_tweets"
+    set_name = "4_union"
     extracted = processor.extract_tweets_from_raw(
         raw_pages,
         username=username,
@@ -350,13 +298,9 @@ def _fetch_or_skip_endpoint(
 
 def run_v4(
     selected_accounts: Optional[List[str]] = None,
-    *,
-    enable_user_tweets: bool = True,
-    enable_user_tweets_and_replies: bool = True,
-    validation_run_id: Optional[str] = None,
 ) -> None:
     project_root = PROJECT_ROOT
-    engine = FetcherEngine(validation_run_id=validation_run_id)
+    engine = FetcherEngine()
     storage = StorageManager(
         project_root=project_root,
         subsystem="historical_live",
@@ -365,7 +309,7 @@ def run_v4(
     processor = TweetSetProcessor()
     evaluator = RollingWindowEvaluator()
     console = engine.logger
-    migration_report = {"status": "skipped_validation"} if validation_run_id else storage.migrate_legacy_historical_data(verify=True)
+    migration_report = storage.migrate_legacy_historical_data(verify=True)
     console.info(f"Historical storage migration: {migration_report}")
 
     accounts = ordered_accounts(engine.account_map) if selected_accounts is None else selected_accounts
@@ -379,26 +323,18 @@ def run_v4(
     # file log, console bridge, and events.jsonl are greppable as one run.
     attach_run_id(run_id)
     engine.recorder.run_id = run_id
-    engine.recorder.emit("run_start", accounts=accounts, validation_run_id=validation_run_id)
+    engine.recorder.emit("run_start", accounts=accounts)
     report: Dict[str, Any] = {
         "run_id": run_id,
         "started_at": datetime.utcnow().isoformat() + "Z",
         "config": {
-            "endpoint_order": ["UserTweets", "UserTweetsAndReplies"],
-            "enabled_endpoints": [
-                endpoint
-                for endpoint, enabled in (
-                    ("UserTweets", enable_user_tweets),
-                    ("UserTweetsAndReplies", enable_user_tweets_and_replies),
-                )
-                if enabled
-            ],
+            "endpoint_order": ["UserTweets"],
+            "enabled_endpoints": ["UserTweets"],
             "accounts_requested": len(accounts),
             "completion_rule": "tehran_jalali_rolling_window",
             "pagination_safety_cap_pages": engine.pagination_safety_cap_pages,
             "first_request_warmup_seconds": engine.first_request_warmup_seconds,
             "historical_storage_migration": migration_report,
-            "validation_run_id": validation_run_id,
             "data_root": str(engine.data_root),
         },
         "summary": {},
@@ -410,8 +346,8 @@ def run_v4(
         username: {} for username in accounts
     }
 
-    console.phase_banner("Resolve user IDs", pass_index=1, pass_total=4, account_count=len(accounts))
-    engine.recorder.emit_phase_start(phase="resolve_user_ids", accounts=len(accounts), pass_index=1, pass_total=4)
+    console.phase_banner("Resolve user IDs", pass_index=1, pass_total=3, account_count=len(accounts))
+    engine.recorder.emit_phase_start(phase="resolve_user_ids", accounts=len(accounts), pass_index=1, pass_total=3)
     shared_bootstrap = None
     try:
         shared_bootstrap = engine.bootstrap_browser_context(username=accounts[0])
@@ -462,22 +398,9 @@ def run_v4(
         engine.recorder.emit("run_end", summary=report["summary"], report_json=str(json_path))
         return
 
-    enabled_endpoints = [
-        endpoint
-        for endpoint, enabled in (
-            ("UserTweets", enable_user_tweets),
-            ("UserTweetsAndReplies", enable_user_tweets_and_replies),
-        )
-        if enabled
-    ]
-    disabled_endpoints = [endpoint for endpoint in ENDPOINTS if endpoint not in enabled_endpoints]
+    enabled_endpoints = list(ENDPOINTS)
 
-    for endpoint in disabled_endpoints:
-        for username in active_accounts:
-            result = _disabled_endpoint_result(username, endpoint)
-            report["accounts"][username]["endpoints"][endpoint] = _safe_endpoint_report(result)
-
-    console.phase_banner("Global endpoint fetching", pass_index=2, pass_total=4, account_count=len(active_accounts))
+    console.phase_banner("Global endpoint fetching", pass_index=2, pass_total=3, account_count=len(active_accounts))
     for endpoint_index, endpoint in enumerate(enabled_endpoints, start=1):
         engine.recorder.emit_phase_start(
             phase="fetch_endpoint",
@@ -486,15 +409,9 @@ def run_v4(
             pass_index=endpoint_index,
             pass_total=len(enabled_endpoints),
         )
-        # Density gate: cool down before Replies after UserTweets on the same session.
-        if endpoint == "UserTweetsAndReplies" and endpoint_index > 1:
-            engine.api_manager.human_delay("between_accounts_replies")
         for idx, username in enumerate(active_accounts):
             if idx > 0:
-                if endpoint == "UserTweetsAndReplies":
-                    engine.api_manager.human_delay("between_accounts_replies")
-                else:
-                    engine.api_manager.human_delay("between_accounts")
+                engine.api_manager.human_delay("between_accounts")
             console.info(f"@{username}: fetching {endpoint}")
             result, window_coverage = _fetch_or_skip_endpoint(
                 engine=engine,
@@ -526,13 +443,10 @@ def run_v4(
                     "window_coverage": result.get("window_coverage") or window_coverage,
                 },
             )
-            if idx < len(active_accounts) - 1:
-                engine.api_manager.human_delay("between_accounts")
 
-    console.phase_banner("Generate processed sets", pass_index=4, pass_total=4, account_count=len(active_accounts))
-    engine.recorder.emit_phase_start(phase="generate_processed_sets", accounts=len(active_accounts), pass_index=4, pass_total=4)
+    console.phase_banner("Generate processed sets", pass_index=3, pass_total=3, account_count=len(active_accounts))
+    engine.recorder.emit_phase_start(phase="generate_processed_sets", accounts=len(active_accounts), pass_index=3, pass_total=3)
     storage_cfg = engine.api_manager.config.get("storage") or {}
-    write_set_diffs = bool(storage_cfg.get("write_set_diffs", True))
     raw_keep = int(storage_cfg.get("raw_batch_retention_count", 0) or 0)
     for username in active_accounts:
         final_verified, counts = _process_account(
@@ -540,7 +454,6 @@ def run_v4(
             processor=processor,
             username=username,
             raw_pages_by_endpoint=fetched_pages.get(username),
-            write_set_diffs=write_set_diffs,
         )
         if raw_keep > 0:
             for endpoint in ENDPOINTS:
@@ -571,11 +484,6 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the historical v4 fetch pipeline.")
     parser.add_argument("--only", action="append", default=[], help="Account username to fetch; may be repeated or comma-separated.")
     parser.add_argument("--only-account", action="append", default=[], help="Alias for --only.")
-    parser.add_argument("--user-tweets", dest="enable_user_tweets", action="store_true", default=True)
-    parser.add_argument("--no-user-tweets", dest="enable_user_tweets", action="store_false")
-    parser.add_argument("--with-replies", dest="enable_user_tweets_and_replies", action="store_true", default=True)
-    parser.add_argument("--no-with-replies", dest="enable_user_tweets_and_replies", action="store_false")
-    parser.add_argument("--validation-run-id", help="Write isolated output under data/validation/<run_id>/ and bypass stale skip state.")
     return parser.parse_args()
 
 
@@ -591,9 +499,6 @@ def main() -> None:
     args = _parse_args()
     run_v4(
         selected_accounts=_selected_accounts_from_args(args),
-        enable_user_tweets=args.enable_user_tweets,
-        enable_user_tweets_and_replies=args.enable_user_tweets_and_replies,
-        validation_run_id=args.validation_run_id,
     )
 
 

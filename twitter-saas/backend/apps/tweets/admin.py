@@ -30,7 +30,7 @@ class TweetAdmin(admin.ModelAdmin):
 
 @admin.register(Search)
 class SearchAdmin(admin.ModelAdmin):
-    list_display = ("slug", "product", "enabled", "owner", "last_run_at")
+    list_display = ("slug", "product", "enabled", "last_run_at")
     list_filter = ("product", "enabled")
     search_fields = ("slug", "name", "raw_query")
 

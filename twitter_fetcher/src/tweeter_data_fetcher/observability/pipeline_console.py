@@ -248,7 +248,6 @@ class PipelineConsole:
                 table.add_row("Priority", str(account_report.get("priority", "")))
             if sets:
                 table.add_row("Tweets (union)", str(sets.get("4_union", 0)))
-                table.add_row("Tweets (intersection)", str(sets.get("3_intersection", 0)))
             if new_tweets:
                 table.add_row("New this cycle", str(new_tweets.get("new", 0)))
                 table.add_row("Duplicates", str(new_tweets.get("duplicates", 0)))

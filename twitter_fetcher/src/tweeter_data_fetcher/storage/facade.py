@@ -21,9 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tweeter_data_fetcher.paths import PROJECT_ROOT
-from tweeter_data_fetcher.storage.exports import TextExporter
 from tweeter_data_fetcher.storage.filesystem import JsonFilesystem
-from tweeter_data_fetcher.storage.state import StateStore
 
 try:
     import jdatetime
@@ -139,9 +137,6 @@ class StorageManager:
         data_root_override: Optional[Path] = None,
     ):
         self.project_root = project_root or base_dir or PROJECT_ROOT
-        self.filesystem = JsonFilesystem()
-        self.state_store = StateStore()
-        self.text_exporter = TextExporter()
         self.timezone = timezone
         self.tz = pytz.timezone(timezone) if pytz else None
         
@@ -289,7 +284,7 @@ class StorageManager:
     # STATE RECOVERY (cursor persistence)
     # ---------------------------------------------------------------------
     def _read_json_file(self, path: Path) -> Dict[str, Any]:
-        return self.filesystem.read(path, {})
+        return JsonFilesystem.read(path, {})
 
     def load_sync_state(self) -> Dict[str, Any]:
         """Load sync state from subsystem path, fallback to legacy paths."""
@@ -303,7 +298,7 @@ class StorageManager:
 
     def save_sync_state(self, state: Dict[str, Any]) -> Path:
         """Persist sync state to subsystem path only."""
-        return self.state_store.write(
+        return JsonFilesystem.write(
             self.sync_state_file,
             state if isinstance(state, dict) else {},
         )
@@ -723,7 +718,9 @@ class StorageManager:
         return _format_jalali(dt, "%Y-%m-%d")
 
     def save_processed_txt(self, data_list: List[Dict[str, Any]], output_file: Path) -> Path:
-        return self.text_exporter.write(output_file, self._format_tweets(data_list or []))
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(self._format_tweets(data_list or []), encoding="utf-8")
+        return output_file
 
     def _format_tweets(self, tweets: List[Dict[str, Any]]) -> str:
         if not tweets:

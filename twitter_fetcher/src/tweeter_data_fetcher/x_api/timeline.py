@@ -19,14 +19,15 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
 from tweeter_data_fetcher.paths import PROJECT_ROOT
 from tweeter_data_fetcher.x_api.client import APIManager
-from tweeter_data_fetcher.x_api.contracts import (
+from tweeter_data_fetcher.processing.core import (
+    RollingWindowEvaluator,
     extract_bottom_cursor,
     timeline_field_toggles,
     timeline_variables,
@@ -34,14 +35,11 @@ from tweeter_data_fetcher.x_api.contracts import (
     validate_graphql_payload,
 )
 from tweeter_data_fetcher.x_api.browser import BrowserBootstrap, BrowserBootstrapResult
-from tweeter_data_fetcher.processing.windows import RollingWindowEvaluator
 from tweeter_data_fetcher.storage.facade import StorageManager
-from tweeter_data_fetcher.configuration import get_priority_policy, load_tier_config, ordered_accounts
-from tweeter_data_fetcher.observability.coverage_inventory import CoverageInventory
-from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext, redact_exception
-from tweeter_data_fetcher.observability.logging_setup import attach_run_id, configure_logging
+from tweeter_data_fetcher.configuration import load_tier_config
+from tweeter_data_fetcher.observability.event_recorder import EventRecorder, redact_exception
+from tweeter_data_fetcher.observability.logging_setup import configure_logging
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
-from tweeter_data_fetcher.x_api.contract_verification import verify_contract
 
 try:
     import pytz
@@ -79,87 +77,31 @@ EngineLogger = PipelineConsole
 # Timeline fetching ---------------------------------------------------------
 
 
-class TimelineFetcher:
+class FetcherEngine:
     """Phase 2 sequential fetcher with strict failure visibility."""
 
     def __init__(
         self,
         config_path: Optional[str] = None,
         subsystem: str = "historical",
-        validation_run_id: Optional[str] = None,
     ):
         self.project_root = PROJECT_ROOT
         raw_subsystem = str(subsystem or "historical").strip().lower()
         self.subsystem = "historical_live" if raw_subsystem in {"historical", "live"} else raw_subsystem
-        self.validation_run_id = validation_run_id
-        self.data_root = (
-            self.project_root / "data" / "validation" / validation_run_id
-            if validation_run_id
-            else self.project_root / "data"
-        )
+        self.data_root = self.project_root / "data"
         console_subsystem = "live" if self.subsystem == "historical_live" and raw_subsystem == "live" else (
             "historical" if self.subsystem == "historical_live" else self.subsystem
         )
         self.logger = PipelineConsole(console_subsystem)
         logs_dir = self.data_root / self.subsystem / "logs"
         self.recorder = EventRecorder(logs_dir, subsystem=self.subsystem)
-        self.observability = ObservabilityContext(
-            console=self.logger,
-            recorder=self.recorder,
-            subsystem=self.subsystem,
-        )
-        # Process-wide logging hook: attaches the rotating file handler under
-        # data_root/<sub>/logs and a verbosity-gated stderr tail. Idempotent, so
-        # constructing multiple engines (e.g. search + live) reuses one root.
         configure_logging(subsystem=self.subsystem, logs_dir=logs_dir)
-        self.coverage_inventory = CoverageInventory(
-            StorageManager(
-                base_dir=self.project_root,
-                timezone=TIMEZONE,
-                subsystem=self.subsystem,
-                data_root_override=self.data_root,
-            )
-        )
         self.api_manager = APIManager(
             config_path=config_path,
             state_dir=self.data_root / self.subsystem / "state",
             console=self.logger,
             recorder=self.recorder,
         )
-        # Pre-run contract verification: detect structural drift that commonly causes 400/404.
-        try:
-            drift = verify_contract(self.api_manager.config_path)
-            if drift:
-                self.logger.warning("GraphQL contract drift detected; attempting auto-refresh")
-                self.recorder.emit_auto_refresh_start(
-                    trigger="contract_drift",
-                    endpoint="all",
-                )
-                from tweeter_data_fetcher.x_api.auth import auto_refresh_session
-
-                refreshed = auto_refresh_session(
-                    self.api_manager.config_path,
-                    headless=True,
-                    interactive_login=False,
-                )
-                if refreshed:
-                    self.api_manager = APIManager(
-                        config_path=str(self.api_manager.config_path),
-                        state_dir=self.data_root / self.subsystem / "state",
-                        console=self.logger,
-                        recorder=self.recorder,
-                    )
-                    self.logger.success("Auto-refresh applied and APIManager reloaded")
-                else:
-                    self.logger.warning("Auto-refresh did not apply changes; continuing with current config")
-                self.recorder.emit_auto_refresh_done(
-                    endpoint="all",
-                    updated=list(drift) if refreshed else [],
-                    success=refreshed,
-                )
-        except Exception as exc:
-            self.logger.warning(f"Contract verification failed; continuing with current config: {exc}")
-
         self.storage_manager = StorageManager(
             base_dir=self.project_root,
             timezone=TIMEZONE,
@@ -306,81 +248,6 @@ class TimelineFetcher:
         else:
             self.logger.warning(f"Browser bootstrap unavailable/failed: {result.error}")
         return result
-
-    def _extract_timeline_items(self, payload: Dict[str, Any], username: str) -> List[Dict[str, Any]]:
-        instructions = (
-            payload.get("data", {})
-            .get("user", {})
-            .get("result", {})
-            .get("timeline", {})
-            .get("timeline", {})
-            .get("instructions", [])
-        )
-
-        items: List[Dict[str, Any]] = []
-        for inst in instructions:
-            if inst.get("type") != "TimelineAddEntries":
-                continue
-            for entry in inst.get("entries", []):
-                entry_id = str(entry.get("entryId", ""))
-                if not entry_id.startswith("tweet-"):
-                    continue
-                item_content = entry.get("content", {}).get("itemContent", {})
-                tweet_result = item_content.get("tweet_results", {}).get("result", {})
-                legacy = tweet_result.get("legacy", {})
-                rest_id = tweet_result.get("rest_id")
-                if not legacy or not rest_id:
-                    continue
-                created_at = legacy.get("created_at", "")
-                items.append(
-                    {
-                        "id": str(rest_id),
-                        "account": username,
-                        "timestamp": created_at,
-                        "text": legacy.get("full_text") or legacy.get("text") or "",
-                        "url": f"https://x.com/{username}/status/{rest_id}",
-                        "likes": legacy.get("favorite_count", 0),
-                        "retweets": legacy.get("retweet_count", 0),
-                        "replies": legacy.get("reply_count", 0),
-                        "quotes": legacy.get("quote_count", 0),
-                        "bookmarks": legacy.get("bookmark_count", 0),
-                        "views": (tweet_result.get("views", {}) or {}).get("count", 0),
-                        "type": "Tweet",
-                    }
-                )
-        return items
-
-    def _log_4xx_and_exit(
-        self,
-        *,
-        account: str,
-        endpoint: str,
-        response,
-        request_url: str,
-        request_headers: Dict[str, Any],
-        variables: Dict[str, Any],
-        cursor: Optional[str],
-    ):
-        detail_ref = None
-        try:
-            detail_ref = self.recorder.emit_http_error(
-                account=account,
-                endpoint=endpoint,
-                status_code=int(response.status_code),
-                cursor=cursor,
-                request_url=request_url,
-                request_headers=request_headers,
-                variables=variables,
-                response_text=response.text or "",
-                title="critical_4xx_exit",
-            )
-        except Exception:  # pragma: no cover - best-effort, about to exit anyway
-            pass
-        self.logger.error_one_liner(
-            f"HTTP {response.status_code} account=@{account} endpoint={endpoint} action=halt",
-            detail_ref=detail_ref,
-        )
-        raise SystemExit(1)
 
     def _log_4xx_details(
         self,
@@ -831,40 +698,24 @@ class TimelineFetcher:
                                 raw_batch=batch_dir,
                             )
                         if response.status_code == 404 and not cursor and not all_items and not context_refreshed:
-                            if endpoint == "UserTweetsAndReplies":
-                                # Density soft-block: stay on HTTP (cool/reset below), never bootstrap browser.
-                                pass
-                            else:
-                                context_refreshed = True
-                                refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
-                                if refreshed.ok:
-                                    query_id = self.api_manager.get_query_id(endpoint) or query_id
-                                    request_url = self._build_graphql_url(
-                                        endpoint=endpoint,
-                                        query_id=query_id,
-                                        variables=variables,
-                                        features=features,
-                                        field_toggles=field_toggles,
-                                    )
-                                    continue
+                            context_refreshed = True
+                            refreshed = self.bootstrap_browser_context(username=account, max_pages=1)
+                            if refreshed.ok:
+                                query_id = self.api_manager.get_query_id(endpoint) or query_id
+                                request_url = self._build_graphql_url(
+                                    endpoint=endpoint,
+                                    query_id=query_id,
+                                    variables=variables,
+                                    features=features,
+                                    field_toggles=field_toggles,
+                                )
+                                continue
                         if response.status_code != 400 and attempt < client_attempts - 1:
-                            if response.status_code == 404 and endpoint == "UserTweetsAndReplies":
-                                # Empty 404s on Replies are density/context gates — escalate cool.
-                                factor = float(attempt + 1)
-                                wait = self.api_manager.jitter_sleep(
-                                    float(self.api_manager.simulation_config.get("delays_seconds", {}).get("replies_retry_min", 8)) * factor,
-                                    float(self.api_manager.simulation_config.get("delays_seconds", {}).get("replies_retry_max", 12)) * factor,
-                                    reason=f"@{account} {endpoint} HTTP 404 density cooldown {attempt + 1}/{client_attempts}",
-                                )
-                                reset = getattr(self.api_manager, "reset_transport_session", None)
-                                if callable(reset):
-                                    reset(endpoint, reason="density_404")
-                            else:
-                                wait = self.api_manager.jitter_sleep(
-                                    float(policy.get("client_error_min_seconds", 10)),
-                                    float(policy.get("client_error_max_seconds", 20)),
-                                    reason=f"@{account} {endpoint} HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
-                                )
+                            wait = self.api_manager.jitter_sleep(
+                                float(policy.get("client_error_min_seconds", 10)),
+                                float(policy.get("client_error_max_seconds", 20)),
+                                reason=f"@{account} {endpoint} HTTP {response.status_code} retry {attempt + 1}/{client_attempts}",
+                            )
                             self.logger.warning(
                                 f"@{account} {endpoint} got HTTP {response.status_code}; retried after {wait:.1f}s "
                                 f"(attempt {attempt + 1}/{client_attempts})"
@@ -873,18 +724,6 @@ class TimelineFetcher:
 
                         cursor_key = cursor or "__START__"
                         if response.status_code == 404 and not cursor and not all_items:
-                            # Replies: never burn Playwright on density soft-block — cool+retry later.
-                            if endpoint == "UserTweetsAndReplies":
-                                cursor_termination_reason = "replies_density_404_http_only"
-                                status, outcome, reason = classify_http_failure(404, False, None)
-                                return finish_with_state(
-                                    status=status,
-                                    outcome="failed_replies_density_404",
-                                    reason="Replies HTTP soft-block (empty 404); skipped browser for efficiency",
-                                    pages=[],
-                                    cursor_value="__START__",
-                                    raw_batch=batch_dir,
-                                )
                             fallback = self.bootstrap_browser_context(
                                 username=account,
                                 capture_endpoint=endpoint,
@@ -1151,24 +990,7 @@ class TimelineFetcher:
             if next_cursor:
                 cursor = next_cursor
                 page += 1
-                if endpoint == "UserTweetsAndReplies":
-                    self.api_manager.human_delay("between_pages_replies")
-                    # Density gate trips around page 4-5; chunk + session reset keeps HTTP deep.
-                    chunk = int(
-                        self.api_manager.simulation_config.get("delays_seconds", {}).get(
-                            "replies_chunk_pages", 2
-                        )
-                    )
-                    if chunk > 0 and (page - 1) % chunk == 0:
-                        self.logger.info(
-                            f"@{account} {endpoint}: chunk cool after {page - 1} pages"
-                        )
-                        self.api_manager.human_delay("between_accounts_replies")
-                        reset = getattr(self.api_manager, "reset_transport_session", None)
-                        if callable(reset):
-                            reset(endpoint, reason="chunk_boundary")
-                else:
-                    self.api_manager.human_delay("between_pages")
+                self.api_manager.human_delay("between_pages")
                 continue
 
             self.logger.info(
@@ -1205,116 +1027,4 @@ class TimelineFetcher:
             raw_batch=batch_dir,
         )
 
-    def _fetch_endpoint_pages(
-        self,
-        *,
-        account: str,
-        user_id: str,
-        endpoint: str,
-        max_pages: Optional[int] = None,
-        window_days: Optional[int] = None,
-        batch_dir: Optional[Path] = None,
-    ) -> List[Dict[str, Any]]:
-        return self._fetch_endpoint_result(
-            account=account,
-            user_id=user_id,
-            endpoint=endpoint,
-            max_pages=max_pages,
-            window_days=window_days,
-            batch_dir=batch_dir,
-        ).get("pages", [])
-
-    def _persist_endpoint_output(self, account: str, endpoint: str, tweets: List[Dict[str, Any]]):
-        endpoint_map = {
-            "UserTweets": self.storage_manager.user_tweets_dir,
-            "UserTweetsAndReplies": self.storage_manager.user_replies_dir,
-        }
-        target_dir = endpoint_map[endpoint]
-
-        by_date: Dict[str, List[Dict[str, Any]]] = {}
-        extracted: List[Dict[str, Any]] = []
-        for payload in tweets:
-            extracted.extend(self._extract_timeline_items(payload, account))
-
-        for tweet in extracted:
-            created = tweet.get("timestamp") or ""
-            date_str = None
-            if created:
-                try:
-                    dt = datetime.strptime(created, "%a %b %d %H:%M:%S %z %Y")
-                    tehran_dt = dt.astimezone(self.tz)
-                    date_str = tehran_dt.strftime("%Y-%m-%d")
-                except Exception:
-                    date_str = None
-            if not date_str:
-                date_str = (datetime.now(self.tz) - timedelta(days=0)).strftime("%Y-%m-%d")
-
-            by_date.setdefault(date_str, []).append(tweet)
-
-        for date_str, day_tweets in by_date.items():
-            self.storage_manager.save_tweets_to_file(day_tweets, account, date_str, target_dir)
-
-    def run(self, selected_accounts: Optional[List[str]] = None):
-        accounts = ordered_accounts(self.account_map) if selected_accounts is None else selected_accounts
-        if not accounts:
-            self.logger.warning("No accounts found in tier configuration.")
-            return
-
-        self.logger.info(f"Starting sequential fetch for {len(accounts)} account(s)")
-
-        for idx, username in enumerate(accounts, start=1):
-            self.storage_manager.ensure_account_state(username)
-            policy = get_priority_policy(username, self.account_map, self.priority_policies)
-            window_days = int(policy.get("historical_window_days", 1))
-
-            self.logger.banner(
-                f"ACCOUNT {idx}/{len(accounts)}",
-                f"@{username}\npriority={policy.get('priority')}\nwindow_days={window_days}",
-            )
-
-            self.logger.info(f"Warm-up session flow for @{username}")
-            self.api_manager.warmup_session(username)
-
-            user_id = self._get_user_id(username)
-            self.logger.success(f"Resolved @{username} -> user_id={user_id}")
-
-            self.logger.info(f"Sequential Step A: fetching UserTweets for @{username}")
-            tweets_only = self._fetch_endpoint_pages(
-                account=username,
-                user_id=user_id,
-                endpoint="UserTweets",
-                max_pages=self.pagination_safety_cap_pages,
-                window_days=window_days,
-            )
-            self._persist_endpoint_output(username, "UserTweets", tweets_only)
-            self.logger.success(f"@{username} UserTweets complete: {len(tweets_only)} item(s)")
-
-            self.logger.info(f"Sequential Step B: fetching UserTweetsAndReplies for @{username}")
-            tweets_and_replies = self._fetch_endpoint_pages(
-                account=username,
-                user_id=user_id,
-                endpoint="UserTweetsAndReplies",
-                max_pages=self.pagination_safety_cap_pages,
-                window_days=window_days,
-            )
-            self._persist_endpoint_output(username, "UserTweetsAndReplies", tweets_and_replies)
-            self.logger.success(
-                f"@{username} UserTweetsAndReplies complete: {len(tweets_and_replies)} item(s)"
-            )
-
-            self.logger.success(f"Account @{username} fully completed; moving to next account")
-
-        self.logger.success("All accounts completed.")
-
-
-class FetcherEngine(TimelineFetcher):
-    """Compatibility name for the assembled timeline fetcher."""
-
-
-def main():
-    engine = FetcherEngine()
-    engine.run()
-
-
-if __name__ == "__main__":
-    main()
+TimelineFetcher = FetcherEngine

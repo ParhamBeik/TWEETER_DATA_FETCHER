@@ -19,7 +19,6 @@ class AccountOpsSerializer(TwitterUserSerializer):
     live_window_hours = serializers.IntegerField(read_only=True)
     historical_window_days = serializers.IntegerField(read_only=True)
     last_checked_at = serializers.DateTimeField(read_only=True, allow_null=True)
-    next_check_at = serializers.DateTimeField(read_only=True, allow_null=True)
     last_status = serializers.CharField(read_only=True)
     recent_tweet_count = serializers.IntegerField(read_only=True)
     watermarks = serializers.DictField(read_only=True)
@@ -30,7 +29,6 @@ class AccountOpsSerializer(TwitterUserSerializer):
             "live_window_hours",
             "historical_window_days",
             "last_checked_at",
-            "next_check_at",
             "last_status",
             "recent_tweet_count",
             "watermarks",
@@ -43,11 +41,8 @@ class AccountOpsSerializer(TwitterUserSerializer):
             live = live_state_map()
         data.update(account_ops(instance, live))
         last_checked = data.get("last_checked_at")
-        next_check = data.get("next_check_at")
         if last_checked and hasattr(last_checked, "isoformat"):
             data["last_checked_at"] = last_checked.isoformat()
-        if next_check and hasattr(next_check, "isoformat"):
-            data["next_check_at"] = next_check.isoformat()
         return data
 
 
@@ -65,7 +60,7 @@ class TweetSerializer(serializers.ModelSerializer):
         fields = [
             "id", "tweet_id", "account", "text", "url", "type", "created_at",
             "author", "likes", "retweets", "replies", "quotes", "bookmarks", "views",
-            "source_language", "source_endpoint", "entities", "media", "card", "reply_to",
+            "source_language", "entities", "media", "card", "reply_to",
             "quoted_tweet", "retweeted_tweet", "possibly_sensitive",
         ]
 

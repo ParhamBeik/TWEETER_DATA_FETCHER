@@ -16,8 +16,7 @@ class CanonicalImportTests(unittest.TestCase):
         from tweeter_data_fetcher.pipelines.live.service import LiveMonitor
         from tweeter_data_fetcher.pipelines.search.service import SearchTimelineMonitor
         from tweeter_data_fetcher.storage.facade import StorageManager
-        from tweeter_data_fetcher.processing.sets import TweetSetProcessor
-        from tweeter_data_fetcher.processing.windows import RollingWindowEvaluator
+        from tweeter_data_fetcher.processing.core import RollingWindowEvaluator, TweetSetProcessor
         from tweeter_data_fetcher.x_api.client import APIManager
         from tweeter_data_fetcher.x_api.timeline import FetcherEngine
 

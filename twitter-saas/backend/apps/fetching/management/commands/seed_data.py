@@ -84,7 +84,6 @@ class Command(BaseCommand):
             Search.objects.update_or_create(
                 slug=slug,
                 product=product,
-                owner=None,
                 defaults={
                     "name": entry.get("name") or slug,
                     "raw_query": raw_query,

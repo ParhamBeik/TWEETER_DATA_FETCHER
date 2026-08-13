@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from tweeter_data_fetcher.pipelines.search.service import SearchTimelineMonitor
-from tweeter_data_fetcher.processing.sets import TweetSetProcessor
+from tweeter_data_fetcher.processing.core import TweetSetProcessor
 from tweeter_data_fetcher.x_api.browser import BrowserBootstrapResult
 
 

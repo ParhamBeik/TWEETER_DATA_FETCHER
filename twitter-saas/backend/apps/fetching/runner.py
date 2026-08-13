@@ -11,10 +11,13 @@ import json
 import logging
 import os
 import re
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -123,8 +126,20 @@ def _restore_state(root: Path, subsystem: str) -> None:
     sync = KeyValueState.objects.filter(namespace="sync_state", name=sub).first()
     if sync:
         (state_dir / "sync_state.json").write_text(json.dumps(sync.data), encoding="utf-8")
+    prefix = f"{sub}:"
     for row in KeyValueState.objects.filter(namespace="request_state"):
-        (state_dir / row.name).write_text(json.dumps(row.data), encoding="utf-8")
+        if row.name.startswith(prefix):
+            filename = row.name[len(prefix):]
+        elif ":" not in row.name and sub == "historical_live":
+            filename = row.name
+        else:
+            continue
+        (state_dir / filename).write_text(json.dumps(row.data), encoding="utf-8")
+
+
+def _request_state_name(subsystem: str, filename: str) -> str:
+    sub = "historical_live" if subsystem in ("historical", "live") else subsystem
+    return f"{sub}:{filename}"
 
 
 def _persist_state(root: Path, subsystem: str) -> None:
@@ -132,16 +147,21 @@ def _persist_state(root: Path, subsystem: str) -> None:
     state_dir = root / "data" / sub / "state"
     sync_file = state_dir / "sync_state.json"
     if sync_file.exists():
-        KeyValueState.objects.update_or_create(
-            namespace="sync_state", name=sub,
-            defaults={"data": json.loads(sync_file.read_text(encoding="utf-8"))},
-        )
+        data = _read_json(sync_file)
+        if isinstance(data, dict):
+            KeyValueState.objects.update_or_create(
+                namespace="sync_state", name=sub, defaults={"data": data},
+            )
     for f in state_dir.glob("*.json"):
         if f.name == "sync_state.json":
             continue
+        data = _read_json(f)
+        if not isinstance(data, dict):
+            continue
         KeyValueState.objects.update_or_create(
-            namespace="request_state", name=f.name,
-            defaults={"data": json.loads(f.read_text(encoding="utf-8"))},
+            namespace="request_state",
+            name=_request_state_name(subsystem, f.name),
+            defaults={"data": data},
         )
 
 
@@ -281,6 +301,86 @@ def _persist_artifacts(root: Path, subsystem: str, run: FetchRun, return_code: i
     return summary, failure_ledger, status
 
 
+def _kill_process_group(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        process.kill()
+
+
+def _await_process(
+    process: subprocess.Popen, *, timeout: float, subsystem: str
+) -> tuple[int, deque[str]]:
+    lines: deque[str] = deque(maxlen=400)
+    stdout = process.stdout
+    use_select = False
+    if stdout is not None and hasattr(stdout, "fileno"):
+        try:
+            stdout.fileno()
+            use_select = True
+        except (AttributeError, OSError, ValueError):
+            use_select = False
+    deadline = time.monotonic() + max(float(timeout), 1.0)
+    if use_select:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                logger.warning("fetcher[%s] wall-clock timeout; killing process group", subsystem)
+                _kill_process_group(process)
+                try:
+                    return int(process.wait(timeout=5) or -9), lines
+                except subprocess.TimeoutExpired:
+                    return -9, lines
+            ready, _, _ = select.select([stdout], [], [], min(1.0, remaining))
+            if ready:
+                line = stdout.readline()
+                if not line:
+                    break
+                clean = line.rstrip()
+                lines.append(clean)
+                logger.info("fetcher[%s] %s", subsystem, clean)
+            elif process.poll() is not None:
+                break
+        code = process.poll()
+        if code is None:
+            remaining = max(0.1, deadline - time.monotonic())
+            try:
+                code = process.wait(timeout=remaining)
+            except subprocess.TimeoutExpired:
+                logger.warning("fetcher[%s] wall-clock timeout; killing process group", subsystem)
+                _kill_process_group(process)
+                code = process.wait(timeout=5) or -9
+        return int(code), lines
+    for line in stdout or ():
+        clean = str(line).rstrip()
+        lines.append(clean)
+        logger.info("fetcher[%s] %s", subsystem, clean)
+    return int(process.wait()), lines
+
+
+def _persist_session(root: Path) -> None:
+    """Copy refreshed scratch cookies/headers back onto the durable XSession."""
+    config = _read_json(root / "config" / "config.json", {})
+    if not isinstance(config, dict):
+        return
+    session = _active_session()
+    if session is None:
+        return
+    fields = []
+    cookies = config.get("api_cookies")
+    headers = config.get("api_headers")
+    if isinstance(cookies, dict) and cookies:
+        session.cookies = cookies
+        fields.append("cookies")
+    if isinstance(headers, dict) and headers:
+        session.headers = headers
+        fields.append("headers")
+    if fields:
+        session.save(update_fields=[*fields, "updated_at"])
+
+
 def run_fetcher(
     module: str,
     args: list[str],
@@ -322,14 +422,13 @@ def run_fetcher(
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            start_new_session=True,
         )
-        lines: deque[str] = deque(maxlen=400)
-        for line in process.stdout or ():
-            clean = line.rstrip()
-            lines.append(clean)
-            logger.info("fetcher[%s] %s", subsystem, clean)
-        return_code = process.wait()
+        return_code, lines = _await_process(
+            process, timeout=settings.FETCH_CYCLE_TIMEOUT_SECONDS, subsystem=subsystem
+        )
         _persist_state(root, subsystem)
+        _persist_session(root)
         summary, failure_ledger, status = _persist_artifacts(root, subsystem, run, return_code)
         run.return_code = return_code
         run.log_excerpt = "\n".join(lines)[-20000:]
@@ -392,15 +491,17 @@ def iter_processed_tweets(root: Path, subsystem: str) -> Iterable[dict]:
                     yield item
 
 
-def iter_search_tweets(root: Path, slug: str) -> Iterable[dict]:
+def iter_search_tweets(root: Path, slug: str, product: str = "") -> Iterable[dict]:
     """Yield tweets from a search run's export ({slug}.json with a tweets key).
 
     ``slug`` is normalized the same way SearchQueryBuilder does it,
     because the engine writes processed exports under the normalized slug, not
-    the raw model slug.
+    the raw model slug. Scope to ``product`` so Top/Latest do not mix.
     """
     norm = normalize_slug(slug)
     processed = root / "data" / "search" / "processed" / norm
+    if product:
+        processed = processed / str(product).lower()
     if not processed.exists():
         return
     for json_file in processed.rglob(f"{norm}.json"):

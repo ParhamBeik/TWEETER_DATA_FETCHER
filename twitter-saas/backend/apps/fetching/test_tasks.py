@@ -88,12 +88,14 @@ def test_purge_old_fetch_runs(settings):
     FetchRun.objects.filter(run_id="running").update(
         started_at=timezone.now() - timedelta(days=91)
     )
+    FetchRun.objects.create(run_id="fresh-running", subsystem="live", status="running")
 
     deleted = purge_old_fetch_runs()
-    assert deleted == 1
+    assert deleted == 2
     assert not FetchRun.objects.filter(run_id="old").exists()
+    assert not FetchRun.objects.filter(run_id="running").exists()
     assert FetchRun.objects.filter(run_id="new").exists()
-    assert FetchRun.objects.filter(run_id="running").exists()
+    assert FetchRun.objects.filter(run_id="fresh-running").exists()
 
 
 @pytest.mark.django_db
@@ -111,9 +113,13 @@ def test_poll_live_all_runs_one_global_cycle(settings):
 @pytest.mark.django_db
 def test_poll_live_all_skips_overlapping_cycle(settings):
     settings.FETCH_LIVE_INTERVAL_SECONDS = 600
-    with patch("apps.fetching.tasks._run_cycle", return_value=1) as run:
-        assert poll_live_all() == 1
+
+    def nested(_module, _args, _subsystem):
         assert poll_live_all() == 0
+        return 1
+
+    with patch("apps.fetching.tasks._run_cycle", side_effect=nested) as run:
+        assert poll_live_all() == 1
         run.assert_called_once()
 
 

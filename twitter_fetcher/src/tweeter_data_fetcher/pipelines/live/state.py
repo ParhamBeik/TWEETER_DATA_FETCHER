@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from tweeter_data_fetcher.paths import PROJECT_ROOT
-from tweeter_data_fetcher.storage.facade import StorageManager, extract_metrics
+from tweeter_data_fetcher.storage.facade import StorageManager
 
 
 class LiveStorageManager:
@@ -35,19 +35,15 @@ class LiveStorageManager:
         self.raw_root = self.data_root / "raw"
         self.processed_root = self.data_root / "processed"
         self.reports_root = self.data_root / "reports"
-        self.viral_root = self.data_root / "viral"
-        self.snapshots_root = self.viral_root / "snapshots"
         self.state_dir = self.data_root / "state"
         self.live_state_file = self.state_dir / "live_state.json"
         self.seen_tweets_file = self.state_dir / "seen_tweets.json"
-        self.snapshot_index_file = self.state_dir / "snapshot_index.json"
         self._ensure_dirs()
         self.live_state = self._load_json(self.live_state_file, {})
         self.seen_tweets = self._load_json(self.seen_tweets_file, {})
-        self.snapshot_index = self._load_json(self.snapshot_index_file, {})
 
     def _ensure_dirs(self) -> None:
-        for path in [self.raw_root, self.processed_root, self.reports_root, self.viral_root, self.snapshots_root, self.state_dir]:
+        for path in [self.raw_root, self.processed_root, self.reports_root, self.state_dir]:
             path.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
@@ -124,88 +120,3 @@ class LiveStorageManager:
         # This unifies live with historical so a live run accumulates instead of
         # overwriting the previously-merged historical set.
         return self.storage.save_processed_set_merged(tweets or [], set_name, username)
-
-    def should_save_snapshot(self, tweet_id: str, metrics: Dict[str, Any], min_delta: int, min_minutes: int) -> Tuple[bool, str]:
-        snapshots = self.load_snapshots(tweet_id)
-        if not snapshots:
-            return True, "first_snapshot"
-        latest = snapshots[-1]
-        try:
-            last_ts = datetime.fromisoformat(str(latest.get("timestamp")))
-            minutes = (datetime.utcnow() - last_ts.replace(tzinfo=None)).total_seconds() / 60.0
-        except Exception:
-            minutes = float(min_minutes)
-        if minutes >= min_minutes:
-            return True, "time_threshold"
-        for key in ("likes", "retweets", "replies", "quotes", "bookmarks", "views"):
-            try:
-                if abs(int(metrics.get(key, 0) or 0) - int(latest.get(key, 0) or 0)) >= min_delta:
-                    return True, f"{key}_delta"
-            except Exception:
-                continue
-        return False, "below_snapshot_threshold"
-
-    def save_snapshot(self, tweet: Dict[str, Any], force: bool = False, min_delta: int = 25, min_minutes: int = 10) -> Optional[Path]:
-        tweet_id = str(tweet.get("id") or tweet.get("rest_id") or "").strip()
-        if not tweet_id:
-            return None
-        metrics = extract_metrics({"legacy": {
-            "favorite_count": tweet.get("likes", 0),
-            "retweet_count": tweet.get("retweets", 0),
-            "reply_count": tweet.get("replies", 0),
-            "quote_count": tweet.get("quotes", 0),
-            "bookmark_count": tweet.get("bookmarks", 0),
-        }, "views": {"count": tweet.get("views", 0)}})
-        should_save, reason = self.should_save_snapshot(tweet_id, metrics, min_delta, min_minutes)
-        if not force and not should_save:
-            return None
-
-        account = self.safe_slug(str(tweet.get("account") or "unknown").lower())
-        target = self.snapshots_root / account
-        target.mkdir(parents=True, exist_ok=True)
-        path = target / f"{account}_{tweet_id}.json"
-        snapshots = self.load_snapshots(tweet_id)
-        snapshots.append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "reason": reason,
-            "tweet_id": tweet_id,
-            "account": tweet.get("account"),
-            **metrics,
-        })
-        self._save_json(path, snapshots)
-        self.snapshot_index[tweet_id] = str(path.relative_to(self.project_root / "data"))
-        self._save_json(self.snapshot_index_file, self.snapshot_index)
-        return path
-
-    def load_snapshots(self, tweet_id: str) -> List[Dict[str, Any]]:
-        rel = self.snapshot_index.get(str(tweet_id))
-        candidates = []
-        if rel:
-            candidates.append(self.project_root / "data" / rel)
-        candidates.extend(self.snapshots_root.glob(f"*/*_{tweet_id}.json"))
-        for path in candidates:
-            if path.exists():
-                data = self._load_json(path, [])
-                return sorted(data if isinstance(data, list) else [], key=lambda row: str(row.get("timestamp", "")))
-        return []
-
-    def save_viral_report(self, analysis: Dict[str, Any]) -> Dict[str, Path]:
-        tweet_id = self.safe_slug(str(analysis.get("tweet_id", "unknown")))
-        label = "confirmed" if analysis.get("confirmed") else "candidate"
-        timestamp = self.storage._jalali_batch_name(self.now())
-        base = self.viral_root / "reports" / label
-        base.mkdir(parents=True, exist_ok=True)
-        json_path = base / f"{timestamp}_{tweet_id}.json"
-        txt_path = base / f"{timestamp}_{tweet_id}.txt"
-        self._save_json(json_path, analysis)
-        lines = [
-            f"Viral {label}: {analysis.get('classification', 'UNKNOWN')}",
-            f"Tweet ID: {analysis.get('tweet_id')}",
-            f"Account: @{analysis.get('account')}",
-            f"Score: {analysis.get('score')}",
-            f"Confirmed: {analysis.get('confirmed')}",
-            "",
-            str((analysis.get("tweet") or {}).get("text") or ""),
-        ]
-        txt_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-        return {"json": json_path, "txt": txt_path}

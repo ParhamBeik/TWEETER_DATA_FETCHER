@@ -1,8 +1,16 @@
+# SUPERSEDED — Endpoint Request Templates & Pacing Reference Guide
+
+**Status:** superseded August 2026. Do not use as the live contract.
+
+This guide claimed `UserTweetsAndReplies` works at 100% with 10–12s cooldowns and listed a wrong `UserTweets` query id (`...AxA` vs the production `...AmQ`). Replies were dropped; production transport is `APIManager` (`requests`), not `curl_cffi`. Current evidence: `ENDPOINT_TRANSPORT_DECISION_20260810.md`.
+
+---
+
 # Endpoint Request Templates & Pacing Reference Guide
 
 **Repo:** `TWEETER_DATA_FETCHER` · **Subsystem:** `twitter_fetcher/` · **Updated:** July 2026
 
-This document serves as the canonical technical reference for request construction, header rules, pacing guidelines, edge-gate avoidance mechanisms, and transport fallback policies across Twitter's GraphQL endpoints.
+This document served as a technical reference for request construction, header rules, pacing guidelines, edge-gate avoidance mechanisms, and transport fallback policies across Twitter's GraphQL endpoints.
 
 ---
 

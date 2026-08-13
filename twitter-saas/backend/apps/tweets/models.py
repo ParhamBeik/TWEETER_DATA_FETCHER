@@ -75,6 +75,19 @@ class Tweet(models.Model):
         return f"{self.account}:{self.tweet_id}"
 
 
+class TweetMetric(models.Model):
+    """Point-in-time engagement snapshot written when ingest sees a change."""
+
+    tweet = models.ForeignKey(Tweet, on_delete=models.CASCADE, related_name="metrics")
+    likes = models.BigIntegerField(default=0)
+    retweets = models.BigIntegerField(default=0)
+    views = models.BigIntegerField(default=0)
+    captured_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["tweet", "-captured_at"])]
+
+
 class Search(models.Model):
     """A saved SearchTimeline query (Top or Latest product)."""
 
@@ -85,14 +98,11 @@ class Search(models.Model):
     raw_query = models.TextField()
     product = models.CharField(max_length=10, choices=PRODUCT_CHOICES, default="Top")
     enabled = models.BooleanField(default=True)
-    owner = models.ForeignKey(
-        "auth.User", on_delete=models.CASCADE, null=True, blank=True, related_name="searches"
-    )
     last_run_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [("slug", "product", "owner")]
+        unique_together = [("slug", "product")]
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"{self.slug} [{self.product}]"

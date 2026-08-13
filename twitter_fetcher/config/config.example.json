@@ -104,16 +104,6 @@
       "replies_chunk_pages": 2
     }
   },
-  "viral_detection": {
-    "window_days": 7,
-    "threshold_percentile": 95,
-    "history_score_weight": 0.3,
-    "delta_score_weight": 0.7,
-    "composite_score_cutoff": 1.0,
-    "delta_percentile_cutoff": 0.8,
-    "snapshot_min_metric_delta": 25,
-    "snapshot_min_minutes": 10
-  },
   "storage": {
     "write_set_diffs": true,
     "raw_batch_retention_count": 0

@@ -2,20 +2,13 @@
 """
 Pagination 404 validation across all 3 production GraphQL endpoints.
 
-This is the single essential diagnostic for the curl_cffi transport. It runs a
-real multi-page pagination sweep (default 8 pages) through:
-  - baseline_requests : the canonical requests-based APIManager (production)
-  - curl_cffi         : the fixed CurlCffiAPIManager (no warm-up, canonical headers,
-                        persistent reused HTTP/2 session)
+Pagination sweep through the production requests-based APIManager.
 
-NO warm-up on either side — this is the evidence for whether warm-up can be
-dropped. Reports per-page HTTP status, latency, HTTP version, and cursor
-continuity, then aggregates the page-1 vs page-2+ 404 rate that matters.
+Reports per-page HTTP status, latency, HTTP version, and cursor continuity.
 
 Run:
     python twitter_fetcher/diagnostics/pagination_test.py
     python twitter_fetcher/diagnostics/pagination_test.py --accounts elonmusk reuters --pages 8
-    python twitter_fetcher/diagnostics/pagination_test.py --transport curl_cffi --pages 10
 """
 
 from __future__ import annotations
@@ -120,11 +113,6 @@ def parse_page(status, text, endpoint) -> Tuple[bool, Optional[str]]:
 def make_requests_manager(config_path):
     from tweeter_data_fetcher.x_api.client import APIManager
     return APIManager(config_path=str(config_path))
-
-
-def make_curl_manager(config_path):
-    from tweeter_data_fetcher.x_api.curl_cffi_client import CurlCffiAPIManager
-    return CurlCffiAPIManager(config_path=str(config_path))
 
 
 def resolve_user_id(config_path, username) -> Optional[str]:
@@ -292,8 +280,8 @@ def main():
     p = argparse.ArgumentParser(description="Pagination 404 validation across all 3 endpoints")
     p.add_argument("--accounts", nargs="+", default=["elonmusk", "reuters"])
     p.add_argument("--pages", type=int, default=8)
-    p.add_argument("--endpoints", nargs="+", default=["UserTweets", "UserTweetsAndReplies", "SearchTimeline"])
-    p.add_argument("--transport", choices=["requests", "curl_cffi", "both"], default="both")
+    p.add_argument("--endpoints", nargs="+", default=["UserTweets", "SearchTimeline"])
+    p.add_argument("--transport", choices=["requests"], default="requests")
     p.add_argument("--search-query", default="OpenAI")
     p.add_argument("--inter-page-sleep", type=float, default=0.4)
     p.add_argument("--config", type=str)
@@ -312,11 +300,7 @@ def main():
         logger.info("resolved @%s -> %s", acct, uid)
         user_ids[acct] = uid
 
-    transports = []
-    if args.transport in ("requests", "both"):
-        transports.append(("requests", make_requests_manager(config_path)))
-    if args.transport in ("curl_cffi", "both"):
-        transports.append(("curl_cffi", make_curl_manager(config_path)))
+    transports = [("requests", make_requests_manager(config_path))]
 
     all_results: List[Dict[str, Any]] = []
     started = datetime.now().isoformat()

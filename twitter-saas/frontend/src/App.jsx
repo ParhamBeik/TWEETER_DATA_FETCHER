@@ -5,6 +5,7 @@ import Feed from "./pages/Feed";
 import Search from "./pages/Search";
 import Accounts from "./pages/Accounts";
 import Cycles from "./pages/Cycles";
+import Trending from "./pages/Trending";
 import Login from "./pages/Login";
 
 function RequireAuth({ children }) {
@@ -28,6 +29,7 @@ export default function App() {
         {authed && (
           <nav>
             <Link to="/">Feed</Link>
+            <Link to="/trending">Trending</Link>
             <Link to="/accounts">Accounts</Link>
             <Link to="/cycles">Cycles</Link>
             <Link to="/search">Search</Link>
@@ -46,6 +48,14 @@ export default function App() {
             element={
               <RequireAuth>
                 <Feed />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/trending"
+            element={
+              <RequireAuth>
+                <Trending />
               </RequireAuth>
             }
           />
