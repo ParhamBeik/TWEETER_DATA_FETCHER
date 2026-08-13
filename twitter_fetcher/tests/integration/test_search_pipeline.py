@@ -1,10 +1,14 @@
 import unittest
 import json
 import tempfile
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from tweeter_data_fetcher.pipelines.search.service import SearchTimelineMonitor
+from tweeter_data_fetcher.processing.sets import TweetSetProcessor
+from tweeter_data_fetcher.x_api.browser import BrowserBootstrapResult
 
 
 class SearchPipelineTests(unittest.TestCase):
@@ -106,6 +110,93 @@ class SearchPipelineTests(unittest.TestCase):
         """Test FROZEN_SEARCH_FEATURES is defined."""
         from tweeter_data_fetcher.pipelines.search.service import FROZEN_SEARCH_FEATURES
         self.assertIsInstance(FROZEN_SEARCH_FEATURES, dict)
+
+    @staticmethod
+    def search_page(tweet_id, created_at, cursor):
+        return {
+            "data": {
+                "search_by_raw_query": {
+                    "search_timeline": {
+                        "timeline": {
+                            "instructions": [{
+                                "type": "TimelineAddEntries",
+                                "entries": [
+                                    {
+                                        "entryId": f"tweet-{tweet_id}",
+                                        "content": {
+                                            "__typename": "TimelineTimelineItem",
+                                            "itemContent": {"tweet_results": {"result": {
+                                                "rest_id": str(tweet_id),
+                                                "legacy": {"full_text": "tweet", "created_at": created_at},
+                                                "core": {"user_results": {"result": {"legacy": {"screen_name": "author"}}}},
+                                            }}},
+                                        },
+                                    },
+                                    {
+                                        "entryId": f"cursor-bottom-{cursor}",
+                                        "content": {
+                                            "__typename": "TimelineTimelineCursor",
+                                            "cursorType": "Bottom",
+                                            "value": cursor,
+                                        },
+                                    },
+                                ],
+                            }],
+                        },
+                    },
+                },
+            },
+        }
+
+    def test_deep_search_http_page_one_then_browser_for_depth(self):
+        monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
+        monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
+        monitor.storage = MagicMock()
+        monitor.storage._tehran_now.return_value = datetime.utcnow()
+        monitor.storage._jalali_batch_name.return_value = "batch"
+        monitor.storage.save_search_result_page.side_effect = lambda *args: Path(self.temp_dir) / f"page_{args[-2]}.json"
+        monitor.raw_root = Path(self.temp_dir) / "raw"
+        monitor.reports_root = Path(self.temp_dir) / "reports"
+        monitor.state_file = Path(self.temp_dir) / "state.json"
+        monitor.search_state = {}
+        monitor.processor = TweetSetProcessor()
+        monitor.console = MagicMock()
+        monitor.api_manager = MagicMock()
+        monitor.api_manager.rate_limits = {"SearchTimeline": {}}
+        monitor.api_manager.get_query_id.return_value = "test_search_query_id"
+        monitor.fetcher = MagicMock()
+        monitor.fetcher.recorder = MagicMock()
+        monitor.fetcher.bootstrap_browser_context.return_value = BrowserBootstrapResult(
+            True,
+            "https://x.com/search",
+            target_pages={"SearchTimeline": [
+                self.search_page("1", "Wed Aug 05 00:00:00 +0000 2026", "cursor-1"),
+                self.search_page("2", "Wed Jan 01 00:00:00 +0000 2020", "cursor-2"),
+            ]},
+            stop_reason="predicate",
+        )
+        http_page = self.search_page("http1", "Wed Aug 05 12:00:00 +0000 2026", "cursor-http")
+        http_page["_attempts"] = 1
+        http_page["_status"] = 200
+        http_page["_error_samples"] = []
+        monitor._request_page = MagicMock(return_value=http_page)
+        monitor._save_exports = MagicMock(return_value={})
+        monitor._build_frozen_headers = MagicMock(return_value={})
+        monitor._compact_json = lambda x: "{}"
+        monitor._after_bootstrap = MagicMock()
+
+        report = monitor.monitor_search({
+            "name": "test",
+            "raw_query": "test",
+            "product": "Latest",
+            "pagination_depth": 3,
+            "rolling_hours": 24,
+        })
+
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["metadata"]["transport"], "http+browser")
+        monitor._request_page.assert_called_once()
+        self.assertEqual(monitor.fetcher.bootstrap_browser_context.call_count, 1)
 
 
 if __name__ == "__main__":

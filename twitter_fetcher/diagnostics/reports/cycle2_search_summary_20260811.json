@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "reports": [
+    {
+      "file": "iran_war_brent_gold_inflation_hormuz_top_1405-05-20_15-59.json",
+      "status": "completed",
+      "transport": "http+browser",
+      "pages_saved": 2,
+      "exhausted_reason": "success_search_window_crossed",
+      "last_http_status": 200,
+      "counts": {
+        "tweets": 40
+      }
+    }
+  ]
+}

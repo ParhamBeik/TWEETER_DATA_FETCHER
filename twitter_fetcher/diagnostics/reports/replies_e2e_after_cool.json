@@ -1,0 +1,9 @@
+{
+  "probe_pages": 8,
+  "status": "failed",
+  "outcome": "failed_replies_density_404",
+  "pages_fetched": 0,
+  "transport": "http",
+  "cursor_termination_reason": "replies_density_404_http_only",
+  "reason": "Replies HTTP soft-block (empty 404); skipped browser for efficiency"
+}

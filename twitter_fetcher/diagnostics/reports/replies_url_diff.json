@@ -1,0 +1,21 @@
+{
+  "url_equal": true,
+  "probe_status": 200,
+  "engine_url_status": 200,
+  "engine_mgr_status": 200,
+  "engine_mgr_probe": 200,
+  "probe_vars": {
+    "userId": "20253024",
+    "count": 20,
+    "includePromotedContent": true,
+    "withCommunity": true,
+    "withVoice": true
+  },
+  "eng_vars": {
+    "userId": "20253024",
+    "count": 20,
+    "includePromotedContent": true,
+    "withCommunity": true,
+    "withVoice": true
+  }
+}

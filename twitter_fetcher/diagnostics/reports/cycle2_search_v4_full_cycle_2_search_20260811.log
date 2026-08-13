@@ -1,0 +1,35 @@
+===== SEARCH START 2026-08-11T12:28:25Z =====
+                       [SEARCH] API / Tier Configuration                        
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Key                          ┃ Value                                         ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Config File                  │ /Users/parham/Downloads/GITHUB_PROJECTS/TWEE… │
+│ Accounts (tiered)            │ 68                                            │
+│ Priority Policies            │ 7                                             │
+│ UserByScreenName QueryID     │ 2qvSHpkWTMS9i0zJAwDN...                       │
+│ UserTweets QueryID           │ 6r5OLCC_wFH4CpRyXKuA...                       │
+│ UserTweetsAndReplies QueryID │ klja8a2iJX_3to5RdfVl...                       │
+│ Timeout (sec)                │ 20                                            │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+[SEARCH] Fetching search: Iran_War_Brent_Gold_Inflation_Hormuz (product=Top)
+[SEARCH]   Query: (Iran OR War OR Brent OR Gold OR Inflation OR Hormuz) lang:en 
+min_replies:100 min_faves:1000 min_retweets:50 since:2026-05-23
+[SEARCH] @iran_war_brent_gold_inflation_hormuz SearchTimeline  page=1  
+transport=http  items=20  cursor=found  http=200  latency=3644ms → page 2
+[SEARCH] @iran_war_brent_gold_inflation_hormuz SearchTimeline  page=2  
+transport=browser  items=20  cursor=found  http=200
+╭─ [SEARCH] Cycle complete: 1 search(es) fetched ─╮
+│ Cycle complete: 1 search(es) fetched            │
+╰─────────────────────────────────────────────────╯
+    Search: Iran_War_Brent_Gold_Inflation_Hormuz    
+┏━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric    ┃ Value                                ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Slug      │ iran_war_brent_gold_inflation_hormuz │
+│ Product   │ Top                                  │
+│ Status    │ completed                            │
+│ Tweets    │ 40                                   │
+│ Pages     │ 2/3                                  │
+│ Exhausted │ success_search_window_crossed        │
+│ Last HTTP │ 200                                  │
+└───────────┴──────────────────────────────────────┘

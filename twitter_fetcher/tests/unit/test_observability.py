@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from tweeter_data_fetcher.observability.pipeline_console import PipelineConsole
-from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext
+from tweeter_data_fetcher.observability.event_recorder import EventRecorder, ObservabilityContext, redact_exception
 from tweeter_data_fetcher.observability.run_report import RunReportBuilder
 from tweeter_data_fetcher.observability.coverage_inventory import CoverageInventory
 
@@ -73,6 +73,15 @@ class EventRecorderTests(unittest.TestCase):
         """EventRecorder ensures logs directory exists."""
         recorder = EventRecorder(self.logs_dir, subsystem="historical_live")
         self.assertTrue((self.logs_dir / "events.jsonl").parent.exists())
+
+    def test_exception_url_query_is_redacted(self):
+        secret_cursor = "cursor-secret-value"
+        message = f"failed with url: /i/api/graphql/id/SearchTimeline?cursor={secret_cursor} (timeout)"
+
+        safe = redact_exception(message)
+
+        self.assertNotIn(secret_cursor, safe)
+        self.assertIn("?[redacted]", safe)
     
     def test_emit_page_fetched_writes_ndjson(self):
         """Emitting page_fetched event writes to events.jsonl."""
@@ -110,9 +119,9 @@ class EventRecorderTests(unittest.TestCase):
             endpoint="UserTweets",
             status_code=404,
             cursor="DAACCAABCgABbhBAAAoAA",
-            request_url="https://x.com/i/api/graphql/...",
-            request_headers={"accept": "application/json"},
-            variables={"userId": "123456"},
+            request_url="https://x.com/i/api/graphql/id/UserTweets?variables=secret",
+            request_headers={"accept": "application/json", "authorization": "Bearer secret", "cookie": "auth=secret"},
+            variables={"userId": "123456", "cursor": "secret-cursor"},
             response_text="Not found",
         )
         
@@ -131,6 +140,47 @@ class EventRecorderTests(unittest.TestCase):
         # Verify detail file was created
         detail_file = Path(event["detail_ref"])
         self.assertTrue(detail_file.exists())
+        detail = json.loads(detail_file.read_text())
+        self.assertEqual(detail["headers"]["authorization"], "[redacted]")
+        self.assertEqual(detail["headers"]["cookie"], "[redacted]")
+        self.assertNotIn("secret", detail["request_url"])
+        self.assertNotEqual(detail["variables"]["cursor"], "secret-cursor")
+
+    def test_http_error_detail_names_are_unique(self):
+        recorder = EventRecorder(self.logs_dir, subsystem="search")
+        refs = [
+            recorder.emit_http_error(
+                account="query",
+                endpoint="SearchTimeline",
+                status_code=404,
+                cursor=None,
+                request_url="https://x.com/i/api/graphql/id/SearchTimeline",
+                request_headers={},
+                variables={},
+                response_text="Not found",
+            )
+            for _ in range(2)
+        ]
+        self.assertEqual(len(set(refs)), 2)
+
+    def test_failure_ledger_marks_recovered_disposition(self):
+        recorder = EventRecorder(self.logs_dir, subsystem="search")
+        recorder.emit_http_error(
+            account="query",
+            endpoint="SearchTimeline",
+            status_code=503,
+            cursor=None,
+            request_url="https://x.com/i/api/graphql/id/SearchTimeline",
+            request_headers={},
+            variables={},
+            response_text="Unavailable",
+        )
+
+        recorder.mark_http_recovered("query", "SearchTimeline")
+
+        ledger = json.loads(recorder.summary_file.read_text())["failure_ledger"]["SearchTimeline:503"]
+        self.assertTrue(ledger["recovered"])
+        self.assertEqual(ledger["final_disposition"], "recovered")
     
     def test_emit_auto_refresh_event(self):
         """Auto-refresh events are recorded."""

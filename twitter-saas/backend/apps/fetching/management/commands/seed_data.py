@@ -46,9 +46,13 @@ class Command(BaseCommand):
         data = json.loads(path.read_text(encoding="utf-8"))
         count = 0
         # accounts.json is {"priority_N": [{"username","display_name"}, ...], ...}.
-        for value in data.values():
+        for key, value in data.items():
             if not isinstance(value, list):
                 continue
+            try:
+                priority = max(1, min(7, int(str(key).split("_", 1)[1])))
+            except (IndexError, ValueError):
+                priority = 7
             for entry in value:
                 handle = str(entry.get("username") or "").lstrip("@").strip()
                 if not handle:
@@ -58,6 +62,7 @@ class Command(BaseCommand):
                     defaults={
                         "display_name": entry.get("display_name") or "",
                         "tracking": track,
+                        "priority": priority,
                     },
                 )
                 count += 1

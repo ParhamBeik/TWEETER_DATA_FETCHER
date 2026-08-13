@@ -19,4 +19,12 @@ CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "cache+memory://"
 
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "twitter-saas-tests",
+    }
+}
+
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+ALLOW_REGISTRATION = True

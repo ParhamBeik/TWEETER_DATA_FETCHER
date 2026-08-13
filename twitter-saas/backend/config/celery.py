@@ -32,3 +32,14 @@ def setup_periodic_tasks(sender, **_kwargs):
         app.signature("apps.fetching.tasks.repoll_searches"),
         name="repoll-enabled-searches",
     )
+    # Daily retention: search-only tweets (30d) and old FetchRun rows (90d).
+    sender.add_periodic_task(
+        schedule(86400.0),
+        app.signature("apps.fetching.tasks.purge_expired_search_tweets"),
+        name="purge-expired-search-tweets",
+    )
+    sender.add_periodic_task(
+        schedule(86400.0),
+        app.signature("apps.fetching.tasks.purge_old_fetch_runs"),
+        name="purge-old-fetch-runs",
+    )

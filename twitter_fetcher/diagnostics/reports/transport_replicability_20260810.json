@@ -1,0 +1,45 @@
+{
+  "UserTweets": [
+    {
+      "page": 1,
+      "status": 200,
+      "ok": true
+    },
+    {
+      "page": 2,
+      "status": 200,
+      "ok": true
+    },
+    {
+      "page": 3,
+      "status": 200,
+      "ok": true
+    },
+    {
+      "page": 4,
+      "status": 200,
+      "ok": true
+    }
+  ],
+  "SearchTimeline": [
+    {
+      "page": 1,
+      "status": 200,
+      "ok": true,
+      "ms": 1809.0
+    },
+    {
+      "page": 2,
+      "status": 404,
+      "ok": false,
+      "ms": 1555.7,
+      "note": "server_cursor_gate_expected"
+    }
+  ],
+  "UserTweets_elapsed_s": 9.28,
+  "verdict": {
+    "UserTweets_http_ok": true,
+    "Search_p1_http": true,
+    "Search_p2_http_gated": true
+  }
+}

@@ -154,12 +154,25 @@ class PipelineConsole:
         cursor_status: str,
         http_status: Optional[int] = None,
         next_page: Optional[int] = None,
+        account: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        transport: str = "http",
+        latency_ms: Optional[int] = None,
+        attempt: int = 1,
+        recovery: Optional[str] = None,
     ) -> None:
         if self.verbosity == Verbosity.QUIET:
             return
+        target = f"@{account} {endpoint}  " if account and endpoint else ""
         http_part = f"  http={http_status}" if http_status is not None else ""
+        latency_part = f"  latency={latency_ms}ms" if latency_ms is not None else ""
+        attempt_part = f"  attempt={attempt}" if attempt > 1 else ""
+        recovery_part = f"  recovery={recovery}" if recovery else ""
         arrow = f" → page {next_page}" if next_page else ""
-        self.info(f"  page {page}  items={items}  cursor={cursor_status}{http_part}{arrow}")
+        self.info(
+            f"{target}page={page}  transport={transport}  items={items}  "
+            f"cursor={cursor_status}{http_part}{latency_part}{attempt_part}{recovery_part}{arrow}"
+        )
 
     def fetch_outcome(
         self,
@@ -182,7 +195,7 @@ class PipelineConsole:
 
     def pagination(self, account: str, endpoint: str, page: int, cursor: Optional[str]) -> None:
         if self.verbosity == Verbosity.VERBOSE:
-            cursor_text = cursor if cursor else "END"
+            cursor_text = "found" if cursor else "end"
             self.info(f"@{account} | {endpoint} | page {page} | next_cursor={cursor_text}")
 
     def show_startup_config(

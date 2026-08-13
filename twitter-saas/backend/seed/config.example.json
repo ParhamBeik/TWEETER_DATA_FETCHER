@@ -21,14 +21,22 @@
     "cursor_error_max_retries": 3,
     "default_timeout_seconds": 20,
     "search_warmup_seconds": 1,
-    "first_request_warmup_seconds": 2,
+    "first_request_warmup_seconds": 0,
     "pagination_safety_cap_pages": 50
   },
   "query_ids_by_endpoint": {
-    "UserByScreenName": ["2qvSHpkWTMS9i0zJAwDNiA"],
-    "UserTweets": ["hr4gzZONlq23okjU8fIe_A"],
-    "UserTweetsAndReplies": ["FIFgycIi-CNJcV0R-135Uw"],
-    "SearchTimeline": ["Bcw3RzK-PatNAmbnw54hFw"],
+    "UserByScreenName": [
+      "2qvSHpkWTMS9i0zJAwDNiA"
+    ],
+    "UserTweets": [
+      "hr4gzZONlq23okjU8fIe_A"
+    ],
+    "UserTweetsAndReplies": [
+      "FIFgycIi-CNJcV0R-135Uw"
+    ],
+    "SearchTimeline": [
+      "Bcw3RzK-PatNAmbnw54hFw"
+    ],
     "TweetDetail": []
   },
   "real_transaction_ids_by_endpoint": {
@@ -38,16 +46,31 @@
     "SearchTimeline": []
   },
   "rate_limits": {
-    "UserByScreenName": {"limit": 150, "window_seconds": 900},
-    "UserTweets": {"limit": 50, "window_seconds": 900},
-    "UserTweetsAndReplies": {"limit": 500, "window_seconds": 900},
-    "TweetDetail": {"limit": 150, "window_seconds": 900},
-    "SearchTimeline": {"limit": 50, "window_seconds": 900}
+    "UserByScreenName": {
+      "limit": 150,
+      "window_seconds": 900
+    },
+    "UserTweets": {
+      "limit": 50,
+      "window_seconds": 900
+    },
+    "UserTweetsAndReplies": {
+      "limit": 500,
+      "window_seconds": 900
+    },
+    "TweetDetail": {
+      "limit": 150,
+      "window_seconds": 900
+    },
+    "SearchTimeline": {
+      "limit": 50,
+      "window_seconds": 900
+    }
   },
   "anti_bot_simulation": {
     "enabled": true,
-    "browse_warmup_enabled": true,
-    "warmup_pages": 2,
+    "browse_warmup_enabled": false,
+    "warmup_pages": 0,
     "error_retry_policy": {
       "client_error_attempts": 3,
       "client_error_min_seconds": 1,
@@ -68,10 +91,17 @@
       "between_requests_max": 0.4,
       "between_pages_min": 0.2,
       "between_pages_max": 0.6,
+      "between_pages_replies_min": 2.0,
+      "between_pages_replies_max": 3.0,
       "between_accounts_min": 0.3,
       "between_accounts_max": 0.8,
+      "between_accounts_replies_min": 45.0,
+      "between_accounts_replies_max": 60.0,
       "between_cycles_min": 0,
-      "between_cycles_max": 15
+      "between_cycles_max": 15,
+      "replies_retry_min": 25.0,
+      "replies_retry_max": 40.0,
+      "replies_chunk_pages": 2
     }
   },
   "viral_detection": {
@@ -83,5 +113,9 @@
     "delta_percentile_cutoff": 0.8,
     "snapshot_min_metric_delta": 25,
     "snapshot_min_minutes": 10
+  },
+  "storage": {
+    "write_set_diffs": false,
+    "raw_batch_retention_count": 0
   }
 }

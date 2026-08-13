@@ -1,0 +1,21 @@
+{
+  "replies": {
+    "status": "partial",
+    "outcome": "partial_safety_cap_reached",
+    "pages_fetched": 4,
+    "transport": "http",
+    "last_http_status": 200,
+    "cursor_termination_reason": "safety_cap_reached"
+  },
+  "search": {
+    "status": "failed",
+    "transport": "browser",
+    "pages_saved": 0,
+    "exhausted_reason": "failed_browser_no_target_response",
+    "tweets": 0,
+    "elapsed_s": 48.0,
+    "validation_run_id": "canary-close-20260810-230405",
+    "last_http_status": 404
+  },
+  "ok": false
+}

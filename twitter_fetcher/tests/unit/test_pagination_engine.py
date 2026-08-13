@@ -3,6 +3,7 @@ import json
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 
 from tweeter_data_fetcher.x_api.timeline import FetcherEngine
 
@@ -52,6 +53,24 @@ class PaginationEngineTests(unittest.TestCase):
         # Verify the engine has 404 recovery logic
         self.assertTrue(hasattr(self.engine, '_recover_404_context'))
         self.assertTrue(hasattr(self.engine, 'max_404_recoveries'))
+
+    def test_4xx_logging_keeps_http_error_classification(self):
+        self.engine.logger = MagicMock()
+        self.engine.recorder = MagicMock()
+        self.engine.recorder.emit_http_error.return_value = "/tmp/error.json"
+
+        self.engine._log_4xx_details(
+            account="example",
+            endpoint="SearchTimeline",
+            response=SimpleNamespace(status_code=404, text="Not found"),
+            request_url="https://x.com/i/api/graphql/id/SearchTimeline",
+            request_headers={"authorization": "secret"},
+            variables={"cursor": "secret-cursor"},
+            cursor="secret-cursor",
+        )
+
+        self.engine.logger.error_one_liner.assert_called_once()
+        self.engine.logger.banner.assert_not_called()
 
     def test_endpoint_specific_config(self):
         """Test endpoint-specific configuration."""

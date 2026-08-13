@@ -6,3 +6,9 @@ frontend/dist/
 .venv/
 .env
 *.sqlite3
+LEGACY/
+graphify-out/
+twitter_fetcher/data/
+twitter_fetcher/diagnostics/sniffer_runs/
+twitter_fetcher/diagnostics/reports/
+**/.git/

@@ -20,7 +20,7 @@ class SearchTimelinePathResolutionTests(unittest.TestCase):
         resolved = self.monitor._resolve_path(str(abs_path))
         self.assertEqual(resolved, abs_path)
 
-    def test_window_crossed_page_does_not_stop_pagination(self):
+    def test_window_crossed_page_stops_pagination(self):
         window_start = datetime.utcnow() - timedelta(hours=6)
         page_result = {
             "tweets": [{"raw_timestamp": "Wed Jan 01 00:00:00 +0000 2020"}],
@@ -32,13 +32,27 @@ class SearchTimelinePathResolutionTests(unittest.TestCase):
             cursor="cursor-1",
             cursor_history={"cursor-1"},
         )
-        self.assertFalse(stop)
-        self.assertIsNone(reason)
+        self.assertTrue(stop)
+        self.assertEqual(reason, "success_search_window_crossed")
 
-    def test_policy_uses_pagination_depth_when_cap_missing(self):
+    def test_policy_keeps_requested_depth_separate_from_emergency_cap(self):
         self.monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
         policy = self.monitor._policy_for_search({"pagination_depth": 3})
-        self.assertEqual(policy["pagination_safety_cap_pages"], 3)
+        self.assertEqual(policy["pagination_depth"], 3)
+        self.assertEqual(policy["pagination_safety_cap_pages"], 50)
+
+    def test_search_headers_do_not_override_endpoint_transaction_id(self):
+        self.monitor.api_manager = type(
+            "Manager",
+            (),
+            {"session": type("Session", (), {"headers": {"x-client-transaction-id": "stale"}})()},
+        )()
+
+        headers = self.monitor._build_frozen_headers("https://x.com/search?q=test")
+
+        self.assertEqual(headers["referer"], "https://x.com/search?q=test")
+        self.assertEqual(headers["x-twitter-active-user"], "yes")
+        self.assertNotIn("x-client-transaction-id", headers)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
 
 // Follows section: manage followed handles (following any handle auto-tracks it
@@ -10,6 +11,7 @@ export default function Follows() {
   const [selected, setSelected] = useState(null);
   const [tweets, setTweets] = useState([]);
   const [next, setNext] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function loadFollows() {
@@ -42,6 +44,7 @@ export default function Follows() {
       if (selected === h) {
         setSelected(null);
         setTweets([]);
+        setNext(null);
       }
       loadFollows();
     } catch (e) {
@@ -50,7 +53,13 @@ export default function Follows() {
   }
 
   async function openTimeline(h, url) {
-    setSelected(h);
+    if (loading) return;
+    if (!url) {
+      setSelected(h);
+      setTweets([]);
+      setNext(null);
+    }
+    setLoading(true);
     setError("");
     try {
       const path = url ? url.replace(/^.*\/api/, "") : `/accounts/${h}/tweets/`;
@@ -59,6 +68,8 @@ export default function Follows() {
       setNext(data.next);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -98,11 +109,13 @@ export default function Follows() {
           {tweets.map((t) => (
             <TweetCard key={t.id} tweet={t} />
           ))}
-          {selected && tweets.length === 0 && (
+          <InfiniteSentinel
+            next={next}
+            loading={loading}
+            onLoad={(url) => selected && openTimeline(selected, url)}
+          />
+          {selected && !loading && tweets.length === 0 && (
             <p className="muted">No tweets yet — the fetch may still be running.</p>
-          )}
-          {next && (
-            <button onClick={() => openTimeline(selected, next)}>Load more</button>
           )}
         </div>
       </div>

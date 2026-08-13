@@ -1,17 +1,16 @@
 # Twitter SaaS
 
-Standalone Django + React + Postgres dashboard that runs the vendored X/GraphQL
-fetcher as Celery background jobs, stores everything in Postgres, and serves
-three sections: **Search** (SearchTimeline Top/Latest), **Follows** (per-account
-timelines), and **Feed** (merged latest across followed accounts + subscribed
-searches).
+Standalone Django + React + Postgres operator console around the canonical CLI
+fetcher. Celery beat runs one global live/historical/search cycle (the same
+two-pass `tdf-*` modules). The UI is **Feed**, **Accounts** (tiers/schedule),
+**Cycles**, and **Search**.
 
-This project is self-contained: it has no import or path ties to the origin
-`twitter_fetcher/` repo. The fetcher is vendored under
-`backend/apps/fetching/vendor/tweeter_data_fetcher/` and left byte-for-byte
-untouched — the integration seam is a subprocess runner plus Postgres-backed
-state, so the proven engine (two-pass order, rolling cutoff, watermark advance,
-cursor rules, tx/query health) runs exactly as it does upstream.
+This project is self-contained at runtime: Docker installs the canonical
+fetcher from ``twitter_fetcher/src`` onto ``PYTHONPATH``. Local pytest adds the
+same tree via ``config.settings``. The integration seam is a subprocess runner
+plus Postgres-backed state, so the proven engine (two-pass order, rolling
+cutoff, watermark advance, cursor rules, tx/query health) runs exactly as it
+does upstream.
 
 ## Architecture
 
@@ -24,12 +23,12 @@ frontend/ (React + Vite)  ──/api──▶  web (Django + DRF)
                                        │
                                        └─ Redis  ← Celery broker
                                             │
-                                worker + beat run vendored pipelines as
+                                worker + beat run canonical pipelines as
                                 subprocesses in an ephemeral scratch dir,
                                 then ingest normalized tweets into Postgres.
 ```
 
-**Why a subprocess, not in-process adapters:** the vendored `run_v4()` /
+**Why a subprocess, not in-process adapters:** the pipeline `run_v4()` /
 `run_cycle()` construct their own `StorageManager` internally, so injecting a
 Postgres adapter would require editing the engine. Instead each job runs the
 pipeline as `python -m ...service` with `TDF_PROJECT_ROOT` pointed at a temp
@@ -110,9 +109,13 @@ All endpoints require token auth (`Authorization: Token <key>`), obtained from
 | ------ | ---- | ------- |
 | POST | `/api/auth/register/` | create user, returns token |
 | POST | `/api/auth/login/` | returns token |
-| GET  | `/api/feed/` | merged latest from follows + subscribed searches (cursor-paginated) |
-| GET/POST/DELETE | `/api/follows/` | list / follow a handle / unfollow |
+| GET  | `/api/feed/` | tracked accounts + enabled searches; filters: account, tier, endpoint, type, since, until, run_id |
+| GET/POST/PATCH | `/api/accounts/` | operator account list / track / update tier, tracking, quarantine |
+| POST | `/api/accounts/{handle}/fetch/` | on-demand live + historical for one handle |
 | GET  | `/api/accounts/{handle}/tweets/` | chronological account timeline |
+| GET  | `/api/runs/` | cycle history |
+| GET  | `/api/runs/{run_id}/` | run detail + redacted log excerpt |
+| POST | `/api/cycles/` | queue one global live/historical/search cycle |
 | GET  | `/api/searches/?product=Top\|Latest` | list searches |
 | POST | `/api/searches/` | submit a query → enqueues a fetch job |
 | GET  | `/api/searches/{id}/results/` | ranked results for a search |
@@ -120,18 +123,15 @@ All endpoints require token auth (`Authorization: Token <key>`), obtained from
 
 ## Background jobs
 
-`beat` schedules three periodic tasks (intervals from `.env`):
+`beat` schedules three periodic tasks (intervals from `.env`). Each tick runs
+**one** canonical subprocess (`tdf-live --once`, `tdf-historical`, or
+`tdf-search --once`). CLI due-logic and tiers decide who is fetched.
 
-- `poll_live_all` — live poll every tracked account
-- `backfill_historical_all` — periodic historical backfill
-- `repoll_searches` — re-run every enabled search
+On-demand tasks remain for a single account (`--only` / `--account`) or one
+search. Tracking an account from the Accounts page queues that diagnostic path.
 
-On-demand tasks fire when a user follows a new handle (initial historical +
-live fetch) or submits a search.
-
-`FETCH_MAX_ACCOUNTS_PER_RUN` bounds how many tracked accounts a single periodic
-run touches. Following handles is unbounded by design; raise the cap or add
-eviction when the tracked set grows large.
+`FETCH_MAX_ACCOUNTS_PER_RUN` caps how many tracked accounts are written into
+scratch `accounts.json`. Raise the cap when the tracked set grows.
 
 ## Tests
 
@@ -152,9 +152,9 @@ twitter-saas/
     apps/
       accounts/        auth users, Follow, SearchSubscription
       tweets/          TwitterUser, Tweet, Search, SearchResult, state models
-      fetching/        vendored fetcher + subprocess runner + Celery tasks
-        vendor/tweeter_data_fetcher/   copied verbatim, untouched
+      fetching/        subprocess runner + Celery tasks (engine via PYTHONPATH)
     seed/              accounts.json, searches.json, config.example.json
-  frontend/            React + Vite (Feed / Search / Follows + auth)
-  docker-compose.yml   postgres + redis + web + worker + beat
+  frontend/            React + Vite (Feed / Accounts / Cycles / Search + auth)
+  docker-compose.yml   local stack (published ports)
+  docker-compose.prod.yml  VPS overlay (frontend :80 only)
 ```

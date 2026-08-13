@@ -1,15 +1,20 @@
-"""Celery tasks: run the vendored fetcher and ingest into Postgres."""
+"""Celery tasks: run the fetcher and ingest into Postgres."""
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from datetime import timedelta
 
-from celery import shared_task
+from celery import current_task, shared_task
 from django.conf import settings
+from django.core.cache import cache
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from apps.tweets.models import Search, TwitterUser
+from apps.tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
 
 from . import runner
+from .accounts import sync_quarantine_from_live_state
 from .ingest import ingest_search_results, ingest_tweets
 
 logger = logging.getLogger(__name__)
@@ -19,57 +24,98 @@ LIVE_MODULE = "tweeter_data_fetcher.pipelines.live.service"
 SEARCH_MODULE = "tweeter_data_fetcher.pipelines.search.service"
 
 
-def _run_and_ingest(module: str, args: list[str], subsystem: str) -> int:
-    root = runner.run_fetcher(module, args, subsystem)
+def _task_id() -> str:
+    return str(getattr(getattr(current_task, "request", None), "id", "") or "")
+
+
+@contextmanager
+def _cycle_lock(name: str, ttl: int):
+    """Skip overlapping beat ticks; lock expires after ttl (do not clear early)."""
+    key = f"fetch_cycle_lock:{name}"
+    acquired = cache.add(key, "1", timeout=max(ttl, 60))
+    yield acquired
+
+
+def _run_and_ingest(module: str, args: list[str], subsystem: str, target: str) -> int:
+    result = runner.run_fetcher(module, args, subsystem, target=target, task_id=_task_id())
+    count = 0
+    failed = False
     try:
-        return ingest_tweets(runner.iter_processed_tweets(root, subsystem))
+        count = ingest_tweets(runner.iter_processed_tweets(result.root, subsystem))
+        return count
+    except Exception:
+        failed = True
+        raise
     finally:
-        runner.cleanup(root)
+        runner.finalize_run(result.run, ingested_tweets=count, task_failed=failed)
+        if subsystem == "live":
+            sync_quarantine_from_live_state()
+        runner.cleanup(result.root)
+
+
+def _run_cycle(
+    module: str,
+    args: list[str],
+    subsystem: str,
+    *,
+    target: str = "all",
+    searches: list | None = None,
+) -> int:
+    result = runner.run_fetcher(
+        module, args, subsystem, searches=searches, target=target, task_id=_task_id()
+    )
+    count = 0
+    failed = False
+    try:
+        if subsystem == "search":
+            for search in searches or []:
+                count += ingest_search_results(
+                    search, runner.iter_search_tweets(result.root, search.slug)
+                )
+                if result.run.status == "completed":
+                    search.last_run_at = timezone.now()
+                    search.save(update_fields=["last_run_at"])
+        else:
+            count = ingest_tweets(runner.iter_processed_tweets(result.root, subsystem))
+        return count
+    except Exception:
+        failed = True
+        raise
+    finally:
+        runner.finalize_run(result.run, ingested_tweets=count, task_failed=failed)
+        if subsystem == "live":
+            sync_quarantine_from_live_state()
+        runner.cleanup(result.root)
 
 
 @shared_task(name="apps.fetching.tasks.fetch_account_historical")
 def fetch_account_historical(handle: str) -> int:
-    # The historical service runs a single pass by design; it has no --once flag
-    # (only --only selects accounts), unlike the live/search loops.
-    return _run_and_ingest(HISTORICAL_MODULE, ["--only", handle], "historical")
+    return _run_and_ingest(HISTORICAL_MODULE, ["--only", handle], "historical", handle)
 
 
 @shared_task(name="apps.fetching.tasks.fetch_account_live")
 def fetch_account_live(handle: str) -> int:
-    return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live")
-
-
-def _tracked_handles() -> list[str]:
-    cap = settings.FETCH_MAX_ACCOUNTS_PER_RUN
-    return list(
-        TwitterUser.objects.filter(tracking=True)
-        .order_by("id")
-        .values_list("handle", flat=True)[:cap]
-    )
+    return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live", handle)
 
 
 @shared_task(name="apps.fetching.tasks.poll_live_all")
 def poll_live_all() -> int:
-    total = 0
-    for handle in _tracked_handles():
-        try:
-            total += fetch_account_live(handle)
-        except Exception:
-            logger.exception("poll_live_all: live fetch failed for handle=%s", handle)
-    return total
+    with _cycle_lock("poll_live_all", settings.FETCH_LIVE_INTERVAL_SECONDS) as acquired:
+        if not acquired:
+            logger.info("poll_live_all: skipped overlapping cycle")
+            return 0
+        return _run_cycle(LIVE_MODULE, ["--once"], "live")
 
 
 @shared_task(name="apps.fetching.tasks.backfill_historical_all")
 def backfill_historical_all() -> int:
-    total = 0
-    for handle in _tracked_handles():
-        try:
-            total += fetch_account_historical(handle)
-        except Exception:
-            logger.exception(
-                "backfill_historical_all: historical fetch failed for handle=%s", handle
-            )
-    return total
+    with _cycle_lock(
+        "backfill_historical_all", settings.FETCH_HISTORICAL_INTERVAL_SECONDS
+    ) as acquired:
+        if not acquired:
+            logger.info("backfill_historical_all: skipped overlapping cycle")
+            return 0
+        return _run_cycle(HISTORICAL_MODULE, [], "historical")
 
 
 @shared_task(name="apps.fetching.tasks.run_search")
@@ -77,24 +123,44 @@ def run_search(search_id: int) -> int:
     search = Search.objects.filter(id=search_id).first()
     if search is None:
         return 0
-    root = runner.run_fetcher(
-        SEARCH_MODULE, ["--once", "--only", search.slug], "search", searches=[search]
+    return _run_cycle(
+        SEARCH_MODULE,
+        ["--once", "--only", search.slug],
+        "search",
+        target=f"{search.slug}:{search.product}",
+        searches=[search],
     )
-    try:
-        count = ingest_search_results(search, runner.iter_search_tweets(root, search.slug))
-    finally:
-        runner.cleanup(root)
-    search.last_run_at = timezone.now()
-    search.save(update_fields=["last_run_at"])
-    return count
 
 
 @shared_task(name="apps.fetching.tasks.repoll_searches")
 def repoll_searches() -> int:
-    total = 0
-    for search_id in Search.objects.filter(enabled=True).values_list("id", flat=True):
-        try:
-            total += run_search(search_id)
-        except Exception:
-            logger.exception("repoll_searches: search failed for id=%s", search_id)
-    return total
+    with _cycle_lock("repoll_searches", settings.FETCH_SEARCH_INTERVAL_SECONDS) as acquired:
+        if not acquired:
+            logger.info("repoll_searches: skipped overlapping cycle")
+            return 0
+        searches = list(Search.objects.filter(enabled=True))
+        if not searches:
+            return 0
+        return _run_cycle(SEARCH_MODULE, ["--once"], "search", searches=searches)
+
+
+@shared_task(name="apps.fetching.tasks.purge_expired_search_tweets")
+def purge_expired_search_tweets() -> int:
+    """Drop search-only tweets older than SEARCH_TWEET_TTL_DAYS."""
+    cutoff = timezone.now() - timedelta(days=settings.SEARCH_TWEET_TTL_DAYS)
+    tracked = TwitterUser.objects.filter(tracking=True).values_list("handle", flat=True)
+    has_search = Exists(SearchResult.objects.filter(tweet_id=OuterRef("pk")))
+    qs = Tweet.objects.filter(has_search, ingested_at__lt=cutoff).exclude(
+        account__in=list(tracked)
+    )
+    deleted, _ = qs.delete()
+    return deleted
+
+
+@shared_task(name="apps.fetching.tasks.purge_old_fetch_runs")
+def purge_old_fetch_runs() -> int:
+    cutoff = timezone.now() - timedelta(days=settings.FETCH_RUN_RETENTION_DAYS)
+    deleted, _ = FetchRun.objects.filter(started_at__lt=cutoff).exclude(
+        status="running"
+    ).delete()
+    return deleted

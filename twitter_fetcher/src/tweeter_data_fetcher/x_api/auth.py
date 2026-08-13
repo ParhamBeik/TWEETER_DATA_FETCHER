@@ -214,7 +214,10 @@ def auto_refresh_session(
     
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=headless)
+            try:
+                browser = p.chromium.launch(headless=headless)
+            except Exception:
+                browser = p.chromium.launch(headless=headless, channel="chrome")
             context = browser.new_context(
                 user_agent=config.get("api_headers", {}).get("user-agent", 
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")

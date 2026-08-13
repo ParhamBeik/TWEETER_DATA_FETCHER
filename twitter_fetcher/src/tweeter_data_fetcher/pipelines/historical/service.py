@@ -121,6 +121,7 @@ def _process_account(
     processor: TweetSetProcessor,
     username: str,
     raw_pages_by_endpoint: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    write_set_diffs: bool = True,
 ) -> Tuple[bool, Dict[str, int]]:
     raw_pages_by_endpoint = raw_pages_by_endpoint or {}
     raw_replies = raw_pages_by_endpoint.get("UserTweetsAndReplies") or _endpoint_pages(
@@ -149,14 +150,21 @@ def _process_account(
     list_b_minus_a = processor.get_difference_b_minus_a(set_a, set_b)
     list_symmetric_difference = processor.get_symmetric_difference(set_a, set_b)
 
+    sets_to_write = {
+        "4_union": list_union,
+        "1_user_tweets": list_a,
+        "2_user_tweets_and_replies": list_b,
+        "3_intersection": list_intersection,
+        "5_a_minus_b": list_a_minus_b,
+        "6_b_minus_a": list_b_minus_a,
+        "7_symmetric_difference": list_symmetric_difference,
+    }
+    if not write_set_diffs:
+        sets_to_write = {"4_union": list_union}
+
     txt_outputs = {
-        "1_user_tweets": storage.save_processed_set_merged(list_a, "1_user_tweets", username),
-        "2_user_tweets_and_replies": storage.save_processed_set_merged(list_b, "2_user_tweets_and_replies", username),
-        "3_intersection": storage.save_processed_set_merged(list_intersection, "3_intersection", username),
-        "4_union": storage.save_processed_set_merged(list_union, "4_union", username),
-        "5_a_minus_b": storage.save_processed_set_merged(list_a_minus_b, "5_a_minus_b", username),
-        "6_b_minus_a": storage.save_processed_set_merged(list_b_minus_a, "6_b_minus_a", username),
-        "7_symmetric_difference": storage.save_processed_set_merged(list_symmetric_difference, "7_symmetric_difference", username),
+        name: storage.save_processed_set_merged(items, name, username)
+        for name, items in sets_to_write.items()
     }
     verified = all(_verify_txt_files(username, set_name, paths) for set_name, paths in txt_outputs.items())
 
@@ -165,7 +173,8 @@ def _process_account(
         f"tweets={len(list_a)} replies_endpoint={len(list_b)} "
         f"intersection={len(list_intersection)} union={len(list_union)} "
         f"a_minus_b={len(list_a_minus_b)} b_minus_a={len(list_b_minus_a)} "
-        f"symmetric_difference={len(list_symmetric_difference)}"
+        f"symmetric_difference={len(list_symmetric_difference)} "
+        f"wrote={','.join(sorted(sets_to_write))}"
     )
     return verified, {
         "tweets": len(list_a),
@@ -175,6 +184,7 @@ def _process_account(
         "a_minus_b": len(list_a_minus_b),
         "b_minus_a": len(list_b_minus_a),
         "symmetric_difference": len(list_symmetric_difference),
+        "sets_written": sorted(sets_to_write),
     }
 
 
@@ -212,9 +222,13 @@ def _save_endpoint_processed_txt(
 def _safe_endpoint_report(result: Dict[str, Any]) -> Dict[str, Any]:
     status = result.get("status")
     transport = result.get("transport")
+    # Browser fallback on profile timelines is a degraded path — never "successful".
+    if transport == "browser_fallback" and status == "completed":
+        status = "partial"
+        result = {**result, "status": "partial", "outcome": result.get("outcome") or "partial_browser_fallback"}
     endpoint_status = (
-        "verified_browser_fallback"
-        if status == "completed" and transport == "browser_fallback"
+        "partial_browser_fallback"
+        if transport == "browser_fallback"
         else ("verified_http" if status == "completed" else ("unverified" if status in {"partial", "skipped"} else "failed"))
     )
     return {
@@ -398,15 +412,25 @@ def run_v4(
 
     console.phase_banner("Resolve user IDs", pass_index=1, pass_total=4, account_count=len(accounts))
     engine.recorder.emit_phase_start(phase="resolve_user_ids", accounts=len(accounts), pass_index=1, pass_total=4)
+    shared_bootstrap = None
+    try:
+        shared_bootstrap = engine.bootstrap_browser_context(username=accounts[0])
+    except Exception as exc:
+        console.warning(f"Shared browser bootstrap failed; using per-account fallback: {str(exc)[:200]}")
     for username in accounts:
         storage.ensure_account_state(username)
         report["accounts"].setdefault(username, {"endpoints": {}})
         try:
-            bootstrap = engine.bootstrap_browser_context(username=username)
+            bootstrap = (
+                shared_bootstrap
+                if shared_bootstrap is not None and shared_bootstrap.ok
+                else engine.bootstrap_browser_context(username=username)
+            )
             report["accounts"][username]["browser_bootstrap"] = {
                 "ok": bootstrap.ok,
                 "route": bootstrap.route,
                 "support_request_count": bootstrap.support_request_count,
+                "shared": bootstrap is shared_bootstrap,
                 "error": bootstrap.error,
             }
             user_ids[username] = engine._get_user_id(username)
@@ -462,6 +486,9 @@ def run_v4(
             pass_index=endpoint_index,
             pass_total=len(enabled_endpoints),
         )
+        # Density gate: cool down before Replies after UserTweets on the same session.
+        if endpoint == "UserTweetsAndReplies" and endpoint_index > 1:
+            engine.api_manager.human_delay("between_accounts_replies")
         for idx, username in enumerate(active_accounts):
             if idx > 0:
                 if endpoint == "UserTweetsAndReplies":
@@ -504,13 +531,20 @@ def run_v4(
 
     console.phase_banner("Generate processed sets", pass_index=4, pass_total=4, account_count=len(active_accounts))
     engine.recorder.emit_phase_start(phase="generate_processed_sets", accounts=len(active_accounts), pass_index=4, pass_total=4)
+    storage_cfg = engine.api_manager.config.get("storage") or {}
+    write_set_diffs = bool(storage_cfg.get("write_set_diffs", True))
+    raw_keep = int(storage_cfg.get("raw_batch_retention_count", 0) or 0)
     for username in active_accounts:
         final_verified, counts = _process_account(
             storage=storage,
             processor=processor,
             username=username,
             raw_pages_by_endpoint=fetched_pages.get(username),
+            write_set_diffs=write_set_diffs,
         )
+        if raw_keep > 0:
+            for endpoint in ENDPOINTS:
+                storage.prune_raw_batches(endpoint, username, keep=raw_keep)
         report["accounts"][username]["final_sets"] = {
             "verified": final_verified,
             "counts": counts,

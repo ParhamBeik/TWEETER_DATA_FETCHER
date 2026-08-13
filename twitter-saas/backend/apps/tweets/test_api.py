@@ -3,11 +3,11 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from apps.accounts.models import Follow, SearchSubscription
 from apps.fetching.ingest import upsert_tweet
-from apps.tweets.models import Search, SearchResult, Tweet, TwitterUser
+from apps.tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
 
 
 @pytest.fixture
@@ -33,15 +33,12 @@ def _tweet(account, rest_id, created):
 @pytest.mark.django_db
 def test_feed_merges_follows_and_searches_ordered_desc(client_user):
     client, user = client_user
-    acct = TwitterUser.objects.create(handle="jack", tracking=True)
-    Follow.objects.create(user=user, account=acct)
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
 
-    older = _tweet("jack", "1", "Wed Oct 10 20:19:24 +0000 2018")
-    newer = _tweet("jack", "2", "Wed Oct 10 21:19:24 +0000 2018")
+    _tweet("jack", "1", "Wed Oct 10 20:19:24 +0000 2018")
+    _tweet("jack", "2", "Wed Oct 10 21:19:24 +0000 2018")
 
-    # A tweet reachable only via a subscribed search must also appear.
-    search = Search.objects.create(name="ai", slug="ai", raw_query="ai", owner=user)
-    SearchSubscription.objects.create(user=user, search=search)
+    search = Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True, owner=user)
     via_search = _tweet("someoneelse", "3", "Wed Oct 10 22:19:24 +0000 2018")
     SearchResult.objects.create(search=search, tweet=via_search, rank=0)
 
@@ -54,11 +51,9 @@ def test_feed_merges_follows_and_searches_ordered_desc(client_user):
 @pytest.mark.django_db
 def test_feed_dedupes_tweet_in_both_follow_and_search(client_user):
     client, user = client_user
-    acct = TwitterUser.objects.create(handle="jack", tracking=True)
-    Follow.objects.create(user=user, account=acct)
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
     t = _tweet("jack", "9", "Wed Oct 10 20:19:24 +0000 2018")
-    search = Search.objects.create(name="s", slug="s", raw_query="s", owner=user)
-    SearchSubscription.objects.create(user=user, search=search)
+    search = Search.objects.create(name="s", slug="s", raw_query="s", enabled=True)
     SearchResult.objects.create(search=search, tweet=t, rank=0)
 
     resp = client.get("/api/feed/")
@@ -80,6 +75,62 @@ def test_account_timeline_filters_by_handle(client_user):
 
 
 @pytest.mark.django_db
+def test_tweet_api_exposes_rich_author_media_and_nested_content(client_user):
+    client, _user = client_user
+    TwitterUser.objects.create(
+        handle="jack",
+        display_name="Jack",
+        avatar_url="https://img.example/jack.jpg",
+        verified=True,
+        tracking=True,
+        priority=1,
+    )
+    upsert_tweet({
+        "rest_id": "rich",
+        "author_id": "42",
+        "account": "jack",
+        "author": {
+            "id": "42",
+            "handle": "jack",
+            "display_name": "Jack",
+            "avatar_url": "https://img.example/jack.jpg",
+            "verified": True,
+        },
+        "text": "rich tweet",
+        "media": [{"type": "photo", "url": "https://img.example/photo.jpg"}],
+        "quoted_tweet": {"id": "quoted", "text": "quoted text"},
+        "bookmarks": 7,
+    })
+
+    data = client.get("/api/feed/").data["results"][0]
+
+    assert data["author"]["display_name"] == "Jack"
+    assert data["author"]["verified"] is True
+    assert data["author"]["avatar_url"] == "https://img.example/jack.jpg"
+    assert data["media"][0]["type"] == "photo"
+    assert data["quoted_tweet"]["id"] == "quoted"
+    assert data["bookmarks"] == 7
+
+
+@pytest.mark.django_db
+def test_recent_fetch_runs_expose_status_and_failure_ledger(client_user):
+    client, _ = client_user
+    FetchRun.objects.create(
+        run_id="run-visible",
+        subsystem="search",
+        target="oil:Latest",
+        status="partial",
+        failure_ledger={"SearchTimeline:404": {"count": 2}},
+    )
+
+    data = client.get("/api/runs/?subsystem=search").data["results"][0]
+
+    assert data["run_id"] == "run-visible"
+    assert data["status"] == "partial"
+    assert data["failure_ledger"]["SearchTimeline:404"]["count"] == 2
+
+
+@pytest.mark.django_db
 def test_create_search_enqueues_and_subscribes(client_user):
     client, user = client_user
     with patch("apps.fetching.tasks.run_search.delay") as delay:
@@ -89,7 +140,6 @@ def test_create_search_enqueues_and_subscribes(client_user):
     assert resp.status_code == 201
     search = Search.objects.get(raw_query="openai")
     assert search.owner == user and search.slug  # slug auto-derived
-    assert SearchSubscription.objects.filter(user=user, search=search).exists()
     delay.assert_called_once_with(search.id)
 
 
@@ -103,13 +153,13 @@ def test_search_list_filters_by_product(client_user):
 
 
 @pytest.mark.django_db
-def test_search_list_does_not_leak_other_users(client_user):
+def test_search_list_is_operator_wide(client_user):
     client, user = client_user
     other = User.objects.create_user(username="eve", password="pw")
     Search.objects.create(name="mine", slug="mine", raw_query="mine", owner=user)
     Search.objects.create(name="eves", slug="eves", raw_query="eves", owner=other)
     resp = client.get("/api/searches/")
-    assert [s["raw_query"] for s in resp.data["results"]] == ["mine"]
+    assert {s["raw_query"] for s in resp.data["results"]} == {"mine", "eves"}
 
 
 @pytest.mark.django_db
@@ -122,3 +172,138 @@ def test_search_create_derives_name_from_raw_query(client_user):
     assert resp.status_code == 201
     search = Search.objects.get(raw_query="openai")
     assert search.name == "openai"  # derived from raw_query when name omitted
+
+
+@pytest.mark.django_db
+def test_backfill_tweet_payloads_refreshes_author_from_stored_payload():
+    """Sparse rows gain author fields by re-upserting Tweet.payload (no X calls)."""
+    tweet = Tweet.objects.create(
+        dedup_key="42:legacy",
+        tweet_id="legacy",
+        author_rest_id="42",
+        account="jack",
+        text="old",
+        payload={
+            "rest_id": "legacy",
+            "author_id": "42",
+            "account": "jack",
+            "author": {
+                "id": "42",
+                "handle": "jack",
+                "display_name": "Jack Dorsey",
+                "avatar_url": "https://img.example/jack.jpg",
+                "verified": True,
+                "verified_type": "Blue",
+            },
+            "text": "old",
+            "bookmarks": 3,
+            "media": [{"type": "photo", "url": "https://img.example/p.jpg"}],
+        },
+    )
+    assert tweet.author_id is None
+
+    call_command("backfill_tweet_payloads")
+
+    tweet.refresh_from_db()
+    assert tweet.author is not None
+    assert tweet.author.display_name == "Jack Dorsey"
+    assert tweet.author.avatar_url == "https://img.example/jack.jpg"
+    assert tweet.author.verified is True
+    assert tweet.bookmarks == 3
+    assert tweet.payload["media"][0]["type"] == "photo"
+
+
+@pytest.mark.django_db
+def test_feed_filters_by_tier_and_endpoint(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+    TwitterUser.objects.create(handle="elon", tracking=True, priority=7)
+    upsert_tweet(
+        {
+            "rest_id": "1",
+            "author_id": "1",
+            "account": "jack",
+            "text": "a",
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+            "source_endpoint": "UserTweets",
+        }
+    )
+    upsert_tweet(
+        {
+            "rest_id": "2",
+            "author_id": "2",
+            "account": "elon",
+            "text": "b",
+            "created_at": "Wed Oct 10 21:19:24 +0000 2018",
+            "source_endpoint": "UserTweetsAndReplies",
+        }
+    )
+    assert [t["tweet_id"] for t in client.get("/api/feed/?tier=1").data["results"]] == ["1"]
+    assert [t["tweet_id"] for t in client.get("/api/feed/?endpoint=UserTweets").data["results"]] == ["1"]
+
+
+@pytest.mark.django_db
+def test_accounts_list_exposes_priority_and_policy(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1, display_name="Jack")
+    data = client.get("/api/accounts/").data
+    rows = data if isinstance(data, list) else data["results"]
+    assert rows[0]["handle"] == "jack"
+    assert rows[0]["priority"] == 1
+    assert rows[0]["poll_interval_seconds"] == 120
+
+
+@pytest.mark.django_db
+def test_account_create_tracks_and_enqueues(client_user):
+    client, _ = client_user
+    with patch("apps.fetching.tasks.fetch_account_historical.delay") as hist, patch(
+        "apps.fetching.tasks.fetch_account_live.delay"
+    ) as live:
+        resp = client.post("/api/accounts/", {"handle": "@Jack", "priority": 2}, format="json")
+    assert resp.status_code == 201
+    acct = TwitterUser.objects.get(handle="jack")
+    assert acct.tracking is True and acct.priority == 2
+    hist.assert_called_once_with("jack")
+    live.assert_called_once_with("jack")
+
+
+@pytest.mark.django_db
+def test_account_unquarantine_and_fetch(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(
+        handle="jack", tracking=True, priority=1, quarantined=True, quarantine_reason="id fail"
+    )
+    resp = client.patch("/api/accounts/jack/", {"quarantined": False}, format="json")
+    assert resp.status_code == 200
+    acct = TwitterUser.objects.get(handle="jack")
+    assert acct.quarantined is False
+    with patch("apps.fetching.tasks.fetch_account_historical.delay") as hist, patch(
+        "apps.fetching.tasks.fetch_account_live.delay"
+    ) as live:
+        queued = client.post("/api/accounts/jack/fetch/")
+    assert queued.status_code == 202
+    hist.assert_called_once_with("jack")
+    live.assert_called_once_with("jack")
+
+
+@pytest.mark.django_db
+def test_cycle_trigger_queues_global_task(client_user):
+    client, _ = client_user
+    with patch("apps.fetching.tasks.poll_live_all.delay") as delay:
+        resp = client.post("/api/cycles/", {"subsystem": "live"}, format="json")
+    assert resp.status_code == 202
+    delay.assert_called_once_with()
+
+
+@pytest.mark.django_db
+def test_fetch_run_detail_includes_log_excerpt(client_user):
+    client, _ = client_user
+    FetchRun.objects.create(
+        run_id="run-detail",
+        subsystem="live",
+        target="all",
+        status="completed",
+        log_excerpt="page 1 http",
+    )
+    data = client.get("/api/runs/run-detail/").data
+    assert data["log_excerpt"] == "page 1 http"
