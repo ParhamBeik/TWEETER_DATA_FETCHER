@@ -236,7 +236,10 @@ class SearchViewSet(viewsets.ModelViewSet):
     """List/create searches; creating one enqueues an on-demand fetch."""
 
     serializer_class = SearchSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    # No PATCH: it let any authenticated user rewrite another search's raw_query
+    # or set enabled=False (silently dropping it from repoll_searches and from
+    # everyone's feed), and no UI ever called it. Edit via admin if needed.
+    http_method_names = ["get", "post", "head", "options"]
     # Searches paginate on their own non-null created_at; only the `results`
     # action returns Tweets and needs the feed_ts-ordered paginator.
     pagination_class = CreatedAtCursorPagination

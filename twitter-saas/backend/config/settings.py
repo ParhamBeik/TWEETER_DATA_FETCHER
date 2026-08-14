@@ -25,9 +25,25 @@ for _candidate in _FETCHER_CANDIDATES:
         sys.path.insert(0, str(_candidate))
         break
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
+DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
+ALLOWED_HOSTS = os.environ.get(
+    "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1"
+).split(",")
+
+# Placeholder keys shipped in .env.example were being used verbatim in .env, so
+# session cookies and DRF tokens were forgeable by anyone with the repo. Refuse
+# to boot rather than run on a known-public key.
+_PLACEHOLDER_KEYS = {
+    "",
+    "dev-insecure-change-me",
+    "change-me-to-a-long-random-string",
+}
+if SECRET_KEY in _PLACEHOLDER_KEYS or len(SECRET_KEY) < 32:
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY is unset, a placeholder, or too short. Generate one:\n"
+        "  python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -113,9 +129,17 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 30,
 }
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+# Never all-origins: this API is token-authenticated and drives a shared X
+# session, so an arbitrary origin must not be able to call it.
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
-    o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o
+    o
+    for o in os.environ.get(
+        # :5173 = vite dev server, :8080 = nginx frontend in compose.
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:8080",
+    ).split(",")
+    if o
 ]
 
 # Celery / Redis

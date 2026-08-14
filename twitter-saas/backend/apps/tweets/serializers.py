@@ -108,18 +108,11 @@ class FetchRunSerializer(serializers.ModelSerializer):
         ]
 
 
-_SECRET = ("cookie", "authorization", "bearer", "csrf", "ct0", "auth_token")
+from apps.fetching.redaction import redact_text as _redact_text  # noqa: E402
 
-
-def _redact_text(value: str) -> str:
-    lines = []
-    for line in str(value or "").splitlines():
-        lower = line.lower()
-        if any(token in lower for token in _SECRET):
-            lines.append("[redacted]")
-        else:
-            lines.append(line)
-    return "\n".join(lines)
+# Redaction now happens before the excerpt is written (apps.fetching.runner), so
+# this read-time pass only still matters for rows stored before that change --
+# and for the admin, which renders log_excerpt without going through DRF.
 
 
 class FetchRunDetailSerializer(FetchRunSerializer):

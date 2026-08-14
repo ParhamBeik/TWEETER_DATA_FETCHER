@@ -178,6 +178,12 @@ def purge_expired_search_tweets() -> int:
 
 
 def reap_orphaned_fetch_runs() -> int:
+    """Fail runs whose worker died, and sweep the scratch dirs they left behind.
+
+    A SIGKILLed worker skips the cleanup() in the caller's finally, stranding a
+    /tmp dir that contains live X cookies and a bearer token.
+    """
+    runner.sweep_stale_scratch_dirs()
     cutoff = timezone.now() - timedelta(seconds=settings.FETCH_CYCLE_TIMEOUT_SECONDS)
     return FetchRun.objects.filter(status="running", started_at__lt=cutoff).update(
         status="failed", finished_at=timezone.now()
