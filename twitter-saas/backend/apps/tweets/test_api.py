@@ -388,3 +388,39 @@ def test_fetch_run_detail_includes_log_excerpt(client_user):
     )
     data = client.get("/api/runs/run-detail/").data
     assert data["log_excerpt"] == "page 1 http"
+
+
+@pytest.mark.django_db
+def test_undated_tweet_is_not_fabricated_and_does_not_stay_pinned(client_user):
+    """An unparseable X timestamp must not be fabricated into storage or hidden.
+
+    created_at stays NULL and the raw string is kept; the feed orders on
+    Coalesce(created_at, ingested_at), so an undated tweet is placed at the time
+    we actually saw it. The old behaviour stored a fabricated now(), which pinned
+    it above real content permanently -- here it is overtaken by the next arrival.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+
+    undated = upsert_tweet(
+        {"rest_id": "undated", "author_id": "1", "account": "jack",
+         "text": "no date", "created_at": "not-a-real-timestamp"}
+    )
+    assert undated.created_at is None, "unparseable timestamps must not be fabricated"
+    assert undated.raw_created_at == "not-a-real-timestamp", "original string is kept"
+
+    # Pin arrival to two hours ago so the ordering is decided by the data, not by
+    # sub-second timing between the two inserts.
+    seen_at = timezone.now() - timedelta(hours=2)
+    Tweet.objects.filter(pk=undated.pk).update(ingested_at=seen_at)
+
+    # A tweet genuinely posted after we saw the undated one must outrank it.
+    _tweet("jack", "newer", timezone.now().strftime("%a %b %d %H:%M:%S +0000 %Y"))
+
+    ids = [t["tweet_id"] for t in client.get("/api/feed/").data["results"]]
+    assert "undated" in ids, "an undated tweet must not vanish from the feed"
+    assert ids[0] == "newer", "an undated tweet must not stay pinned above newer content"

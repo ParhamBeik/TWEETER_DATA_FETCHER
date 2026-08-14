@@ -29,10 +29,15 @@ def _task_id() -> str:
 
 
 @contextmanager
-def _cycle_lock(name: str, ttl: int):
-    """Skip overlapping beat ticks. TTL is a crash backstop; release in finally."""
+def _cycle_lock(name: str):
+    """Skip overlapping beat ticks. Release in finally; TTL is only a crash backstop.
+
+    The TTL must outlive the work it guards, so it is the subprocess wall-clock
+    ceiling -- never the beat interval. A beat-interval TTL expires mid-cycle and
+    lets the next tick start a second fetcher against the shared X session.
+    """
     key = f"fetch_cycle_lock:{name}"
-    acquired = cache.add(key, "1", timeout=max(ttl, 60))
+    acquired = cache.add(key, "1", timeout=settings.FETCH_CYCLE_TIMEOUT_SECONDS + 60)
     try:
         yield acquired
     finally:
@@ -94,17 +99,27 @@ def _run_cycle(
 
 @shared_task(name="apps.fetching.tasks.fetch_account_historical")
 def fetch_account_historical(handle: str) -> int:
-    return _run_and_ingest(HISTORICAL_MODULE, ["--only", handle], "historical", handle)
+    # Locked per handle: this endpoint is user-triggerable, and every run spends
+    # the one shared X session's rate budget. Repeat requests collapse.
+    with _cycle_lock(f"fetch_account_historical:{handle}") as acquired:
+        if not acquired:
+            logger.warning("fetch_account_historical(%s): already running, skipped", handle)
+            return 0
+        return _run_and_ingest(HISTORICAL_MODULE, ["--only", handle], "historical", handle)
 
 
 @shared_task(name="apps.fetching.tasks.fetch_account_live")
 def fetch_account_live(handle: str) -> int:
-    return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live", handle)
+    with _cycle_lock(f"fetch_account_live:{handle}") as acquired:
+        if not acquired:
+            logger.warning("fetch_account_live(%s): already running, skipped", handle)
+            return 0
+        return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live", handle)
 
 
 @shared_task(name="apps.fetching.tasks.poll_live_all")
 def poll_live_all() -> int:
-    with _cycle_lock("poll_live_all", settings.FETCH_LIVE_INTERVAL_SECONDS) as acquired:
+    with _cycle_lock("poll_live_all") as acquired:
         if not acquired:
             logger.warning("poll_live_all: skipped overlapping cycle")
             return 0
@@ -114,9 +129,7 @@ def poll_live_all() -> int:
 
 @shared_task(name="apps.fetching.tasks.backfill_historical_all")
 def backfill_historical_all() -> int:
-    with _cycle_lock(
-        "backfill_historical_all", settings.FETCH_HISTORICAL_INTERVAL_SECONDS
-    ) as acquired:
+    with _cycle_lock("backfill_historical_all") as acquired:
         if not acquired:
             logger.warning("backfill_historical_all: skipped overlapping cycle")
             return 0
@@ -140,7 +153,7 @@ def run_search(search_id: int) -> int:
 
 @shared_task(name="apps.fetching.tasks.repoll_searches")
 def repoll_searches() -> int:
-    with _cycle_lock("repoll_searches", settings.FETCH_SEARCH_INTERVAL_SECONDS) as acquired:
+    with _cycle_lock("repoll_searches") as acquired:
         if not acquired:
             logger.warning("repoll_searches: skipped overlapping cycle")
             return 0
