@@ -277,11 +277,17 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
         report_summaries.append({"file": report_file.name, **report_summary})
 
     by_status = http_summary.get("by_status_code", {}) if isinstance(http_summary, dict) else {}
+    no_evidence = not report_summaries
     if int(by_status.get("401", 0) or 0) or int(by_status.get("403", 0) or 0):
         status = "auth_required"
     elif return_code != 0 or status_counts["failed"]:
         status = "failed"
     elif status_counts["partial"]:
+        status = "partial"
+    elif no_evidence:
+        # Exit 0 but the pipeline wrote no per-target report, so nothing is known
+        # to have been fetched. Reporting "completed" here is how a run that did
+        # nothing used to look identical to a healthy one.
         status = "partial"
     else:
         status = "completed"
@@ -291,6 +297,7 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
         "recent_events": recent_events,
         "reports": report_summaries,
         "status_counts": dict(status_counts),
+        **({"status_reason": "no_reports_written"} if no_evidence else {}),
     }, failure_ledger, status
 
 

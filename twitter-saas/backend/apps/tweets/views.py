@@ -7,6 +7,7 @@ from datetime import timedelta
 from io import StringIO
 
 from django.db import connection
+from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -19,7 +20,11 @@ from rest_framework.views import APIView
 
 from apps.fetching.accounts import clamp_priority, clear_live_quarantine, live_state_map
 
-from config.pagination import FetchRunCursorPagination
+from config.pagination import (
+    CreatedAtCursorPagination,
+    FetchRunCursorPagination,
+    StandardCursorPagination,
+)
 
 from .models import FetchRun, Search, Tweet, TweetMetric, TwitterUser
 from .serializers import (
@@ -33,6 +38,18 @@ from .serializers import (
 
 def _normalize_handle(raw: str) -> str:
     return (raw or "").strip().lstrip("@").lower()
+
+
+def with_feed_ts(qs):
+    """Annotate the cursor-ordering field used by StandardCursorPagination.
+
+    `created_at` is when X says the tweet was posted and is nullable when the
+    timestamp will not parse; `ingested_at` is when we saw it and is never null.
+    Coalescing gives a non-null, monotonic ordering key, so an undated tweet
+    sorts by when it arrived instead of being fabricated a "now" timestamp (which
+    pinned it to the top of the feed forever) or dropped from the feed entirely.
+    """
+    return qs.annotate(feed_ts=Coalesce("created_at", "ingested_at"))
 
 
 def feed_queryset(params):
@@ -78,12 +95,9 @@ def feed_queryset(params):
             qs = qs.annotate(_search=SearchVector("text")).filter(_search=query)
         else:
             qs = qs.filter(text__icontains=query)
-    return (
-        qs.distinct()
-        .select_related("author")
-        .defer("payload")
-        .order_by("-created_at", "-id")
-    )
+    return with_feed_ts(
+        qs.distinct().select_related("author").defer("payload")
+    ).order_by("-feed_ts", "-id")
 
 
 class FeedView(ListAPIView):
@@ -102,12 +116,9 @@ class AccountTimelineView(ListAPIView):
 
     def get_queryset(self):
         handle = _normalize_handle(self.kwargs["handle"])
-        return (
-            Tweet.objects.filter(account=handle)
-            .select_related("author")
-            .defer("payload")
-            .order_by("-created_at", "-id")
-        )
+        return with_feed_ts(
+            Tweet.objects.filter(account=handle).select_related("author").defer("payload")
+        ).order_by("-feed_ts", "-id")
 
 
 class AccountViewSet(viewsets.ModelViewSet):
@@ -226,6 +237,9 @@ class SearchViewSet(viewsets.ModelViewSet):
 
     serializer_class = SearchSerializer
     http_method_names = ["get", "post", "patch", "head", "options"]
+    # Searches paginate on their own non-null created_at; only the `results`
+    # action returns Tweets and needs the feed_ts-ordered paginator.
+    pagination_class = CreatedAtCursorPagination
 
     def get_queryset(self):
         qs = Search.objects.all()
@@ -248,15 +262,15 @@ class SearchViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def results(self, request, pk=None):
         search = self.get_object()
-        tweets = (
+        tweets = with_feed_ts(
             Tweet.objects.filter(search_results__search=search)
             .select_related("author")
             .defer("payload")
-            .order_by("search_results__rank", "-created_at")
-        )
-        page = self.paginate_queryset(tweets)
+        ).order_by("search_results__rank", "-feed_ts")
+        paginator = StandardCursorPagination()
+        page = paginator.paginate_queryset(tweets, request, view=self)
         serializer = TweetSerializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+        return paginator.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=["post"])
     def refresh(self, request, pk=None):

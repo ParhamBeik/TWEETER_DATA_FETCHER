@@ -100,9 +100,10 @@ def _tweet_row(item: dict, authors_by_handle: dict[str, TwitterUser]) -> Tweet |
     tweet_id = str(item.get("rest_id") or item.get("id") or item.get("tweet_id") or "")
     author_data = item.get("author", {}) if isinstance(item.get("author"), dict) else {}
     account = str(item.get("account") or author_data.get("handle") or "unknown").lstrip("@").lower()
+    # Leave NULL when the timestamp is unparseable. Stamping now() would sort the
+    # tweet to the top of the feed forever, and raw_created_at preserves the
+    # original string for diagnosis.
     created_at = _parse_created_at(item.get("created_at") or item.get("raw_timestamp"))
-    if created_at is None:
-        created_at = datetime.now(timezone.utc)
     return Tweet(
         dedup_key=key,
         tweet_id=tweet_id,
