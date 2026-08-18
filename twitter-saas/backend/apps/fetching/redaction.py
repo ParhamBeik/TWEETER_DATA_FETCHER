@@ -28,7 +28,7 @@ _KV = re.compile(
     r'(?i)("?\b(?:' + "|".join(re.escape(n) for n in _SECRET_NAMES) + r')\b"?\s*[:=]\s*)'
     r'("?)([^\s",;})\]]+)',
 )
-_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/]+=*")
+_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/%]+=*")
 
 # Below this length a "secret" is not distinctive enough to blind-replace; doing
 # so would mangle unrelated output.

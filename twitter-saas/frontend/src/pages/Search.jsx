@@ -15,6 +15,7 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
+  const [depth, setDepth] = useState(1);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
 
@@ -65,7 +66,7 @@ export default function Search() {
     try {
       await api("/searches/", {
         method: "POST",
-        body: { raw_query: query, name: name || query.slice(0, 60), product },
+        body: { raw_query: query, name: name || query.slice(0, 60), product, pagination_depth: depth },
       });
       setStatus("Search queued. Results appear once the job runs.");
       setQuery("");
@@ -87,7 +88,10 @@ export default function Search() {
 
   return (
     <section className="search">
-      <h2>Search</h2>
+      <header>
+        <p className="eyebrow">Searches</p>
+        <h2 className="page-title">Saved archive queries</h2>
+      </header>
       <RunStatus />
 
       <div className="tabs">
@@ -108,6 +112,9 @@ export default function Search() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <select value={depth} onChange={(e) => setDepth(Number(e.target.value))}>
+          {[1, 2, 3].map((value) => <option key={value} value={value}>depth {value}</option>)}
+        </select>
         <input
           placeholder="raw query, e.g. (Iran OR Gold) lang:en min_faves:1000"
           value={query}
@@ -126,7 +133,7 @@ export default function Search() {
           {searches.map((s) => (
             <li key={s.id} className={selected?.id === s.id ? "active" : ""}>
               <button className="link" onClick={() => openResults(s)}>
-                {s.name || s.slug}
+                {s.name || s.slug} <small className="muted">· depth {s.pagination_depth}</small>
               </button>
               <button className="link small" onClick={() => refresh(s)}>
                 refresh

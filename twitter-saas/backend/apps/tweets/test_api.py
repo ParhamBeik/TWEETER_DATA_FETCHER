@@ -8,7 +8,7 @@ from django.core.management import call_command
 from rest_framework.test import APIClient
 
 from apps.fetching.ingest import upsert_tweet
-from apps.tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
+from apps.tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser, XSession
 
 
 @pytest.fixture
@@ -176,6 +176,35 @@ def test_search_create_derives_name_from_raw_query(client_user):
 
 
 @pytest.mark.django_db
+def test_session_api_returns_names_only_and_updates_active_session(client_user):
+    client, _ = client_user
+    FetchRun.objects.create(run_id="auth-needed", subsystem="live", status="auth_required")
+
+    updated = client.post(
+        "/api/session/",
+        {"cookies": {"auth_token": "never-return-this"}, "headers": {"authorization": "Bearer secret"}},
+        format="json",
+    )
+    health = client.get("/api/session/")
+
+    assert updated.status_code == 200
+    assert health.data["configured"] is True
+    assert health.data["cookie_names"] == ["auth_token"]
+    assert health.data["header_names"] == ["authorization"]
+    assert "never-return-this" not in str(health.data)
+    assert XSession.objects.get(name="default").cookies["auth_token"] == "never-return-this"
+
+
+@pytest.mark.django_db
+def test_session_api_rejects_non_object_credentials(client_user):
+    client, _ = client_user
+
+    response = client.post("/api/session/", {"cookies": [], "headers": {}}, format="json")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
 def test_backfill_tweet_payloads_refreshes_author_from_stored_payload():
     """Sparse rows gain author fields by re-upserting Tweet.payload (no X calls)."""
     tweet = Tweet.objects.create(
@@ -258,33 +287,6 @@ def test_export_jsonl_shares_feed_filters(client_user):
     body = b"".join(resp.streaming_content).decode()
     lines = [line for line in body.splitlines() if line]
     assert json.loads(lines[0])["tweet_id"] == "1"
-
-
-@pytest.mark.django_db
-def test_trending_ranks_by_engagement_delta(client_user):
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from apps.tweets.models import TweetMetric
-
-    client, _ = client_user
-    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
-    tweet = upsert_tweet(
-        {
-            "rest_id": "9",
-            "author_id": "1",
-            "account": "jack",
-            "text": "hot",
-            "likes": 10,
-            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
-        }
-    )
-    now = timezone.now()
-    TweetMetric.objects.filter(tweet=tweet).update(captured_at=now - timedelta(hours=2))
-    TweetMetric.objects.create(tweet=tweet, likes=110, retweets=0, views=0, captured_at=now)
-    ids = [t["tweet_id"] for t in client.get("/api/trending/").data]
-    assert ids == ["9"]
 
 
 @pytest.mark.django_db

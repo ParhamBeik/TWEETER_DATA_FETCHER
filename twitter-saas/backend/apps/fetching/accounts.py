@@ -55,7 +55,7 @@ def live_state_map() -> dict[str, dict]:
     return {
         str(handle).lower(): state
         for handle, state in row.data.items()
-        if isinstance(state, dict)
+        if isinstance(state, dict) and not str(handle).startswith("_")
     }
 
 

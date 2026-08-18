@@ -3,13 +3,11 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import timedelta
 from io import StringIO
 
 from django.db import connection
 from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
-from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -26,7 +24,7 @@ from config.pagination import (
     StandardCursorPagination,
 )
 
-from .models import FetchRun, Search, Tweet, TweetMetric, TwitterUser
+from .models import FetchRun, Search, Tweet, TwitterUser, XSession
 from .serializers import (
     AccountOpsSerializer,
     FetchRunDetailSerializer,
@@ -232,6 +230,43 @@ class CycleView(APIView):
         return Response({"status": "queued", "subsystem": subsystem}, status=status.HTTP_202_ACCEPTED)
 
 
+class XSessionView(APIView):
+    """Read safe session health or replace the active operator session."""
+
+    def get(self, request):
+        from apps.fetching.session import session_health
+
+        return Response(session_health())
+
+    def post(self, request):
+        from apps.fetching.session import (
+            normalize_session_source,
+            validate_config_overrides,
+            validate_session_payload,
+        )
+
+        # Accepts a whole exported config.json (api_cookies/api_auth) or the
+        # session shape (cookies/headers); session-bound config keys are kept,
+        # everything else falls back to the seed template.
+        payload = normalize_session_source(request.data)
+        try:
+            cookies, headers = validate_session_payload(payload)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        overrides = validate_config_overrides(payload)
+        defaults = {"cookies": cookies, "headers": headers, "active": True}
+        if overrides:
+            defaults["config_overrides"] = overrides
+        session, _ = XSession.objects.update_or_create(name="default", defaults=defaults)
+        XSession.objects.exclude(pk=session.pk).update(active=False)
+        return Response({
+            "status": "updated",
+            "cookie_count": len(cookies),
+            "header_count": len(headers),
+            "override_keys": sorted(overrides),
+        })
+
+
 class SearchViewSet(viewsets.ModelViewSet):
     """List/create searches; creating one enqueues an on-demand fetch."""
 
@@ -282,34 +317,6 @@ class SearchViewSet(viewsets.ModelViewSet):
 
         run_search.delay(search.id)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
-
-
-class TrendingView(ListAPIView):
-    """Tweets ranked by engagement delta per hour over the last 24 hours."""
-
-    serializer_class = TweetSerializer
-    pagination_class = None
-
-    def get_queryset(self):
-        window = timezone.now() - timedelta(hours=24)
-        series: dict[int, list[TweetMetric]] = {}
-        for metric in TweetMetric.objects.filter(captured_at__gte=window).order_by(
-            "tweet_id", "captured_at"
-        ):
-            series.setdefault(metric.tweet_id, []).append(metric)
-        ranked: list[tuple[float, int]] = []
-        for tweet_id, points in series.items():
-            if len(points) < 2:
-                continue
-            first, last = points[0], points[-1]
-            hours = max((last.captured_at - first.captured_at).total_seconds() / 3600, 1 / 60)
-            start = (first.likes or 0) + (first.retweets or 0) + (first.views or 0)
-            end = (last.likes or 0) + (last.retweets or 0) + (last.views or 0)
-            ranked.append(((end - start) / hours, tweet_id))
-        ranked.sort(reverse=True)
-        ids = [tweet_id for _rate, tweet_id in ranked[:50]]
-        tweets = {tweet.id: tweet for tweet in Tweet.objects.filter(id__in=ids).select_related("author").defer("payload")}
-        return [tweets[tweet_id] for tweet_id in ids if tweet_id in tweets]
 
 
 class ExportView(APIView):

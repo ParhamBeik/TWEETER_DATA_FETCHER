@@ -9,6 +9,8 @@ function formatWhen(value) {
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
+  const [analytics, setAnalytics] = useState({});
+  const [compare, setCompare] = useState([]);
   const [handle, setHandle] = useState("");
   const [priority, setPriority] = useState(7);
   const [selected, setSelected] = useState(null);
@@ -20,8 +22,9 @@ export default function Accounts() {
 
   async function loadAccounts() {
     try {
-      const data = await api("/accounts/");
+      const [data, metrics] = await Promise.all([api("/accounts/"), api("/analytics/accounts/")]);
       setAccounts(Array.isArray(data) ? data : data.results || []);
+      setAnalytics(Object.fromEntries((metrics.results || []).map((row) => [row.account, row])));
     } catch (e) {
       setError(e.message);
     }
@@ -87,9 +90,18 @@ export default function Accounts() {
     }
   }
 
+  function toggleCompare(handle) {
+    setCompare((current) => current.includes(handle)
+      ? current.filter((item) => item !== handle)
+      : [...current, handle].slice(-4));
+  }
+
   return (
     <section className="accounts">
-      <h2>Accounts</h2>
+      <header>
+        <p className="eyebrow">Accounts</p>
+        <h2 className="page-title">Roster, tiers, and collection health</h2>
+      </header>
       <form className="follow-form" onSubmit={addAccount}>
         <input
           placeholder="handle, e.g. elonmusk"
@@ -109,6 +121,17 @@ export default function Accounts() {
       </form>
       {status && <p className="status">{status}</p>}
       {error && <p className="error">{error}</p>}
+      {compare.length > 0 && (
+        <article className="panel comparison">
+          <h3>Compare accounts</h3>
+          <div className="comparison-grid">
+            {compare.map((handle) => {
+              const metric = analytics[handle] || {};
+              return <div key={handle}><strong>@{handle}</strong><br /><span className="muted">{metric.posts || 0} posts · {Math.round(metric.average_engagement || 0).toLocaleString()} avg engagement</span></div>;
+            })}
+          </div>
+        </article>
+      )}
 
       <div className="split wide">
         <div className="account-table-wrap">
@@ -121,6 +144,8 @@ export default function Accounts() {
                 <th>Last checked</th>
                 <th>Status</th>
                 <th>Tweets</th>
+                <th>Engagement</th>
+                <th>Compare</th>
                 <th />
               </tr>
             </thead>
@@ -163,6 +188,8 @@ export default function Accounts() {
                     {a.last_status && <div className="muted">{a.last_status}</div>}
                   </td>
                   <td>{a.recent_tweet_count}</td>
+                  <td>{Math.round(analytics[a.handle]?.average_engagement || 0).toLocaleString()}</td>
+                  <td><input aria-label={`Compare @${a.handle}`} type="checkbox" checked={compare.includes(a.handle)} onChange={() => toggleCompare(a.handle)} /></td>
                   <td className="account-actions">
                     <button className="link small" onClick={() => fetchNow(a.handle)}>
                       fetch

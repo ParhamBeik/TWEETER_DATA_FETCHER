@@ -17,6 +17,21 @@ function Media({ items = [] }) {
               muted={item.type === "animated_gif"}
               playsInline
               poster={item.url}
+              // X's video CDN 403s hotlinked MP4s. Without this the element keeps
+              // its layout box and leaves a tall blank hole in the feed; fall back
+              // to the poster frame, which serves fine.
+              onError={(e) => {
+                const el = e.currentTarget;
+                if (item.url) {
+                  const img = document.createElement("img");
+                  img.src = item.url;
+                  img.loading = "lazy";
+                  img.alt = item.alt_text || "Tweet media";
+                  el.replaceWith(img);
+                } else {
+                  el.style.display = "none";
+                }
+              }}
             >
               <source src={variants[0].url} type="video/mp4" />
             </video>

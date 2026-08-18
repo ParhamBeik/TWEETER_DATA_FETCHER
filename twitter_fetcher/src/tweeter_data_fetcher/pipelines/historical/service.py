@@ -348,27 +348,10 @@ def run_v4(
 
     console.phase_banner("Resolve user IDs", pass_index=1, pass_total=3, account_count=len(accounts))
     engine.recorder.emit_phase_start(phase="resolve_user_ids", accounts=len(accounts), pass_index=1, pass_total=3)
-    shared_bootstrap = None
-    try:
-        shared_bootstrap = engine.bootstrap_browser_context(username=accounts[0])
-    except Exception as exc:
-        console.warning(f"Shared browser bootstrap failed; using per-account fallback: {str(exc)[:200]}")
     for username in accounts:
         storage.ensure_account_state(username)
         report["accounts"].setdefault(username, {"endpoints": {}})
         try:
-            bootstrap = (
-                shared_bootstrap
-                if shared_bootstrap is not None and shared_bootstrap.ok
-                else engine.bootstrap_browser_context(username=username)
-            )
-            report["accounts"][username]["browser_bootstrap"] = {
-                "ok": bootstrap.ok,
-                "route": bootstrap.route,
-                "support_request_count": bootstrap.support_request_count,
-                "shared": bootstrap is shared_bootstrap,
-                "error": bootstrap.error,
-            }
             user_ids[username] = engine._get_user_id(username)
         except Exception as exc:
             reason = f"UserByScreenName failed: {exc}"

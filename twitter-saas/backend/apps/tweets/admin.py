@@ -27,6 +27,14 @@ class TweetAdmin(admin.ModelAdmin):
     search_fields = ("tweet_id", "account", "text")
     date_hierarchy = "created_at"
 
+    def get_queryset(self, request):
+        from .views import with_feed_ts
+
+        return with_feed_ts(super().get_queryset(request))
+
+    def get_ordering(self, request):
+        return ("-feed_ts", "-id")
+
 
 @admin.register(Search)
 class SearchAdmin(admin.ModelAdmin):

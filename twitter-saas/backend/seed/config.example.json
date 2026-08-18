@@ -1,22 +1,22 @@
 {
   "api_cookies": {
-    "auth_token": "REPLACE_ME",
-    "ct0": "REPLACE_ME",
-    "guest_id": "REPLACE_ME",
-    "kdt": "REPLACE_ME",
-    "twid": "REPLACE_ME"
+    "auth_token": "",
+    "ct0": "",
+    "guest_id": "",
+    "kdt": "",
+    "twid": ""
   },
   "api_auth": {
-    "bearer_token": "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+    "bearer_token": ""
   },
   "api_headers": {
     "x-client-transaction-id": ""
   },
   "api_config": {
     "user_by_screen_name_query_id": "2qvSHpkWTMS9i0zJAwDNiA",
-    "user_tweets_query_id": "hr4gzZONlq23okjU8fIe_A",
-    "user_tweets_and_replies_query_id": "FIFgycIi-CNJcV0R-135Uw",
-    "search_timeline_query_id": "Bcw3RzK-PatNAmbnw54hFw",
+    "user_tweets_query_id": "6r5OLCC_wFH4CpRyXKuAmQ",
+    "user_tweets_and_replies_query_id": "klja8a2iJX_3to5RdfVlgw",
+    "search_timeline_query_id": "hz_94eVAtrtQo_vO3my7Rw",
     "tweet_detail_query_id": "",
     "cursor_error_max_retries": 3,
     "default_timeout_seconds": 20,
@@ -29,15 +29,18 @@
       "2qvSHpkWTMS9i0zJAwDNiA"
     ],
     "UserTweets": [
+      "6r5OLCC_wFH4CpRyXKuAmQ",
       "hr4gzZONlq23okjU8fIe_A"
     ],
     "UserTweetsAndReplies": [
+      "klja8a2iJX_3to5RdfVlgw",
       "FIFgycIi-CNJcV0R-135Uw"
     ],
+    "TweetDetail": [],
     "SearchTimeline": [
+      "hz_94eVAtrtQo_vO3my7Rw",
       "Bcw3RzK-PatNAmbnw54hFw"
-    ],
-    "TweetDetail": []
+    ]
   },
   "real_transaction_ids_by_endpoint": {
     "UserByScreenName": [],

@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.tweets",
     "apps.fetching",
+    "apps.analytics",
 ]
 
 MIDDLEWARE = [
@@ -168,9 +169,9 @@ else:
     }
 
 # Fetcher runtime knobs.
-# A UserTweets-only cycle measures ~14 min for 64 accounts, so the live interval
-# must leave headroom above that; see diagnostics/reports for the measurements.
-FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "1800"))
+# Redis _cycle_lock prevents overlapping workers, so ticks may be shorter than
+# the cycle timeout. The live scheduler admits only the current rate-budget slice.
+FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "300"))
 FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "21600"))
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
@@ -178,13 +179,3 @@ FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "1
 SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "0") == "1"
-
-# Fail loudly on a config combination that silently drops work. The account cap
-# truncates the tracked set with no record, and a beat interval shorter than the
-# cycle ceiling lets a second fetcher start against the one shared X session.
-if FETCH_LIVE_INTERVAL_SECONDS < FETCH_CYCLE_TIMEOUT_SECONDS:
-    raise ImproperlyConfigured(
-        f"FETCH_LIVE_INTERVAL_SECONDS ({FETCH_LIVE_INTERVAL_SECONDS}) must be >= "
-        f"FETCH_CYCLE_TIMEOUT_SECONDS ({FETCH_CYCLE_TIMEOUT_SECONDS}); otherwise a "
-        "beat tick can start a second fetcher while the first is still running."
-    )

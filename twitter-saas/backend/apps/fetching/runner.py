@@ -83,9 +83,12 @@ def _search_def(search) -> dict:
         "product": search.product,
         "preserve_exact_query": True,
         "raw_query": search.raw_query,
-        "pagination_depth": 1,
+        "pagination_depth": max(1, int(search.pagination_depth)),
         "max_retries": 3,
-        "rolling_hours": 24,
+        # The rolling window is a hard pagination stop: runs that did reach page
+        # 2-3 ended on `success_search_window_crossed`, not on running out of
+        # results. Hardcoding 24h capped a search whose query spans months.
+        "rolling_hours": max(1, int(search.rolling_hours)),
     }
 
 
@@ -110,6 +113,14 @@ def _write_config(root: Path, searches: list | None = None) -> Path:
         base = json.loads(example.read_text(encoding="utf-8"))
     session = _active_session()
     if session:
+        # Session-bound config (captured tx-id pools, query-id pools) first, so
+        # the seed template supplies only the values the session does not carry.
+        if isinstance(session.config_overrides, dict):
+            for key, value in session.config_overrides.items():
+                if isinstance(value, dict) and isinstance(base.get(key), dict):
+                    base[key] = {**base[key], **value}
+                else:
+                    base[key] = value
         headers = {str(key): str(value) for key, value in session.headers.items() if value}
         base["api_cookies"] = {str(key): str(value) for key, value in session.cookies.items() if value}
         base["api_headers"] = headers

@@ -5,8 +5,9 @@ import Feed from "./pages/Feed";
 import Search from "./pages/Search";
 import Accounts from "./pages/Accounts";
 import Cycles from "./pages/Cycles";
-import Trending from "./pages/Trending";
 import Login from "./pages/Login";
+import Pulse from "./pages/Pulse";
+import Analyze from "./pages/Analyze";
 
 function RequireAuth({ children }) {
   return getToken() ? children : <Navigate to="/login" replace />;
@@ -25,14 +26,14 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Fetcher</h1>
+        <Link className="brand" to="/">Signal Archive</Link>
         {authed && (
           <nav>
-            <Link to="/">Feed</Link>
-            <Link to="/trending">Trending</Link>
+            <Link to="/">Pulse</Link>
+            <Link to="/feed">Feed</Link>
+            <Link to="/analyze">Analyze</Link>
             <Link to="/accounts">Accounts</Link>
-            <Link to="/cycles">Cycles</Link>
-            <Link to="/search">Search</Link>
+            <Link to="/ops">Ops</Link>
             <button className="link" onClick={logout}>
               Logout
             </button>
@@ -47,15 +48,23 @@ export default function App() {
             path="/"
             element={
               <RequireAuth>
+                <Pulse />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/feed"
+            element={
+              <RequireAuth>
                 <Feed />
               </RequireAuth>
             }
           />
           <Route
-            path="/trending"
+            path="/analyze"
             element={
               <RequireAuth>
-                <Trending />
+                <Analyze />
               </RequireAuth>
             }
           />
@@ -68,7 +77,7 @@ export default function App() {
             }
           />
           <Route
-            path="/cycles"
+            path="/ops"
             element={
               <RequireAuth>
                 <Cycles />
@@ -76,10 +85,18 @@ export default function App() {
             }
           />
           <Route
-            path="/search"
+            path="/searches"
             element={
               <RequireAuth>
                 <Search />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="*"
+            element={
+              <RequireAuth>
+                <Pulse />
               </RequireAuth>
             }
           />

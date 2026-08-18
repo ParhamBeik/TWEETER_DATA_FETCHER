@@ -85,7 +85,7 @@ class TweetMetric(models.Model):
     captured_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["tweet", "-captured_at"])]
+        indexes = [models.Index(fields=["tweet", "-captured_at"], name="tweets_twee_tweet_i_7c1e4a_idx")]
 
 
 class Search(models.Model):
@@ -97,6 +97,10 @@ class Search(models.Model):
     slug = models.SlugField(max_length=255)
     raw_query = models.TextField()
     product = models.CharField(max_length=10, choices=PRODUCT_CHOICES, default="Top")
+    pagination_depth = models.PositiveSmallIntegerField(default=1)
+    # How far back a run keeps paginating. This is the stop condition that ends
+    # deep search runs, so it belongs next to depth rather than hardcoded.
+    rolling_hours = models.PositiveIntegerField(default=24)
     enabled = models.BooleanField(default=True)
     last_run_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -202,5 +206,10 @@ class XSession(models.Model):
     name = models.CharField(max_length=64, default="default", unique=True)
     cookies = models.JSONField(default=dict, blank=True)
     headers = models.JSONField(default=dict, blank=True)
+    # Session-bound config the engine reads from config.json but which must never
+    # live in the tracked seed template -- chiefly the captured
+    # `real_transaction_ids_by_endpoint` pools, which are signed per browser
+    # session. Merged over seed/config.example.json by runner._write_config.
+    config_overrides = models.JSONField(default=dict, blank=True)
     active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)

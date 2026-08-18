@@ -10,7 +10,7 @@ from .views import (
     FetchRunDetailView,
     FetchRunListView,
     SearchViewSet,
-    TrendingView,
+    XSessionView,
 )
 
 router = DefaultRouter()
@@ -19,11 +19,11 @@ router.register("accounts", AccountViewSet, basename="account")
 
 urlpatterns = [
     path("feed/", FeedView.as_view(), name="feed"),
-    path("trending/", TrendingView.as_view(), name="trending"),
     path("export/", ExportView.as_view(), name="export"),
     path("runs/", FetchRunListView.as_view(), name="fetch-runs"),
     path("runs/<str:run_id>/", FetchRunDetailView.as_view(), name="fetch-run-detail"),
     path("cycles/", CycleView.as_view(), name="cycles"),
+    path("session/", XSessionView.as_view(), name="x-session"),
     path("accounts/<str:handle>/tweets/", AccountTimelineView.as_view(), name="account-timeline"),
 ]
 
