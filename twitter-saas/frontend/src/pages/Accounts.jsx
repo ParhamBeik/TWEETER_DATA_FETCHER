@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
@@ -19,6 +19,10 @@ export default function Accounts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  // Distinguishes "still fetching the roster" from "the roster is genuinely
+  // empty"; without it the table flashed "No tracked accounts yet" on every load.
+  const [rosterLoaded, setRosterLoaded] = useState(false);
+  const activeHandle = useRef(null);
 
   async function loadAccounts() {
     try {
@@ -27,6 +31,8 @@ export default function Accounts() {
       setAnalytics(Object.fromEntries((metrics.results || []).map((row) => [row.account, row])));
     } catch (e) {
       setError(e.message);
+    } finally {
+      setRosterLoaded(true);
     }
   }
 
@@ -70,23 +76,29 @@ export default function Accounts() {
   }
 
   async function openTimeline(h, url) {
-    if (loading) return;
+    // Only block duplicate page-appends. Blocking on `loading` outright meant
+    // clicking a second account while the first timeline loaded did nothing.
+    if (url && loading) return;
     if (!url) {
       setSelected(h);
       setTweets([]);
       setNext(null);
     }
+    // Switching accounts mid-load must not let the slower response for the
+    // previous handle paint into the newly selected timeline.
+    activeHandle.current = h;
     setLoading(true);
     setError("");
     try {
       const path = url ? url.replace(/^.*\/api/, "") : `/accounts/${h}/tweets/`;
       const data = await api(path);
+      if (activeHandle.current !== h) return;
       setTweets((prev) => (url ? [...prev, ...data.results] : data.results));
       setNext(data.next);
     } catch (e) {
-      setError(e.message);
+      if (activeHandle.current === h) setError(e.message);
     } finally {
-      setLoading(false);
+      if (activeHandle.current === h) setLoading(false);
     }
   }
 
@@ -104,11 +116,16 @@ export default function Accounts() {
       </header>
       <form className="follow-form" onSubmit={addAccount}>
         <input
+          aria-label="Account handle"
           placeholder="handle, e.g. elonmusk"
           value={handle}
           onChange={(e) => setHandle(e.target.value)}
         />
-        <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+        <select
+          aria-label="Priority tier"
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+        >
           {[1, 2, 3, 4, 5, 6, 7].map((n) => (
             <option key={n} value={n}>
               P{n}
@@ -213,7 +230,10 @@ export default function Accounts() {
               ))}
             </tbody>
           </table>
-          {accounts.length === 0 && <p className="muted">No tracked accounts yet.</p>}
+          {!rosterLoaded && <p className="muted">Loading accounts…</p>}
+          {rosterLoaded && accounts.length === 0 && (
+            <p className="muted">No tracked accounts yet.</p>
+          )}
         </div>
 
         <div className="timeline">

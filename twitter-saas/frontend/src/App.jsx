@@ -32,6 +32,7 @@ export default function App() {
             <Link to="/">Pulse</Link>
             <Link to="/feed">Feed</Link>
             <Link to="/analyze">Analyze</Link>
+            <Link to="/searches">Searches</Link>
             <Link to="/accounts">Accounts</Link>
             <Link to="/ops">Ops</Link>
             <button className="link" onClick={logout}>
