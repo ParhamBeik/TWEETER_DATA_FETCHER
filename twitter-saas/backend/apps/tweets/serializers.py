@@ -95,7 +95,10 @@ class SearchSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Search
-        fields = ["id", "name", "slug", "raw_query", "product", "enabled", "last_run_at", "created_at"]
+        fields = [
+            "id", "name", "slug", "raw_query", "product", "pagination_depth", "rolling_hours",
+            "enabled", "last_run_at", "created_at",
+        ]
         read_only_fields = ["slug", "last_run_at", "created_at"]
 
 

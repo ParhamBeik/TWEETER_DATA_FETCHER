@@ -1,11 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  --bg: #15202b;
-  --panel: #1e2732;
-  --border: #38444d;
-  --text: #e7e9ea;
-  --muted: #8899a6;
-  --accent: #1d9bf0;
-  --error: #f4212e;
+  --bg: #0b1020;
+  --panel: #121a2d;
+  --border: #26334d;
+  --text: #e5edf9;
+  --muted: #91a1bd;
+  --accent: #6ee7d2;
+  --error: #fb7185;
 }
 
 * {
@@ -20,7 +24,7 @@ body {
 }
 
 .app {
-  max-width: 1100px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 0 16px 48px;
 }
@@ -33,13 +37,17 @@ body {
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: var(--bg);
+  background: rgba(11, 16, 32, 0.92);
+  backdrop-filter: blur(18px);
   z-index: 10;
 }
 
-.topbar h1 {
-  font-size: 20px;
-  margin: 0;
+.brand {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-decoration: none;
 }
 
 .topbar nav {
@@ -65,7 +73,7 @@ main {
 button {
   cursor: pointer;
   background: var(--accent);
-  color: white;
+  color: #08201d;
   border: none;
   border-radius: 999px;
   padding: 8px 16px;
@@ -96,6 +104,17 @@ input {
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 14px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 96px;
+  background: #0b1020;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 input:focus {
@@ -167,6 +186,8 @@ input:focus {
   border-bottom: 1px solid var(--border);
   padding: 12px 4px 16px;
   margin-bottom: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
 }
 
 .tweet-context,
@@ -409,6 +430,15 @@ input:focus {
   margin: 12px 0 16px;
 }
 
+.feed-filters {
+  position: sticky;
+  top: 58px;
+  z-index: 5;
+  padding: 10px 0;
+  background: rgba(11, 16, 32, 0.96);
+  backdrop-filter: blur(12px);
+}
+
 .feed-filters input,
 .feed-filters select,
 .cycle-controls select,
@@ -470,6 +500,72 @@ input:focus {
   background: var(--panel);
 }
 
+/* Run rows used to render as "liveall16s" -- flex children with no gap. */
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.run-row .run-target {
+  color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-row .run-ingested {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  min-width: 56px;
+  text-align: right;
+}
+
+.run-row small {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 48px;
+  text-align: right;
+}
+
+.session-state {
+  font-weight: 700;
+  margin: 4px 0 12px;
+}
+.session-state.ok { color: #4ade80; }
+.session-state.bad { color: var(--error); }
+
+.session-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 16px;
+  margin: 0 0 12px;
+}
+
+.session-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.session-facts dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.session-facts dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.session-facts dd.ok { color: #4ade80; }
+.session-facts dd.bad { color: var(--error); }
+
 .log-excerpt {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -479,4 +575,65 @@ input:focus {
   max-height: 360px;
   white-space: pre-wrap;
   font-size: 12px;
+}
+
+.page-title {
+  margin: 0;
+  color: white;
+  font-size: clamp(1.65rem, 3vw, 2.4rem);
+  letter-spacing: -0.04em;
+}
+
+.page-lede {
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 20px;
+}
+
+.panel h3 {
+  margin-top: 0;
+}
+
+.session-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.6fr) 1fr;
+  align-items: start;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.session-panel form {
+  display: grid;
+  gap: 8px;
+}
+
+.comparison {
+  margin: 16px 0;
+}
+
+.comparison-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+@media (max-width: 640px) {
+  .session-panel {
+    grid-template-columns: 1fr;
+  }
 }

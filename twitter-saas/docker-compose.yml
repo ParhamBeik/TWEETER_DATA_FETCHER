@@ -70,7 +70,7 @@ services:
     build:
       context: ..
       dockerfile: twitter-saas/backend/Dockerfile
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=20
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
@@ -83,7 +83,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
     mem_limit: 2g
+    # Chromium's renderer allocates shared memory in /dev/shm; the 64m Docker
+    # default crashes it mid-scroll during deep SearchTimeline capture.
+    shm_size: 1gb
 
   beat:
     build:
@@ -102,6 +111,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
     mem_limit: 256m
 
   frontend:

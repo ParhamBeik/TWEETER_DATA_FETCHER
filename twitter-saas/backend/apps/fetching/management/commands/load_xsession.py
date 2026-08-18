@@ -16,6 +16,11 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.fetching.session import (
+    normalize_session_source,
+    validate_config_overrides,
+    validate_session_payload,
+)
 from apps.tweets.models import XSession
 
 
@@ -48,14 +53,18 @@ class Command(BaseCommand):
         except ValueError as exc:
             raise CommandError(f"invalid session JSON: {exc}") from exc
 
-        cookies = data.get("cookies") or {}
-        headers = data.get("headers") or {}
-        if not isinstance(cookies, dict) or not isinstance(headers, dict):
-            raise CommandError("`cookies` and `headers` must be JSON objects")
+        data = normalize_session_source(data)
+        try:
+            cookies, headers = validate_session_payload(data)
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
+        overrides = validate_config_overrides(data)
 
+        defaults = {"cookies": cookies, "headers": headers, "active": True}
+        if overrides:
+            defaults["config_overrides"] = overrides
         session, created = XSession.objects.update_or_create(
-            name=options["name"],
-            defaults={"cookies": cookies, "headers": headers, "active": True},
+            name=options["name"], defaults=defaults,
         )
         if options["deactivate_others"]:
             XSession.objects.exclude(pk=session.pk).update(active=False)
@@ -64,6 +73,7 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"X session '{session.name}' {verb}: "
-                f"{len(cookies)} cookies, {len(headers)} headers, active={session.active}"
+                f"{len(cookies)} cookies, {len(headers)} headers, "
+                f"overrides={sorted(overrides)}, active={session.active}"
             )
         )

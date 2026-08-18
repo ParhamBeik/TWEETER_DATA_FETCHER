@@ -34,12 +34,9 @@ def resolve_config_path(
             if raw.parts and raw.parts[0] == project_root.name:
                 candidates.append(project_root.parent / raw)
                 candidates.append(project_root / Path(*raw.parts[1:]))
-    candidates.extend(
-        [
-            os.environ.get("TDF_CONFIG"),
-            project_root / "config" / filename,
-        ]
-    )
+    if filename == "config.json":
+        candidates.append(os.environ.get("TDF_CONFIG"))
+    candidates.append(project_root / "config" / filename)
     for candidate in candidates:
         if not candidate:
             continue

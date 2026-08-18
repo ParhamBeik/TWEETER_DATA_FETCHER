@@ -83,7 +83,10 @@ export default function Feed() {
 
   return (
     <section>
-      <h2>Feed</h2>
+      <header>
+        <p className="eyebrow">Feed</p>
+        <h2 className="page-title">The captured stream</h2>
+      </header>
       <RunStatus />
       <form className="feed-filters" onSubmit={apply}>
         <input
