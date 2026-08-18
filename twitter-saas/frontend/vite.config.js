@@ -12,4 +12,16 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.js"],
+    // e2e/ is Playwright's; vitest must not try to collect those specs.
+    exclude: ["node_modules/**", "dist/**", "e2e/**"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{js,jsx}"],
+      exclude: ["src/main.jsx", "src/test/**"],
+    },
+  },
 });

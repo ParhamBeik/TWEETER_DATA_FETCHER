@@ -28,6 +28,9 @@ export default function Cycles() {
       ]);
       setRuns(data.results || []);
       setSession(health);
+      // This view re-polls every 10s. Without clearing, a single transient blip
+      // pinned an error banner to the page for the rest of the session.
+      setError("");
     } catch (e) {
       setError(e.message);
     }
@@ -145,7 +148,11 @@ export default function Cycles() {
         <button type="button" onClick={() => trigger("search")}>
           Run search
         </button>
-        <select value={subsystem} onChange={(e) => setSubsystem(e.target.value)}>
+        <select
+          aria-label="Filter by subsystem"
+          value={subsystem}
+          onChange={(e) => setSubsystem(e.target.value)}
+        >
           <option value="">all subsystems</option>
           <option value="live">live</option>
           <option value="historical">historical</option>
