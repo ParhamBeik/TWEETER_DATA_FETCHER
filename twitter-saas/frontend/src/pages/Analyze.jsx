@@ -39,7 +39,13 @@ export default function Analyze() {
       </header>
       <div className="tabs">
         {tabs.map((name) => (
-          <button className={tab === name ? "tab active" : "tab"} key={name} onClick={() => setTab(name)}>
+          <button
+            type="button"
+            aria-pressed={tab === name}
+            className={tab === name ? "tab active" : "tab"}
+            key={name}
+            onClick={() => setTab(name)}
+          >
             {name}
           </button>
         ))}
