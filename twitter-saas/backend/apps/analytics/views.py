@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.db import connection
-from django.db.models import Avg, Count, Sum
+from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, Q, Sum
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,10 +12,34 @@ from rest_framework.views import APIView
 from apps.tweets.models import FetchRun, Tweet, TwitterUser
 from apps.tweets.serializers import TweetSerializer
 
+# Single source of truth for "engagement": kept as field names so both the ORM
+# expression below and the raw-SQL views can build the same formula from it.
+ENGAGEMENT_FIELDS = ("likes", "retweets", "views")
+_ENGAGEMENT_SQL = " + ".join(ENGAGEMENT_FIELDS)
 
-def _hours(request, default: int = 24) -> int:
+
+def engagement_expression() -> ExpressionWrapper:
+    total = sum(F(field) for field in ENGAGEMENT_FIELDS)
+    return ExpressionWrapper(total, output_field=FloatField())
+
+
+def _hours(request, default: int = 24, param: str = "hours") -> int:
     try:
-        return max(1, min(168, int(request.query_params.get("hours", default))))
+        return max(1, min(168, int(request.query_params.get(param, default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_param(request, param: str, default: float, lo: float, hi: float) -> float:
+    try:
+        return max(lo, min(hi, float(request.query_params.get(param, default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_param(request, param: str, default: int, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(hi, int(request.query_params.get(param, default))))
     except (TypeError, ValueError):
         return default
 
@@ -26,11 +50,19 @@ class OverviewView(APIView):
         latest = list(FetchRun.objects.all()[:5].values(
             "subsystem", "status", "started_at", "finished_at", "summary"
         ))
+        tweet_counts = Tweet.objects.aggregate(
+            total=Count("id"),
+            in_window=Count("id", filter=Q(created_at__gte=cutoff)),
+        )
+        account_counts = TwitterUser.objects.aggregate(
+            tracked=Count("id", filter=Q(tracking=True)),
+            quarantined=Count("id", filter=Q(quarantined=True)),
+        )
         return Response({
-            "tweets": Tweet.objects.count(),
-            "tweets_in_window": Tweet.objects.filter(created_at__gte=cutoff).count(),
-            "tracked_accounts": TwitterUser.objects.filter(tracking=True).count(),
-            "quarantined_accounts": TwitterUser.objects.filter(quarantined=True).count(),
+            "tweets": tweet_counts["total"],
+            "tweets_in_window": tweet_counts["in_window"],
+            "tracked_accounts": account_counts["tracked"],
+            "quarantined_accounts": account_counts["quarantined"],
             "latest_runs": latest,
         })
 
@@ -44,7 +76,7 @@ class VelocityView(APIView):
             return Response({"results": []})
         with connection.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 WITH points AS (
                     SELECT tweet_id, likes, retweets, views, captured_at,
                            row_number() OVER (PARTITION BY tweet_id ORDER BY captured_at) AS first_n,
@@ -53,8 +85,8 @@ class VelocityView(APIView):
                     WHERE captured_at >= %s
                 ), deltas AS (
                     SELECT tweet_id,
-                           max(likes + retweets + views) FILTER (WHERE last_n = 1)
-                         - max(likes + retweets + views) FILTER (WHERE first_n = 1) AS velocity
+                           max({_ENGAGEMENT_SQL}) FILTER (WHERE last_n = 1)
+                         - max({_ENGAGEMENT_SQL}) FILTER (WHERE first_n = 1) AS velocity
                     FROM points
                     GROUP BY tweet_id
                     HAVING count(*) >= 2
@@ -128,7 +160,7 @@ class AccountsAnalyticsView(APIView):
             .values("account")
             .annotate(
                 posts=Count("id"),
-                average_engagement=Avg("likes") + Avg("retweets") + Avg("views"),
+                average_engagement=Avg(engagement_expression()),
                 replies=Sum("replies"),
             )
             .order_by("-average_engagement", "account")[:100]
@@ -145,8 +177,13 @@ class AccountsAnalyticsView(APIView):
 
 
 class NarrativesView(APIView):
+    """Flag near-duplicate tweets posted within a propagation window of each other."""
+
     def get(self, request):
         cutoff = timezone.now() - timedelta(hours=_hours(request))
+        propagation_hours = _hours(request, default=24, param="window_hours")
+        similarity_threshold = _float_param(request, "similarity", 0.55, 0.1, 1.0)
+        min_length = _int_param(request, "min_length", 40, 1, 500)
         if connection.vendor != "postgresql":
             return Response({"results": []})
         with connection.cursor() as cursor:
@@ -159,15 +196,15 @@ class NarrativesView(APIView):
                 JOIN tweets_tweet follower
                   ON first.id < follower.id
                  AND first.created_at <= follower.created_at
-                 AND follower.created_at <= first.created_at + interval '24 hours'
-                 AND similarity(lower(first.text), lower(follower.text)) >= 0.55
+                 AND follower.created_at <= first.created_at + (%s || ' hours')::interval
+                 AND similarity(lower(first.text), lower(follower.text)) >= %s
                 WHERE first.created_at >= %s
-                  AND length(first.text) >= 40
-                  AND length(follower.text) >= 40
+                  AND length(first.text) >= %s
+                  AND length(follower.text) >= %s
                 ORDER BY first.created_at, similarity DESC
                 LIMIT 100
                 """,
-                [cutoff],
+                [propagation_hours, similarity_threshold, cutoff, min_length, min_length],
             )
             rows = cursor.fetchall()
         return Response({"results": [
