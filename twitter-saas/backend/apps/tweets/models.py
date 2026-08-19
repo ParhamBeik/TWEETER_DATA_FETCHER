@@ -21,6 +21,12 @@ class TwitterUser(models.Model):
     quarantined = models.BooleanField(default=False)
     quarantine_reason = models.CharField(max_length=255, blank=True, default="")
     quarantined_at = models.DateTimeField(null=True, blank=True)
+    # Set only when a historical-backfill chunk covering this account completes
+    # fully (status="completed"); left alone on partial/failed chunks so the
+    # account stays at the front of the next chunk's queue instead of losing
+    # its place. Ordering by this ascending (nulls first) is what makes the
+    # chunked backfill self-resuming across ticks.
+    historical_backfilled_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:  # pragma: no cover - trivial

@@ -4,10 +4,17 @@
 #
 # Publish only the frontend. Terminate TLS on the host (Caddy/nginx) → :80.
 # Set strong secrets in .env before starting (REDIS_PASSWORD required).
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   postgres:
     ports: !reset []
     restart: unless-stopped
+    logging: *json-logging
     mem_limit: 1g
 
   redis:
@@ -21,6 +28,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
     restart: unless-stopped
+    logging: *json-logging
     mem_limit: 256m
     volumes:
       - redisdata:/data
@@ -28,6 +36,7 @@ services:
   web:
     ports: !reset []
     restart: unless-stopped
+    logging: *json-logging
     environment:
       DJANGO_DEBUG: "0"
       ALLOW_REGISTRATION: "0"
@@ -38,21 +47,23 @@ services:
 
   worker:
     restart: unless-stopped
+    logging: *json-logging
     environment:
       DJANGO_DEBUG: "0"
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
       DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # This overlay used to redefine the healthcheck with `celery inspect ping`,
+    # which silently overrode the base compose's already-fixed /proc-scan check
+    # (compose merge replaces the whole healthcheck block, not per-field) --
+    # `inspect ping` can't answer while a -P solo worker is mid-task, so a busy
+    # (working correctly) worker kept flapping unhealthy. No override here now;
+    # inherit the base compose's healthcheck.
     mem_limit: 3g
 
   beat:
     restart: unless-stopped
+    logging: *json-logging
     environment:
       DJANGO_DEBUG: "0"
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -64,16 +75,29 @@ services:
     mem_limit: 256m
 
   frontend:
-    ports: !override
-      - "80:80"
+    ports: !reset []
+    expose: ["80"]
     restart: unless-stopped
+    logging: *json-logging
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ > /dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
     mem_limit: 128m
+    # Only the frontend joins the shared edge network -- Caddy (deploy/edge/)
+    # terminates real HTTPS there and reverse-proxies to twitter-frontend:80.
+    # Postgres/Redis/web/worker/beat stay off it, private-network-only.
+    networks:
+      default:
+      edge:
+        aliases: [twitter-frontend]
 
 volumes:
   redisdata:
   beat-schedule:
+
+networks:
+  edge:
+    external: true
+    name: vps-edge

@@ -172,10 +172,36 @@ else:
 # Redis _cycle_lock prevents overlapping workers, so ticks may be shorter than
 # the cycle timeout. The live scheduler admits only the current rate-budget slice.
 FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "300"))
-FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "21600"))
+# Historical backfill used to try every tracked account in one run every
+# FETCH_HISTORICAL_INTERVAL_SECONDS and get SIGKILLed by FETCH_CYCLE_TIMEOUT_SECONDS
+# partway through -- the worker runs -P solo --concurrency=1, so one unbounded
+# backfill run starves live/search fetching for as long as it takes, and killing
+# it hard threw away all progress from that tick. It now processes a bounded
+# FETCH_HISTORICAL_CHUNK_SIZE accounts per tick, oldest-backfilled-first (see
+# apps.fetching.tasks.backfill_historical_all), so it ticks far more often and
+# each tick finishes well under the timeout instead of racing it.
+FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "1800"))
+FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "12"))
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
 FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))
 SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "0") == "1"
+
+# Without this, Django's DEFAULT_LOGGING routes unhandled view/admin exceptions
+# only to mail_admins, which has no email backend configured here -- the
+# traceback went nowhere, not even Docker logs. Console handler makes it show
+# up in `docker compose logs web` like every other logger already does.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+    },
+}

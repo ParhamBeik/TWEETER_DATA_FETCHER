@@ -827,12 +827,18 @@ class SearchTimelineMonitor:
                     preview = self._parse_search_page(payload, preview_seen, capture_debug=False)
                     return self._page_crossed_search_window(preview["tweets"], window_start)
 
+                # The rolling-window stop is a CHRONOLOGICAL test, so it is only
+                # meaningful on `Latest`. `Top` is relevance-ranked: its page 1
+                # routinely contains tweets older than the window, which tripped
+                # this predicate on the very first page and capped every deep Top
+                # search at one page. Depth on Top is bounded by page_cap instead.
+                chronological = SearchQueryBuilder.normalize_product(product) == "Latest"
                 # HTTP p1 kept; browser supplies deeper pages (skip duplicate first capture when possible).
                 bootstrap = self.fetcher.bootstrap_browser_context(
                     search_url=search_url,
                     capture_endpoint="SearchTimeline",
                     max_pages=page_cap,
-                    stop_when=crossed_window,
+                    stop_when=crossed_window if chronological else None,
                 )
                 self._after_bootstrap(bootstrap, "SearchTimeline")
                 attempts += len(bootstrap.target_pages.get("SearchTimeline", []))

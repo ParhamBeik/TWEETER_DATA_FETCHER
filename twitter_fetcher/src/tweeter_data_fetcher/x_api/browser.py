@@ -63,7 +63,21 @@ class BrowserBootstrap:
     # only report as a stall -- this was the real cause of shallow deep-search
     # runs, not scroll mechanics. --disable-dev-shm-usage moves that allocation to
     # /tmp, so capture survives regardless of the host's shm sizing.
-    LAUNCH_ARGS = ("--disable-dev-shm-usage", "--disable-gpu")
+    # Deep search scrolling builds a very long DOM, and the worker shares a small
+    # Docker VM with Postgres/Redis/web. These keep one headless tab inside that
+    # budget so a long capture cannot OOM the machine.
+    LAUNCH_ARGS = (
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-features=Translate,MediaRouter",
+        "--mute-audio",
+        "--blink-settings=imagesEnabled=false",  # timeline JSON is captured, not pixels
+        # Do NOT cap V8's old space here. Measured on a live deep search: an
+        # explicit --max-old-space-size=384 starved the renderer and captured 0
+        # pages before crashing, while the same run uncapped captured 5.
+    )
 
     @classmethod
     def _launch_chromium(cls, pw: Any, *, headless: bool):
@@ -253,6 +267,12 @@ class BrowserBootstrap:
                     result.stop_reason = "no_target_response"
                     result.error = "no_target_response"
         except Exception as exc:
-            result.ok = False
+            # Chromium can hard-crash late in a long capture (huge timeline DOM).
+            # Pages already captured are complete, validated GraphQL payloads, so
+            # keep them instead of throwing the whole run away -- discarding them
+            # is what turned a 5-page deep search into a 1-page "stalled" result.
+            captured = result.target_pages.get(capture_endpoint or "", [])
+            result.ok = bool(captured)
+            result.stop_reason = "crashed_with_partial_capture" if captured else "crashed"
             result.error = f"{type(exc).__name__}: {str(exc)[:300]}"
         return result
