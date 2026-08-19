@@ -10,6 +10,8 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Prefer image copy (/app/fetcher); fall back to repo layout for local runs.
@@ -23,9 +25,25 @@ for _candidate in _FETCHER_CANDIDATES:
         sys.path.insert(0, str(_candidate))
         break
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
+DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
+ALLOWED_HOSTS = os.environ.get(
+    "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1"
+).split(",")
+
+# Placeholder keys shipped in .env.example were being used verbatim in .env, so
+# session cookies and DRF tokens were forgeable by anyone with the repo. Refuse
+# to boot rather than run on a known-public key.
+_PLACEHOLDER_KEYS = {
+    "",
+    "dev-insecure-change-me",
+    "change-me-to-a-long-random-string",
+}
+if SECRET_KEY in _PLACEHOLDER_KEYS or len(SECRET_KEY) < 32:
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY is unset, a placeholder, or too short. Generate one:\n"
+        "  python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -40,6 +58,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.tweets",
     "apps.fetching",
+    "apps.analytics",
 ]
 
 MIDDLEWARE = [
@@ -111,9 +130,17 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 30,
 }
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+# Never all-origins: this API is token-authenticated and drives a shared X
+# session, so an arbitrary origin must not be able to call it.
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
-    o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o
+    o
+    for o in os.environ.get(
+        # :5173 = vite dev server, :8080 = nginx frontend in compose.
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:8080",
+    ).split(",")
+    if o
 ]
 
 # Celery / Redis
@@ -142,11 +169,39 @@ else:
     }
 
 # Fetcher runtime knobs.
-FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "1200"))
-FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "21600"))
+# Redis _cycle_lock prevents overlapping workers, so ticks may be shorter than
+# the cycle timeout. The live scheduler admits only the current rate-budget slice.
+FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "300"))
+# Historical backfill used to try every tracked account in one run every
+# FETCH_HISTORICAL_INTERVAL_SECONDS and get SIGKILLed by FETCH_CYCLE_TIMEOUT_SECONDS
+# partway through -- the worker runs -P solo --concurrency=1, so one unbounded
+# backfill run starves live/search fetching for as long as it takes, and killing
+# it hard threw away all progress from that tick. It now processes a bounded
+# FETCH_HISTORICAL_CHUNK_SIZE accounts per tick, oldest-backfilled-first (see
+# apps.fetching.tasks.backfill_historical_all), so it ticks far more often and
+# each tick finishes well under the timeout instead of racing it.
+FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "1800"))
+FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "12"))
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
-FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "80"))
+FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))
 SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "0") == "1"
+
+# Without this, Django's DEFAULT_LOGGING routes unhandled view/admin exceptions
+# only to mail_admins, which has no email backend configured here -- the
+# traceback went nowhere, not even Docker logs. Console handler makes it show
+# up in `docker compose logs web` like every other logger already does.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+    },
+}

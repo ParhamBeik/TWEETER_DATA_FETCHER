@@ -67,3 +67,6 @@ LEGACY/**/*.txt
 LEGACY/**/logs/
 LEGACY/**/*.bak
 *.bak
+
+# Playwright test run artifacts
+test-results/

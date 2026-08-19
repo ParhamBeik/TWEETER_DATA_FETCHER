@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from datetime import timedelta
+from typing import Callable, Optional
 
 from celery import current_task, shared_task
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, F, OuterRef
 from django.utils import timezone
 
 from apps.tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
@@ -29,10 +30,15 @@ def _task_id() -> str:
 
 
 @contextmanager
-def _cycle_lock(name: str, ttl: int):
-    """Skip overlapping beat ticks. TTL is a crash backstop; release in finally."""
+def _cycle_lock(name: str):
+    """Skip overlapping beat ticks. Release in finally; TTL is only a crash backstop.
+
+    The TTL must outlive the work it guards, so it is the subprocess wall-clock
+    ceiling -- never the beat interval. A beat-interval TTL expires mid-cycle and
+    lets the next tick start a second fetcher against the shared X session.
+    """
     key = f"fetch_cycle_lock:{name}"
-    acquired = cache.add(key, "1", timeout=max(ttl, 60))
+    acquired = cache.add(key, "1", timeout=settings.FETCH_CYCLE_TIMEOUT_SECONDS + 60)
     try:
         yield acquired
     finally:
@@ -64,6 +70,7 @@ def _run_cycle(
     *,
     target: str = "all",
     searches: list | None = None,
+    on_complete: Optional[Callable[["FetchRun"], None]] = None,
 ) -> int:
     result = runner.run_fetcher(
         module, args, subsystem, searches=searches, target=target, task_id=_task_id()
@@ -89,22 +96,34 @@ def _run_cycle(
         runner.finalize_run(result.run, ingested_tweets=count, task_failed=failed)
         if subsystem == "live":
             sync_quarantine_from_live_state()
+        if on_complete is not None:
+            on_complete(result.run)
         runner.cleanup(result.root)
 
 
 @shared_task(name="apps.fetching.tasks.fetch_account_historical")
 def fetch_account_historical(handle: str) -> int:
-    return _run_and_ingest(HISTORICAL_MODULE, ["--only", handle], "historical", handle)
+    # Locked per handle: this endpoint is user-triggerable, and every run spends
+    # the one shared X session's rate budget. Repeat requests collapse.
+    with _cycle_lock(f"fetch_account_historical:{handle}") as acquired:
+        if not acquired:
+            logger.warning("fetch_account_historical(%s): already running, skipped", handle)
+            return 0
+        return _run_and_ingest(HISTORICAL_MODULE, ["--only", handle], "historical", handle)
 
 
 @shared_task(name="apps.fetching.tasks.fetch_account_live")
 def fetch_account_live(handle: str) -> int:
-    return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live", handle)
+    with _cycle_lock(f"fetch_account_live:{handle}") as acquired:
+        if not acquired:
+            logger.warning("fetch_account_live(%s): already running, skipped", handle)
+            return 0
+        return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live", handle)
 
 
 @shared_task(name="apps.fetching.tasks.poll_live_all")
 def poll_live_all() -> int:
-    with _cycle_lock("poll_live_all", settings.FETCH_LIVE_INTERVAL_SECONDS) as acquired:
+    with _cycle_lock("poll_live_all") as acquired:
         if not acquired:
             logger.warning("poll_live_all: skipped overlapping cycle")
             return 0
@@ -114,14 +133,59 @@ def poll_live_all() -> int:
 
 @shared_task(name="apps.fetching.tasks.backfill_historical_all")
 def backfill_historical_all() -> int:
-    with _cycle_lock(
-        "backfill_historical_all", settings.FETCH_HISTORICAL_INTERVAL_SECONDS
-    ) as acquired:
+    """Backfill one bounded, oldest-first chunk of tracked accounts per tick.
+
+    Previously tried every tracked account in a single run and relied on
+    FETCH_CYCLE_TIMEOUT_SECONDS to bound it -- on the shared solo/concurrency=1
+    worker that meant either starving live/search fetching for the run's
+    duration or getting SIGKILLed mid-run with the whole tick's progress lost
+    (observed: 100% failure rate in production). Chunking makes each tick both
+    small enough to finish comfortably inside the timeout and cheap enough to
+    run far more often, so the backfill behaves like the continuous, always-
+    rotating archive builder it's meant to be -- just in small, frequent bites
+    instead of one long one. `historical_backfilled_at` is only advanced for a
+    chunk that reports "completed"; a partial/failed chunk keeps its accounts at
+    the front of the queue so nothing silently falls behind.
+    """
+    with _cycle_lock("backfill_historical_all") as acquired:
         if not acquired:
             logger.warning("backfill_historical_all: skipped overlapping cycle")
             return 0
         reap_orphaned_fetch_runs()
-        return _run_cycle(HISTORICAL_MODULE, [], "historical")
+
+        chunk_size = settings.FETCH_HISTORICAL_CHUNK_SIZE
+        handles = list(
+            TwitterUser.objects.filter(tracking=True)
+            .order_by(F("historical_backfilled_at").asc(nulls_first=True), "id")
+            .values_list("handle", flat=True)[:chunk_size]
+        )
+        if not handles:
+            logger.info("backfill_historical_all: no tracked accounts to backfill")
+            return 0
+
+        def _mark_chunk(run: FetchRun) -> None:
+            if run.status == "completed":
+                updated = TwitterUser.objects.filter(handle__in=handles).update(
+                    historical_backfilled_at=timezone.now()
+                )
+                logger.info(
+                    "backfill_historical_all: chunk completed, %d account(s) marked backfilled: %s",
+                    updated, ", ".join(f"@{h}" for h in handles),
+                )
+            else:
+                logger.warning(
+                    "backfill_historical_all: chunk status=%s, not advancing backfill "
+                    "watermark, will retry first next tick: %s",
+                    run.status, ", ".join(f"@{h}" for h in handles),
+                )
+
+        return _run_cycle(
+            HISTORICAL_MODULE,
+            ["--only", ",".join(handles)],
+            "historical",
+            target=f"chunk:{len(handles)}",
+            on_complete=_mark_chunk,
+        )
 
 
 @shared_task(name="apps.fetching.tasks.run_search")
@@ -140,7 +204,7 @@ def run_search(search_id: int) -> int:
 
 @shared_task(name="apps.fetching.tasks.repoll_searches")
 def repoll_searches() -> int:
-    with _cycle_lock("repoll_searches", settings.FETCH_SEARCH_INTERVAL_SECONDS) as acquired:
+    with _cycle_lock("repoll_searches") as acquired:
         if not acquired:
             logger.warning("repoll_searches: skipped overlapping cycle")
             return 0
@@ -165,6 +229,12 @@ def purge_expired_search_tweets() -> int:
 
 
 def reap_orphaned_fetch_runs() -> int:
+    """Fail runs whose worker died, and sweep the scratch dirs they left behind.
+
+    A SIGKILLed worker skips the cleanup() in the caller's finally, stranding a
+    /tmp dir that contains live X cookies and a bearer token.
+    """
+    runner.sweep_stale_scratch_dirs()
     cutoff = timezone.now() - timedelta(seconds=settings.FETCH_CYCLE_TIMEOUT_SECONDS)
     return FetchRun.objects.filter(status="running", started_at__lt=cutoff).update(
         status="failed", finished_at=timezone.now()

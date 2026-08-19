@@ -30,6 +30,8 @@ from django.utils import timezone
 
 from apps.tweets.models import EndpointState, FetchRun, KeyValueState, RawPage, XSession
 
+from .redaction import _literal_secrets, redact_text
+
 from .accounts import tracked_accounts_payload
 
 logger = logging.getLogger(__name__)
@@ -81,9 +83,12 @@ def _search_def(search) -> dict:
         "product": search.product,
         "preserve_exact_query": True,
         "raw_query": search.raw_query,
-        "pagination_depth": 1,
+        "pagination_depth": max(1, int(search.pagination_depth)),
         "max_retries": 3,
-        "rolling_hours": 24,
+        # The rolling window is a hard pagination stop: runs that did reach page
+        # 2-3 ended on `success_search_window_crossed`, not on running out of
+        # results. Hardcoding 24h capped a search whose query spans months.
+        "rolling_hours": max(1, int(search.rolling_hours)),
     }
 
 
@@ -108,6 +113,14 @@ def _write_config(root: Path, searches: list | None = None) -> Path:
         base = json.loads(example.read_text(encoding="utf-8"))
     session = _active_session()
     if session:
+        # Session-bound config (captured tx-id pools, query-id pools) first, so
+        # the seed template supplies only the values the session does not carry.
+        if isinstance(session.config_overrides, dict):
+            for key, value in session.config_overrides.items():
+                if isinstance(value, dict) and isinstance(base.get(key), dict):
+                    base[key] = {**base[key], **value}
+                else:
+                    base[key] = value
         headers = {str(key): str(value) for key, value in session.headers.items() if value}
         base["api_cookies"] = {str(key): str(value) for key, value in session.cookies.items() if value}
         base["api_headers"] = headers
@@ -277,11 +290,17 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
         report_summaries.append({"file": report_file.name, **report_summary})
 
     by_status = http_summary.get("by_status_code", {}) if isinstance(http_summary, dict) else {}
+    no_evidence = not report_summaries
     if int(by_status.get("401", 0) or 0) or int(by_status.get("403", 0) or 0):
         status = "auth_required"
     elif return_code != 0 or status_counts["failed"]:
         status = "failed"
     elif status_counts["partial"]:
+        status = "partial"
+    elif no_evidence:
+        # Exit 0 but the pipeline wrote no per-target report, so nothing is known
+        # to have been fetched. Reporting "completed" here is how a run that did
+        # nothing used to look identical to a healthy one.
         status = "partial"
     else:
         status = "completed"
@@ -291,6 +310,7 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
         "recent_events": recent_events,
         "reports": report_summaries,
         "status_counts": dict(status_counts),
+        **({"status_reason": "no_reports_written"} if no_evidence else {}),
     }, failure_ledger, status
 
 
@@ -299,6 +319,40 @@ def _persist_artifacts(root: Path, subsystem: str, run: FetchRun, return_code: i
     summary["raw_pages"] = _persist_raw_pages(root, subsystem, run)
     summary["endpoint_states"] = _persist_endpoint_states(root, subsystem)
     return summary, failure_ledger, status
+
+
+_LOG_HEAD_LINES = 200
+_LOG_TAIL_LINES = 200
+
+
+class _HeadTailLines:
+    """Keeps the first N and last N lines of a run instead of just the tail.
+
+    A plain deque(maxlen=...) evicts from the front, so an early-cycle failure
+    (e.g. account 3 of 50) gets silently dropped from FetchRun.log_excerpt once
+    a long run produces enough later output. Keeping both ends means the start
+    of the run survives even when the run runs long.
+    """
+
+    def __init__(self, head: int = _LOG_HEAD_LINES, tail: int = _LOG_TAIL_LINES) -> None:
+        self._head: list[str] = []
+        self._tail: deque[str] = deque(maxlen=tail)
+        self._head_limit = head
+        self._total = 0
+
+    def append(self, line: str) -> None:
+        self._total += 1
+        if len(self._head) < self._head_limit:
+            self._head.append(line)
+        else:
+            self._tail.append(line)
+
+    def __iter__(self):
+        omitted = self._total - len(self._head) - len(self._tail)
+        yield from self._head
+        if omitted > 0:
+            yield f"... [{omitted} line(s) omitted] ..."
+        yield from self._tail
 
 
 def _kill_process_group(process: subprocess.Popen) -> None:
@@ -311,9 +365,18 @@ def _kill_process_group(process: subprocess.Popen) -> None:
 
 
 def _await_process(
-    process: subprocess.Popen, *, timeout: float, subsystem: str
-) -> tuple[int, deque[str]]:
-    lines: deque[str] = deque(maxlen=400)
+    process: subprocess.Popen, *, timeout: float, subsystem: str,
+    literals: list[str] | None = None,
+) -> tuple[int, "_HeadTailLines"]:
+    # Redact once, here, as each line is read: this is the single point every
+    # line passes through on its way to both the Docker log and FetchRun.
+    # log_excerpt, so neither can carry a secret that the other filtered.
+    literals = literals or []
+
+    def _clean(raw: str) -> str:
+        return redact_text(raw.rstrip(), literals=literals)
+
+    lines = _HeadTailLines()
     stdout = process.stdout
     use_select = False
     if stdout is not None and hasattr(stdout, "fileno"):
@@ -338,7 +401,7 @@ def _await_process(
                 line = stdout.readline()
                 if not line:
                     break
-                clean = line.rstrip()
+                clean = _clean(line)
                 lines.append(clean)
                 logger.info("fetcher[%s] %s", subsystem, clean)
             elif process.poll() is not None:
@@ -354,7 +417,7 @@ def _await_process(
                 code = process.wait(timeout=5) or -9
         return int(code), lines
     for line in stdout or ():
-        clean = str(line).rstrip()
+        clean = _clean(str(line))
         lines.append(clean)
         logger.info("fetcher[%s] %s", subsystem, clean)
     return int(process.wait()), lines
@@ -381,6 +444,31 @@ def _persist_session(root: Path) -> None:
         session.save(update_fields=[*fields, "updated_at"])
 
 
+SCRATCH_PREFIX = "tdf_run_"
+
+
+def sweep_stale_scratch_dirs() -> int:
+    """Delete abandoned scratch dirs, which hold live X cookies and a bearer token.
+
+    cleanup() runs in the caller's `finally`, which a SIGKILL skips -- and the
+    worker has a 2g memory limit with chromium in the image, so OOM-kill is a
+    realistic trigger. Anything older than the cycle ceiling cannot belong to a
+    live run.
+    """
+    cutoff = time.time() - (settings.FETCH_CYCLE_TIMEOUT_SECONDS + 300)
+    removed = 0
+    for path in Path(tempfile.gettempdir()).glob(f"{SCRATCH_PREFIX}*"):
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.warning("swept %d abandoned fetcher scratch dir(s)", removed)
+    return removed
+
+
 def run_fetcher(
     module: str,
     args: list[str],
@@ -404,7 +492,7 @@ def run_fetcher(
         subsystem=subsystem,
         target=target,
     )
-    root = Path(tempfile.mkdtemp(prefix="tdf_run_"))
+    root = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX))
     try:
         config_path = _write_config(root, searches=searches)
         _restore_state(root, subsystem)
@@ -414,6 +502,9 @@ def run_fetcher(
         env["TDF_CONFIG"] = str(config_path)
         env["PYTHONPATH"] = str(FETCHER_SRC) + os.pathsep + env.get("PYTHONPATH", "")
 
+        # Snapshot the secrets before the run: auth refresh can rotate XSession
+        # mid-run, and the log may quote either the old or the new value.
+        session_literals = _literal_secrets()
         process = subprocess.Popen(
             [sys.executable, "-m", module, *args],
             env=env,
@@ -425,7 +516,10 @@ def run_fetcher(
             start_new_session=True,
         )
         return_code, lines = _await_process(
-            process, timeout=settings.FETCH_CYCLE_TIMEOUT_SECONDS, subsystem=subsystem
+            process,
+            timeout=settings.FETCH_CYCLE_TIMEOUT_SECONDS,
+            subsystem=subsystem,
+            literals=session_literals,
         )
         _persist_state(root, subsystem)
         _persist_session(root)

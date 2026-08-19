@@ -4,7 +4,15 @@ every model here (all JSON columns are plain dict/list blobs).
 """
 from __future__ import annotations
 
-from .settings import *  # noqa: F401,F403
+import os
+
+# settings.py refuses to boot on a placeholder/short SECRET_KEY. Supply a fixed,
+# deliberately non-secret one for tests before importing, so production stays
+# strict rather than the check being weakened to accommodate the suite.
+os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-key-" + "0" * 48)
+os.environ.setdefault("DJANGO_ALLOWED_HOSTS", "testserver,localhost,127.0.0.1")
+
+from .settings import *  # noqa: E402,F401,F403
 
 DATABASES = {
     "default": {
