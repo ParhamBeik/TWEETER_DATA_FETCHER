@@ -198,6 +198,60 @@ class SearchPipelineTests(unittest.TestCase):
         monitor._request_page.assert_called_once()
         self.assertEqual(monitor.fetcher.bootstrap_browser_context.call_count, 1)
 
+    def test_deep_search_top_product_http_failure_fallback_has_no_window_stop(self):
+        # Regression: the HTTP-failure fallback path used to pass the
+        # chronological window-crossing predicate unconditionally, which caps
+        # relevance-ranked `Top` searches at one page (mirrors the bug already
+        # fixed on the HTTP-success path above it).
+        monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
+        monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
+        monitor.storage = MagicMock()
+        monitor.storage._tehran_now.return_value = datetime.utcnow()
+        monitor.storage._jalali_batch_name.return_value = "batch"
+        monitor.storage.save_search_result_page.side_effect = lambda *args: Path(self.temp_dir) / f"page_{args[-2]}.json"
+        monitor.raw_root = Path(self.temp_dir) / "raw"
+        monitor.reports_root = Path(self.temp_dir) / "reports"
+        monitor.state_file = Path(self.temp_dir) / "state.json"
+        monitor.search_state = {}
+        monitor.processor = TweetSetProcessor()
+        monitor.console = MagicMock()
+        monitor.api_manager = MagicMock()
+        monitor.api_manager.rate_limits = {"SearchTimeline": {}}
+        monitor.api_manager.get_query_id.return_value = "test_search_query_id"
+        monitor.fetcher = MagicMock()
+        monitor.fetcher.recorder = MagicMock()
+        monitor.fetcher.bootstrap_browser_context.return_value = BrowserBootstrapResult(
+            True,
+            "https://x.com/search",
+            target_pages={"SearchTimeline": [
+                self.search_page("1", "Wed Aug 05 00:00:00 +0000 2026", "cursor-1"),
+                self.search_page("2", "Wed Jan 01 00:00:00 +0000 2020", "cursor-2"),
+            ]},
+            stop_reason="page_cap",
+        )
+        http_page = {
+            "_attempts": 1,
+            "_status": 404,
+            "_error_samples": [],
+            "_failure": "http_404",
+        }
+        monitor._request_page = MagicMock(return_value=http_page)
+        monitor._save_exports = MagicMock(return_value={})
+        monitor._build_frozen_headers = MagicMock(return_value={})
+        monitor._compact_json = lambda x: "{}"
+        monitor._after_bootstrap = MagicMock()
+
+        monitor.monitor_search({
+            "name": "test",
+            "raw_query": "test",
+            "product": "Top",
+            "pagination_depth": 3,
+            "rolling_hours": 24,
+        })
+
+        _, kwargs = monitor.fetcher.bootstrap_browser_context.call_args
+        self.assertIsNone(kwargs["stop_when"])
+
 
 if __name__ == "__main__":
     unittest.main()

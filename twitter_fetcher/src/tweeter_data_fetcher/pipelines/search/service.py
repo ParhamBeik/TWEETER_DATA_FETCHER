@@ -869,11 +869,14 @@ class SearchTimelineMonitor:
                     preview = self._parse_search_page(payload, preview_seen, capture_debug=False)
                     return self._page_crossed_search_window(preview["tweets"], window_start)
 
+                # Same chronological-only gate as the HTTP-success path above:
+                # the window-crossing stop is meaningless on relevance-ranked `Top`.
+                chronological = product == "Latest"
                 bootstrap = self.fetcher.bootstrap_browser_context(
                     search_url=search_url,
                     capture_endpoint="SearchTimeline",
                     max_pages=page_cap,
-                    stop_when=crossed_window_fallback,
+                    stop_when=crossed_window_fallback if chronological else None,
                 )
                 self._after_bootstrap(bootstrap, "SearchTimeline")
                 attempts += len(bootstrap.target_pages.get("SearchTimeline", []))
