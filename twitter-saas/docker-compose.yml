@@ -6,9 +6,16 @@
 #
 # Build context is the git repo root so images install the canonical fetcher
 # from twitter_fetcher/src (no vendored copy).
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
+    logging: *json-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-twitter_saas}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -23,10 +30,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
     mem_limit: 512m
 
   redis:
     image: redis:7-alpine
+    logging: *json-logging
     ports:
       - "6380:6379"
     healthcheck:
@@ -34,12 +43,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    mem_limit: 128m
+    restart: unless-stopped
+    mem_limit: 96m
 
   web:
     build:
       context: ..
       dockerfile: twitter-saas/backend/Dockerfile
+    logging: *json-logging
     command: >
       sh -c "python manage.py collectstatic --noinput || true &&
              python manage.py migrate --noinput &&
@@ -64,13 +75,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-    mem_limit: 512m
+    restart: unless-stopped
+    mem_limit: 448m
 
   worker:
     build:
       context: ..
       dockerfile: twitter-saas/backend/Dockerfile
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=20
+    logging: *json-logging
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
@@ -83,12 +96,32 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # `inspect ping` cannot answer while a -P solo worker is executing a task,
+      # so a long fetch cycle used to mark this container unhealthy. Check that
+      # the worker process is alive instead.
+      # pgrep isn't installed in the python:3.11-slim image; grep the /proc
+      # cmdline files directly instead (no extra package needed).
+      test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    # Deep-search Chromium capture needs ~2g: below that the renderer hard-crashes
+    # mid-scroll ("Page crashed") and the run degrades to HTTP page 1. The other
+    # services were trimmed so the stack still fits a 3.8g Docker VM with headroom
+    # -- previously the limits summed to 3.5g and an over-committed worker got the
+    # kernel to kill *other* containers, Postgres included.
     mem_limit: 2g
+    # Chromium's renderer allocates shared memory in /dev/shm; the 64m Docker
+    # default crashes it mid-scroll during deep SearchTimeline capture.
+    shm_size: 512m
 
   beat:
     build:
       context: ..
       dockerfile: twitter-saas/backend/Dockerfile
+    logging: *json-logging
     command: celery -A config beat -l info
     env_file: .env
     environment:
@@ -102,17 +135,27 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    mem_limit: 256m
+    healthcheck:
+      # pgrep isn't installed in the python:3.11-slim image; grep the /proc
+      # cmdline files directly instead (no extra package needed).
+      test: ["CMD-SHELL", "grep -aq 'celery -A config beat' /proc/[1-9]*/cmdline"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    mem_limit: 192m
 
   frontend:
     build:
       context: ..
       dockerfile: twitter-saas/frontend/Dockerfile
+    logging: *json-logging
     ports:
       - "8080:80"
     depends_on:
       - web
-    mem_limit: 128m
+    restart: unless-stopped
+    mem_limit: 64m
 
 volumes:
   pgdata:

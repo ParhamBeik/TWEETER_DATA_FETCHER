@@ -98,6 +98,82 @@ def test_write_config_materializes_tracked_db_tiers(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_search_definition_preserves_configured_pagination_depth():
+    from apps.tweets.models import Search
+
+    search = Search.objects.create(
+        name="ai", slug="ai", raw_query="ai", product="Latest", pagination_depth=3
+    )
+
+    assert runner._search_def(search)["pagination_depth"] == 3
+
+
+def test_engine_config_json_is_accepted_as_a_session_source():
+    """Operators paste a raw config.json, not the {cookies,headers} session shape."""
+    from apps.fetching.session import normalize_session_source, validate_session_payload
+
+    normalized = normalize_session_source({
+        "api_cookies": {"auth_token": "a", "ct0": "csrf"},
+        "api_auth": {"bearer_token": "AAAA"},
+        "api_headers": {"x-client-transaction-id": "tx"},
+    })
+    cookies, headers = validate_session_payload(normalized)
+
+    assert cookies == {"auth_token": "a", "ct0": "csrf"}
+    # Bearer gets the scheme prefix and ct0 is mirrored to the CSRF header.
+    assert headers["authorization"] == "Bearer AAAA"
+    assert headers["x-csrf-token"] == "csrf"
+    assert headers["x-client-transaction-id"] == "tx"
+
+
+def test_session_source_keeps_only_session_bound_config_keys():
+    from apps.fetching.session import validate_config_overrides
+
+    overrides = validate_config_overrides({
+        "real_transaction_ids_by_endpoint": {"UserTweets": ["tx1"]},
+        "query_ids_by_endpoint": {"UserTweets": ["qid"]},
+        "api_cookies": {"auth_token": "a"},
+        "storage": {"write_set_diffs": True},
+    })
+
+    assert set(overrides) == {"real_transaction_ids_by_endpoint", "query_ids_by_endpoint"}
+
+
+@pytest.mark.django_db
+def test_write_config_merges_session_overrides_over_the_seed_template(monkeypatch, tmp_path):
+    """Captured tx-id pools live on XSession, never in the tracked seed file."""
+    from apps.tweets.models import XSession
+
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    (seed / "config.example.json").write_text(json.dumps({
+        "real_transaction_ids_by_endpoint": {"UserTweets": []},
+        "api_config": {"default_timeout_seconds": 20, "pagination_safety_cap_pages": 50},
+    }), encoding="utf-8")
+    monkeypatch.setattr(runner, "SEED_DIR", seed)
+    XSession.objects.create(
+        name="default",
+        cookies={"auth_token": "a"},
+        headers={"authorization": "Bearer B"},
+        config_overrides={
+            "real_transaction_ids_by_endpoint": {"UserTweets": ["tx1"]},
+            "api_config": {"default_timeout_seconds": 30},
+        },
+        active=True,
+    )
+    root = tmp_path / "run"
+    root.mkdir()
+
+    config = json.loads(runner._write_config(root).read_text(encoding="utf-8"))
+
+    assert config["real_transaction_ids_by_endpoint"]["UserTweets"] == ["tx1"]
+    assert config["api_config"]["default_timeout_seconds"] == 30
+    # Nested merge keeps seed values the session does not override.
+    assert config["api_config"]["pagination_safety_cap_pages"] == 50
+    assert config["api_auth"]["bearer_token"] == "B"
+
+
+@pytest.mark.django_db
 def test_run_artifacts_persist_raw_pages_state_ledger_and_retention():
     root = Path(tempfile.mkdtemp(prefix="tdf_artifacts_"))
     raw = root / "data" / "historical_live" / "raw" / "UserTweets" / "jack" / "batch"

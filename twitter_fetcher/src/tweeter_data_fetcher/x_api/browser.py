@@ -10,6 +10,19 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 
+# X pins document.body.scrollHeight to the viewport height and grows
+# document.documentElement instead, so the obvious
+# `scrollTo(0, document.body.scrollHeight)` moves roughly one screen and never
+# reaches the sentinel row that triggers the next page. Measured on a live
+# search: body-scroll produced 1 SearchTimeline call, documentElement-scroll
+# produced 6 over the same number of steps. Take the max so this stays correct
+# if X ever moves the growth back onto body.
+SCROLL_TO_BOTTOM = (
+    "window.scrollTo(0, Math.max("
+    "document.body.scrollHeight, document.documentElement.scrollHeight))"
+)
+
+
 @dataclass
 class BrowserBootstrapResult:
     ok: bool
@@ -44,16 +57,32 @@ class BrowserBootstrap:
         except ImportError:
             return False
 
-    @staticmethod
-    def _launch_chromium(pw: Any, *, headless: bool):
-        """Prefer system Chrome (CDN Chromium installs are often geo-blocked)."""
-        try:
-            return pw.chromium.launch(headless=headless, channel="chrome")
-        except Exception as chrome_error:
-            try:
-                return pw.chromium.launch(headless=headless)
-            except Exception:
-                raise chrome_error
+    # Docker gives a container 64MB of /dev/shm by default, and Chromium puts its
+    # renderer's shared memory there. A long search timeline exhausts that and the
+    # renderer dies mid-scroll ("Target crashed"), which the capture loop could
+    # only report as a stall -- this was the real cause of shallow deep-search
+    # runs, not scroll mechanics. --disable-dev-shm-usage moves that allocation to
+    # /tmp, so capture survives regardless of the host's shm sizing.
+    # Deep search scrolling builds a very long DOM, and the worker shares a small
+    # Docker VM with Postgres/Redis/web. These keep one headless tab inside that
+    # budget so a long capture cannot OOM the machine.
+    LAUNCH_ARGS = (
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-features=Translate,MediaRouter",
+        "--mute-audio",
+        "--blink-settings=imagesEnabled=false",  # timeline JSON is captured, not pixels
+        # Do NOT cap V8's old space here. Measured on a live deep search: an
+        # explicit --max-old-space-size=384 starved the renderer and captured 0
+        # pages before crashing, while the same run uncapped captured 5.
+    )
+
+    @classmethod
+    def _launch_chromium(cls, pw: Any, *, headless: bool):
+        """Use the Playwright-managed Chromium installed in the runtime image."""
+        return pw.chromium.launch(headless=headless, args=list(cls.LAUNCH_ARGS))
 
     @staticmethod
     def _endpoint(url: str) -> Optional[tuple[str, str]]:
@@ -101,7 +130,11 @@ class BrowserBootstrap:
         try:
             with sync_playwright() as pw:
                 browser = self._launch_chromium(pw, headless=self.headless)
-                context = browser.new_context()
+                # A taller-than-default viewport keeps more of X's virtualized
+                # timeline mounted per scroll. Kept at 1200: at 2000 the renderer
+                # exceeds the worker's memory ceiling and Chromium hard-crashes
+                # ("Target crashed") partway through a deep search capture.
+                context = browser.new_context(viewport={"width": 1280, "height": 1200})
                 if pw_cookies:
                     context.add_cookies(pw_cookies)
                 page = context.new_page()
@@ -166,21 +199,34 @@ class BrowserBootstrap:
                     page.wait_for_timeout(4500)
                     return True
 
+                def wait_for_activity(baseline: int, budget_ms: int) -> bool:
+                    """Poll for a new captured page instead of sleeping a flat interval.
+
+                    Fixed 3.5s sleeps both wasted time when X answered in 400ms and
+                    gave up too early when it was slow.
+                    """
+                    waited = 0
+                    while waited < budget_ms:
+                        page.wait_for_timeout(250)
+                        waited += 250
+                        if target_response_count > baseline or stop_capture:
+                            return True
+                    return False
+
                 def capture_scroll() -> None:
                     nonlocal stop_capture
                     stagnant = 0
                     pages = result.target_pages.setdefault(capture_endpoint or "", [])
-                    while capture_endpoint and len(pages) < max_pages and not stop_capture and stagnant < 4:
+                    while capture_endpoint and len(pages) < max_pages and not stop_capture and stagnant < 6:
                         before_activity = target_response_count
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        page.wait_for_timeout(3500)
-                        if target_response_count == before_activity:
+                        page.evaluate(SCROLL_TO_BOTTOM)
+                        if not wait_for_activity(before_activity, 6000):
                             # Virtualized timelines occasionally remain pinned at the
                             # bottom. A bounded upward nudge re-arms IntersectionObserver.
-                            page.evaluate("window.scrollBy(0, -Math.max(700, window.innerHeight))")
-                            page.wait_for_timeout(750)
-                            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                            page.wait_for_timeout(3500)
+                            page.evaluate("window.scrollBy(0, -Math.max(1200, window.innerHeight))")
+                            page.wait_for_timeout(600)
+                            page.evaluate(SCROLL_TO_BOTTOM)
+                            wait_for_activity(before_activity, 6000)
                         stagnant = 0 if target_response_count > before_activity else stagnant + 1
                     if not result.stop_reason:
                         result.stop_reason = "max_pages" if len(pages) >= max_pages else "stalled"
@@ -221,6 +267,12 @@ class BrowserBootstrap:
                     result.stop_reason = "no_target_response"
                     result.error = "no_target_response"
         except Exception as exc:
-            result.ok = False
+            # Chromium can hard-crash late in a long capture (huge timeline DOM).
+            # Pages already captured are complete, validated GraphQL payloads, so
+            # keep them instead of throwing the whole run away -- discarding them
+            # is what turned a 5-page deep search into a 1-page "stalled" result.
+            captured = result.target_pages.get(capture_endpoint or "", [])
+            result.ok = bool(captured)
+            result.stop_reason = "crashed_with_partial_capture" if captured else "crashed"
             result.error = f"{type(exc).__name__}: {str(exc)[:300]}"
         return result

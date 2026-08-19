@@ -45,6 +45,12 @@ class ConfigurationResolutionTests(unittest.TestCase):
             with patch.dict(os.environ, {"TDF_CONFIG": str(env)}):
                 self.assertEqual(resolve_config_path(explicit, project_root=root), explicit.resolve())
                 self.assertEqual(resolve_config_path(project_root=root), env.resolve())
+                accounts = root / "config" / "accounts.json"
+                accounts.write_text("{}", encoding="utf-8")
+                self.assertEqual(
+                    resolve_config_path(project_root=root, filename="accounts.json"),
+                    accounts.resolve(),
+                )
             with patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(resolve_config_path(project_root=root), canonical.resolve())
                 canonical.unlink()

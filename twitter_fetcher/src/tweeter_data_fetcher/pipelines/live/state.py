@@ -83,16 +83,36 @@ class LiveStorageManager:
     def save_raw_page(self, username: str, endpoint: str, page_number: int, payload: Dict[str, Any]) -> Path:
         return self.storage.save_raw_page(self.raw_batch_dir(username, endpoint), page_number, payload)
 
-    def account_state(self, username: str) -> Dict[str, Any]:
+    @staticmethod
+    def _account_key(username: str) -> str:
         key = username.lower().lstrip("@")
+        if key.startswith("_"):
+            # Leading underscore is reserved for internal entries (e.g. "_scheduler")
+            # stored in the same flat live_state dict; a real account normalizing to
+            # one would silently clobber that entry, so fail loudly instead.
+            raise ValueError(f"account handle {username!r} normalizes to a reserved key ({key!r})")
+        return key
+
+    def account_state(self, username: str) -> Dict[str, Any]:
+        key = self._account_key(username)
         state = self.live_state.get(key, {})
         return state if isinstance(state, dict) else {}
 
     def update_account_state(self, username: str, updates: Dict[str, Any]) -> Path:
-        key = username.lower().lstrip("@")
+        key = self._account_key(username)
         current = self.account_state(username)
         current.update(updates)
         self.live_state[key] = current
+        return self._save_json(self.live_state_file, self.live_state)
+
+    def scheduler_state(self) -> Dict[str, Any]:
+        state = self.live_state.get("_scheduler", {})
+        return state if isinstance(state, dict) else {}
+
+    def update_scheduler_state(self, updates: Dict[str, Any]) -> Path:
+        current = self.scheduler_state()
+        current.update(updates)
+        self.live_state["_scheduler"] = current
         return self._save_json(self.live_state_file, self.live_state)
 
     def is_seen(self, tweet_id: str) -> bool:

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import RunStatus from "../RunStatus";
@@ -15,8 +15,10 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
+  const [depth, setDepth] = useState(1);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const activeSearchId = useRef(null);
 
   async function loadSearches(p = product) {
     try {
@@ -36,12 +38,15 @@ export default function Search() {
   }, [product]);
 
   async function openResults(search, url) {
-    if (loading) return;
+    // Only de-duplicate the infinite-scroll append; guarding on `loading` outright
+    // made clicking a second search while the first loaded do nothing at all.
+    if (url && loading) return;
     if (!url) {
       setSelected(search);
       setResults([]);
       setNext(null);
     }
+    activeSearchId.current = search.id;
     setLoading(true);
     setError("");
     try {
@@ -49,12 +54,14 @@ export default function Search() {
         ? url.replace(/^.*\/api/, "")
         : `/searches/${search.id}/results/`;
       const data = await api(path);
+      // A slower response for the previously selected search must not paint here.
+      if (activeSearchId.current !== search.id) return;
       setResults((prev) => (url ? [...prev, ...(data.results || [])] : data.results || []));
       setNext(data.next || null);
     } catch (e) {
-      setError(e.message);
+      if (activeSearchId.current === search.id) setError(e.message);
     } finally {
-      setLoading(false);
+      if (activeSearchId.current === search.id) setLoading(false);
     }
   }
 
@@ -65,7 +72,7 @@ export default function Search() {
     try {
       await api("/searches/", {
         method: "POST",
-        body: { raw_query: query, name: name || query.slice(0, 60), product },
+        body: { raw_query: query, name: name || query.slice(0, 60), product, pagination_depth: depth },
       });
       setStatus("Search queued. Results appear once the job runs.");
       setQuery("");
@@ -87,13 +94,18 @@ export default function Search() {
 
   return (
     <section className="search">
-      <h2>Search</h2>
+      <header>
+        <p className="eyebrow">Searches</p>
+        <h2 className="page-title">Saved archive queries</h2>
+      </header>
       <RunStatus />
 
       <div className="tabs">
         {["Top", "Latest"].map((p) => (
           <button
             key={p}
+            type="button"
+            aria-pressed={p === product}
             className={p === product ? "tab active" : "tab"}
             onClick={() => setProduct(p)}
           >
@@ -104,11 +116,20 @@ export default function Search() {
 
       <form className="search-form" onSubmit={submit}>
         <input
+          aria-label="Search name"
           placeholder="name (optional)"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <select
+          aria-label="Pagination depth"
+          value={depth}
+          onChange={(e) => setDepth(Number(e.target.value))}
+        >
+          {[1, 2, 3].map((value) => <option key={value} value={value}>depth {value}</option>)}
+        </select>
         <input
+          aria-label="Raw query"
           placeholder="raw query, e.g. (Iran OR Gold) lang:en min_faves:1000"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -126,7 +147,7 @@ export default function Search() {
           {searches.map((s) => (
             <li key={s.id} className={selected?.id === s.id ? "active" : ""}>
               <button className="link" onClick={() => openResults(s)}>
-                {s.name || s.slug}
+                {s.name || s.slug} <small className="muted">· depth {s.pagination_depth}</small>
               </button>
               <button className="link small" onClick={() => refresh(s)}>
                 refresh

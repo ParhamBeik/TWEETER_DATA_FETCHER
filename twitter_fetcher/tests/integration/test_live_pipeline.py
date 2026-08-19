@@ -78,7 +78,9 @@ class LivePipelineTests(unittest.TestCase):
         monitor.accounts = ["example", "other"]
         monitor.should_fetch_account = lambda username: True
         monitor.account_map = {}
-        monitor.priority_policies = {}
+        from tweeter_data_fetcher.account_config import DEFAULT_PRIORITY_POLICIES
+
+        monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
         monitor.console = MagicMock()
         monitor.fetcher = MagicMock()
         monitor.fetcher.bootstrap_browser_context.return_value = MagicMock(
@@ -88,7 +90,9 @@ class LivePipelineTests(unittest.TestCase):
             error=None,
         )
         monitor.api_manager = MagicMock()
+        monitor.api_manager.rate_limits = {"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}}
         monitor.live_storage = MagicMock()
+        monitor.live_storage.scheduler_state.return_value = {}
         monitor._get_live_user_id = MagicMock(side_effect=["1", "2"])
         monitor._fetch_live_endpoint = MagicMock(
             return_value={"status": "completed", "pages": []}
@@ -101,7 +105,7 @@ class LivePipelineTests(unittest.TestCase):
         monitor.run_cycle()
 
         monitor.api_manager.human_delay.assert_any_call("between_accounts")
-        monitor.fetcher.bootstrap_browser_context.assert_called_once_with(username="example")
+        monitor.fetcher.bootstrap_browser_context.assert_not_called()
         monitor.live_storage.storage.save_run_report_json.assert_called_once()
 
     @patch("tweeter_data_fetcher.pipelines.live.service.get_priority_policy")
@@ -118,6 +122,7 @@ class LivePipelineTests(unittest.TestCase):
             ok=True, route="https://x.com/unavailable", support_request_count=1, error=None
         )
         monitor.api_manager = MagicMock()
+        monitor.api_manager.rate_limits = {"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}}
         monitor.live_storage = LiveStorageManager(
             Path(self.temp_dir), data_root_override=Path(self.temp_dir) / "data"
         )
@@ -133,6 +138,52 @@ class LivePipelineTests(unittest.TestCase):
         self.assertEqual(report["summary"]["failed"], 0)
         self.assertEqual(report["summary"]["quarantined"], 1)
         self.assertEqual(report["accounts"]["unavailable"]["status"], "quarantined")
+
+    def test_cycle_rotates_admitted_accounts_before_the_rate_reserve(self):
+        monitor = LiveMonitor.__new__(LiveMonitor)
+        monitor.accounts = ["one", "two", "three"]
+        monitor.should_fetch_account = lambda username: True
+        monitor.account_map = {}
+        from tweeter_data_fetcher.account_config import DEFAULT_PRIORITY_POLICIES
+
+        monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
+        monitor.console = MagicMock()
+        monitor.fetcher = MagicMock()
+        monitor.fetcher.pagination_safety_cap_pages = 1
+        monitor.fetcher.recorder = MagicMock()
+        monitor.api_manager = MagicMock()
+        monitor.api_manager.rate_limits = {"UserTweets": {"limit": 7, "remaining": 7, "reset": 0}}
+        monitor.live_storage = MagicMock()
+        monitor.live_storage.scheduler_state.return_value = {"next_account": "two"}
+        monitor._get_live_user_id = MagicMock(side_effect=["2", "3"])
+        monitor._record_resolution_success = MagicMock()
+        monitor._fetch_live_endpoint = MagicMock(return_value={"status": "completed", "pages": []})
+        monitor._process_sets = MagicMock(return_value={"4_union": []})
+        monitor._handle_new_tweets = MagicMock(return_value={"new": 0, "duplicates": 0})
+
+        report = monitor.run_cycle()
+
+        self.assertEqual(monitor._get_live_user_id.call_args_list[0].args, ("two",))
+        self.assertEqual(report["accounts"]["one"]["reason"], "rate_budget_reserve")
+        monitor.live_storage.update_scheduler_state.assert_called_once_with({"next_account": "one"})
+
+    def test_partial_endpoint_result_does_not_advance_live_schedule(self):
+        monitor = LiveMonitor.__new__(LiveMonitor)
+        monitor.live_storage = MagicMock()
+
+        monitor._record_endpoint_result(
+            "example",
+            {
+                "status": "partial",
+                "sets": {"4_union": 0},
+                "finished_at": "2026-08-16T15:05:14Z",
+            },
+        )
+
+        monitor.live_storage.update_account_state.assert_called_once_with(
+            "example",
+            {"last_status": "partial", "last_counts": {"4_union": 0}},
+        )
 
 
 if __name__ == "__main__":

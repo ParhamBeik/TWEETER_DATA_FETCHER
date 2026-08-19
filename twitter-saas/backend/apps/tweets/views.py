@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import timedelta
 from io import StringIO
 
 from django.db import connection
+from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
-from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -19,9 +18,13 @@ from rest_framework.views import APIView
 
 from apps.fetching.accounts import clamp_priority, clear_live_quarantine, live_state_map
 
-from config.pagination import FetchRunCursorPagination
+from config.pagination import (
+    CreatedAtCursorPagination,
+    FetchRunCursorPagination,
+    StandardCursorPagination,
+)
 
-from .models import FetchRun, Search, Tweet, TweetMetric, TwitterUser
+from .models import FetchRun, Search, Tweet, TwitterUser, XSession
 from .serializers import (
     AccountOpsSerializer,
     FetchRunDetailSerializer,
@@ -33,6 +36,18 @@ from .serializers import (
 
 def _normalize_handle(raw: str) -> str:
     return (raw or "").strip().lstrip("@").lower()
+
+
+def with_feed_ts(qs):
+    """Annotate the cursor-ordering field used by StandardCursorPagination.
+
+    `created_at` is when X says the tweet was posted and is nullable when the
+    timestamp will not parse; `ingested_at` is when we saw it and is never null.
+    Coalescing gives a non-null, monotonic ordering key, so an undated tweet
+    sorts by when it arrived instead of being fabricated a "now" timestamp (which
+    pinned it to the top of the feed forever) or dropped from the feed entirely.
+    """
+    return qs.annotate(feed_ts=Coalesce("created_at", "ingested_at"))
 
 
 def feed_queryset(params):
@@ -78,12 +93,9 @@ def feed_queryset(params):
             qs = qs.annotate(_search=SearchVector("text")).filter(_search=query)
         else:
             qs = qs.filter(text__icontains=query)
-    return (
-        qs.distinct()
-        .select_related("author")
-        .defer("payload")
-        .order_by("-created_at", "-id")
-    )
+    return with_feed_ts(
+        qs.distinct().select_related("author").defer("payload")
+    ).order_by("-feed_ts", "-id")
 
 
 class FeedView(ListAPIView):
@@ -102,12 +114,9 @@ class AccountTimelineView(ListAPIView):
 
     def get_queryset(self):
         handle = _normalize_handle(self.kwargs["handle"])
-        return (
-            Tweet.objects.filter(account=handle)
-            .select_related("author")
-            .defer("payload")
-            .order_by("-created_at", "-id")
-        )
+        return with_feed_ts(
+            Tweet.objects.filter(account=handle).select_related("author").defer("payload")
+        ).order_by("-feed_ts", "-id")
 
 
 class AccountViewSet(viewsets.ModelViewSet):
@@ -221,11 +230,54 @@ class CycleView(APIView):
         return Response({"status": "queued", "subsystem": subsystem}, status=status.HTTP_202_ACCEPTED)
 
 
+class XSessionView(APIView):
+    """Read safe session health or replace the active operator session."""
+
+    def get(self, request):
+        from apps.fetching.session import session_health
+
+        return Response(session_health())
+
+    def post(self, request):
+        from apps.fetching.session import (
+            normalize_session_source,
+            validate_config_overrides,
+            validate_session_payload,
+        )
+
+        # Accepts a whole exported config.json (api_cookies/api_auth) or the
+        # session shape (cookies/headers); session-bound config keys are kept,
+        # everything else falls back to the seed template.
+        payload = normalize_session_source(request.data)
+        try:
+            cookies, headers = validate_session_payload(payload)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        overrides = validate_config_overrides(payload)
+        defaults = {"cookies": cookies, "headers": headers, "active": True}
+        if overrides:
+            defaults["config_overrides"] = overrides
+        session, _ = XSession.objects.update_or_create(name="default", defaults=defaults)
+        XSession.objects.exclude(pk=session.pk).update(active=False)
+        return Response({
+            "status": "updated",
+            "cookie_count": len(cookies),
+            "header_count": len(headers),
+            "override_keys": sorted(overrides),
+        })
+
+
 class SearchViewSet(viewsets.ModelViewSet):
     """List/create searches; creating one enqueues an on-demand fetch."""
 
     serializer_class = SearchSerializer
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    # No PATCH: it let any authenticated user rewrite another search's raw_query
+    # or set enabled=False (silently dropping it from repoll_searches and from
+    # everyone's feed), and no UI ever called it. Edit via admin if needed.
+    http_method_names = ["get", "post", "head", "options"]
+    # Searches paginate on their own non-null created_at; only the `results`
+    # action returns Tweets and needs the feed_ts-ordered paginator.
+    pagination_class = CreatedAtCursorPagination
 
     def get_queryset(self):
         qs = Search.objects.all()
@@ -248,15 +300,15 @@ class SearchViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def results(self, request, pk=None):
         search = self.get_object()
-        tweets = (
+        tweets = with_feed_ts(
             Tweet.objects.filter(search_results__search=search)
             .select_related("author")
             .defer("payload")
-            .order_by("search_results__rank", "-created_at")
-        )
-        page = self.paginate_queryset(tweets)
+        ).order_by("search_results__rank", "-feed_ts")
+        paginator = StandardCursorPagination()
+        page = paginator.paginate_queryset(tweets, request, view=self)
         serializer = TweetSerializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+        return paginator.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=["post"])
     def refresh(self, request, pk=None):
@@ -265,34 +317,6 @@ class SearchViewSet(viewsets.ModelViewSet):
 
         run_search.delay(search.id)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
-
-
-class TrendingView(ListAPIView):
-    """Tweets ranked by engagement delta per hour over the last 24 hours."""
-
-    serializer_class = TweetSerializer
-    pagination_class = None
-
-    def get_queryset(self):
-        window = timezone.now() - timedelta(hours=24)
-        series: dict[int, list[TweetMetric]] = {}
-        for metric in TweetMetric.objects.filter(captured_at__gte=window).order_by(
-            "tweet_id", "captured_at"
-        ):
-            series.setdefault(metric.tweet_id, []).append(metric)
-        ranked: list[tuple[float, int]] = []
-        for tweet_id, points in series.items():
-            if len(points) < 2:
-                continue
-            first, last = points[0], points[-1]
-            hours = max((last.captured_at - first.captured_at).total_seconds() / 3600, 1 / 60)
-            start = (first.likes or 0) + (first.retweets or 0) + (first.views or 0)
-            end = (last.likes or 0) + (last.retweets or 0) + (last.views or 0)
-            ranked.append(((end - start) / hours, tweet_id))
-        ranked.sort(reverse=True)
-        ids = [tweet_id for _rate, tweet_id in ranked[:50]]
-        tweets = {tweet.id: tweet for tweet in Tweet.objects.filter(id__in=ids).select_related("author").defer("payload")}
-        return [tweets[tweet_id] for tweet_id in ids if tweet_id in tweets]
 
 
 class ExportView(APIView):

@@ -48,6 +48,7 @@ class LiveMonitor:
 
     ENDPOINTS = ("UserTweets",)
     QUARANTINE_FAILURE_THRESHOLD = 3
+    RATE_LIMIT_RESERVE = 5
 
     def __init__(self, config_path: Optional[str] = None):
         self.project_root = PROJECT_ROOT
@@ -99,6 +100,9 @@ class LiveMonitor:
                 "quarantined_at": now,
                 "quarantine_reason": str(reason)[:300],
             })
+            self.console.warning(
+                f"quarantined @{username} after {count} consecutive resolution failures: {str(reason)[:200]}"
+            )
         self.live_storage.update_account_state(username, updates)
         return updates
 
@@ -114,6 +118,15 @@ class LiveMonitor:
         except Exception:
             return True
         return (datetime.utcnow() - last_dt).total_seconds() >= interval
+
+    def _record_endpoint_result(self, username: str, result: Dict[str, Any]) -> None:
+        updates = {
+            "last_status": result["status"],
+            "last_counts": result["sets"],
+        }
+        if result["status"] == "completed":
+            updates["last_checked_at"] = result["finished_at"]
+        self.live_storage.update_account_state(username, updates)
 
     def _fetch_live_endpoint(self, username: str, user_id: str, endpoint: str, live_window_hours: int, safety_cap_pages: int) -> Dict[str, Any]:
         watermark = self.live_storage.storage.get_fetch_watermark(username, endpoint)
@@ -167,14 +180,6 @@ class LiveMonitor:
             "endpoints": {},
         }
         try:
-            self.console.info(f"Bootstrapping browser context for @{username}")
-            bootstrap = self.fetcher.bootstrap_browser_context(username=username)
-            result["browser_bootstrap"] = {
-                "ok": bootstrap.ok,
-                "route": bootstrap.route,
-                "support_request_count": bootstrap.support_request_count,
-                "error": bootstrap.error,
-            }
             self.console.info(f"Resolving user ID for @{username}")
             user_id = self._get_live_user_id(username)
         except Exception as exc:
@@ -210,15 +215,33 @@ class LiveMonitor:
         else:
             result["status"] = "completed"
         result["finished_at"] = datetime.utcnow().isoformat() + "Z"
-        self.live_storage.update_account_state(
-            username,
-            {
-                "last_checked_at": result["finished_at"],
-                "last_status": result["status"],
-                "last_counts": result["sets"],
-            },
-        )
+        self._record_endpoint_result(username, result)
         return result
+
+    def _available_timeline_requests(self) -> int:
+        state = self.api_manager.rate_limits.get("UserTweets", {})
+        limit = int(state.get("limit", 0) or 0)
+        remaining = int(state.get("remaining", limit) or 0)
+        reset = int(state.get("reset", 0) or 0)
+        if reset and reset <= int(time.time()):
+            remaining = limit
+        return max(0, remaining - self.RATE_LIMIT_RESERVE)
+
+    def _rotate_due_accounts(self, accounts: List[str]) -> List[str]:
+        if not accounts:
+            return []
+        cursor = str(self.live_storage.scheduler_state().get("next_account") or "")
+        start = accounts.index(cursor) if cursor in accounts else 0
+        return accounts[start:] + accounts[:start]
+
+    def _admit_due_accounts(self, accounts: List[str], *, rotate: bool) -> tuple[List[str], List[str]]:
+        ordered = self._rotate_due_accounts(accounts) if rotate else list(accounts)
+        admitted = ordered[:self._available_timeline_requests()]
+        deferred = ordered[len(admitted):]
+        if admitted and rotate:
+            next_index = (self.accounts.index(admitted[-1]) + 1) % len(self.accounts)
+            self.live_storage.update_scheduler_state({"next_account": self.accounts[next_index]})
+        return admitted, deferred
 
     def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
         selected = only_accounts or self.accounts
@@ -227,7 +250,10 @@ class LiveMonitor:
         report = {
             "started_at": datetime.utcnow().isoformat() + "Z",
             "accounts": {},
-            "summary": {"checked": 0, "skipped": 0, "failed": 0, "quarantined": 0},
+            "summary": {
+                "eligible": 0, "checked": 0, "skipped": 0, "failed": 0,
+                "quarantined": 0, "deferred": 0,
+            },
         }
         due_accounts: List[str] = []
         for username in selected:
@@ -246,17 +272,24 @@ class LiveMonitor:
             if not self.should_fetch_account(username):
                 report["summary"]["skipped"] += 1
                 continue
-            report["summary"]["checked"] += 1
+            report["summary"]["eligible"] += 1
             due_accounts.append(username)
 
+        admitted_accounts, deferred_accounts = self._admit_due_accounts(
+            due_accounts, rotate=only_accounts is None
+        )
+        report["summary"]["checked"] = len(admitted_accounts)
+        for username in deferred_accounts:
+            report["accounts"][username] = {
+                "account": username,
+                "status": "deferred",
+                "reason": "rate_budget_reserve",
+                "endpoints": {},
+            }
+        report["summary"]["deferred"] = len(deferred_accounts)
+
         user_ids: Dict[str, str] = {}
-        shared_bootstrap = None
-        if due_accounts:
-            try:
-                shared_bootstrap = self.fetcher.bootstrap_browser_context(username=due_accounts[0])
-            except Exception as exc:
-                self.console.warning(f"Shared browser bootstrap failed; using per-account fallback: {str(exc)[:200]}")
-        for username in due_accounts:
+        for username in admitted_accounts:
             policy = get_priority_policy(username, self.account_map, self.priority_policies)
             report["accounts"][username] = {
                 "account": username,
@@ -265,18 +298,6 @@ class LiveMonitor:
                 "endpoints": {},
             }
             try:
-                bootstrap = (
-                    shared_bootstrap
-                    if shared_bootstrap is not None and shared_bootstrap.ok
-                    else self.fetcher.bootstrap_browser_context(username=username)
-                )
-                report["accounts"][username]["browser_bootstrap"] = {
-                    "ok": bootstrap.ok,
-                    "route": bootstrap.route,
-                    "support_request_count": bootstrap.support_request_count,
-                    "shared": bootstrap is shared_bootstrap,
-                    "error": bootstrap.error,
-                }
                 user_ids[username] = self._get_live_user_id(username)
                 self._record_resolution_success(username)
             except Exception as exc:
@@ -292,8 +313,21 @@ class LiveMonitor:
                 report["summary"]["failed"] += 1
 
         endpoint_pages_by_account: Dict[str, Dict[str, List[Dict[str, Any]]]] = {username: {} for username in user_ids}
+        mid_loop_deferred: set[str] = set()
         for endpoint in self.ENDPOINTS:
             for idx, (username, user_id) in enumerate(user_ids.items()):
+                if username in mid_loop_deferred:
+                    continue
+                if self._available_timeline_requests() <= 0:
+                    report["accounts"][username].update(
+                        {"status": "deferred", "reason": "rate_budget_reserve"}
+                    )
+                    mid_loop_deferred.add(username)
+                    # Was already counted in "checked" at admission time; move it to
+                    # "deferred" instead of double-counting both.
+                    report["summary"]["checked"] -= 1
+                    report["summary"]["deferred"] += 1
+                    continue
                 if idx > 0:
                     self.api_manager.human_delay("between_accounts")
                 policy = get_priority_policy(username, self.account_map, self.priority_policies)
@@ -308,6 +342,8 @@ class LiveMonitor:
                 endpoint_pages_by_account[username][endpoint] = endpoint_result.get("pages", [])
 
         for username, endpoint_pages in endpoint_pages_by_account.items():
+            if report["accounts"][username].get("status") == "deferred":
+                continue
             policy = get_priority_policy(username, self.account_map, self.priority_policies)
             sets = self._process_sets(username, endpoint_pages, int(policy.get("live_window_hours", 24)))
             new_stats = self._handle_new_tweets(username, sets["4_union"])
@@ -317,14 +353,7 @@ class LiveMonitor:
             statuses = [str(row.get("status")) for row in account_report["endpoints"].values()]
             account_report["status"] = "failed" if any(status == "failed" for status in statuses) else ("partial" if any(status == "partial" for status in statuses) else "completed")
             account_report["finished_at"] = datetime.utcnow().isoformat() + "Z"
-            self.live_storage.update_account_state(
-                username,
-                {
-                    "last_checked_at": account_report["finished_at"],
-                    "last_status": account_report["status"],
-                    "last_counts": account_report["sets"],
-                },
-            )
+            self._record_endpoint_result(username, account_report)
             if account_report.get("status") != "completed":
                 report["summary"]["failed"] += 1
         report["finished_at"] = datetime.utcnow().isoformat() + "Z"

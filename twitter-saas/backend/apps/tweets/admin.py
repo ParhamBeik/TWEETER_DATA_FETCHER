@@ -27,6 +27,14 @@ class TweetAdmin(admin.ModelAdmin):
     search_fields = ("tweet_id", "account", "text")
     date_hierarchy = "created_at"
 
+    def get_queryset(self, request):
+        from .views import with_feed_ts
+
+        return with_feed_ts(super().get_queryset(request))
+
+    def get_ordering(self, request):
+        return ("-feed_ts", "-id")
+
 
 @admin.register(Search)
 class SearchAdmin(admin.ModelAdmin):
@@ -48,4 +56,24 @@ class XSessionAdmin(admin.ModelAdmin):
 admin.site.register(RawPage)
 admin.site.register(EndpointState)
 admin.site.register(KeyValueState)
-admin.site.register(FetchRun)
+
+
+@admin.register(FetchRun)
+class FetchRunAdmin(admin.ModelAdmin):
+    """Redacts log_excerpt, which the bare registration rendered in the clear.
+
+    Runs written after the redact-on-persist change are already clean; this
+    covers rows stored before it.
+    """
+
+    list_display = ("run_id", "subsystem", "target", "status", "started_at", "finished_at")
+    list_filter = ("subsystem", "status")
+    search_fields = ("run_id", "target")
+    exclude = ("log_excerpt",)
+    readonly_fields = ("redacted_log_excerpt",)
+
+    @admin.display(description="Log excerpt (redacted)")
+    def redacted_log_excerpt(self, obj):
+        from apps.fetching.redaction import redact_text
+
+        return redact_text(obj.log_excerpt)

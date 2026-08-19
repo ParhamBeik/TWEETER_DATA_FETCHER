@@ -54,7 +54,7 @@ class Command(BaseCommand):
             except (IndexError, ValueError):
                 priority = 7
             for entry in value:
-                handle = str(entry.get("username") or "").lstrip("@").strip()
+                handle = str(entry.get("username") or "").lstrip("@").strip().lower()
                 if not handle:
                     continue
                 TwitterUser.objects.update_or_create(
@@ -87,6 +87,8 @@ class Command(BaseCommand):
                 defaults={
                     "name": entry.get("name") or slug,
                     "raw_query": raw_query,
+                    "pagination_depth": max(1, int(entry.get("pagination_depth", 1) or 1)),
+                    "rolling_hours": max(1, int(entry.get("rolling_hours", 24) or 24)),
                     "enabled": bool(entry.get("enabled", True)),
                 },
             )
