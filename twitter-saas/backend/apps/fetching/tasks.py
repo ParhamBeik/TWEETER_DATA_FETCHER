@@ -4,11 +4,12 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from datetime import timedelta
+from typing import Callable, Optional
 
 from celery import current_task, shared_task
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, F, OuterRef
 from django.utils import timezone
 
 from apps.tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
@@ -69,6 +70,7 @@ def _run_cycle(
     *,
     target: str = "all",
     searches: list | None = None,
+    on_complete: Optional[Callable[["FetchRun"], None]] = None,
 ) -> int:
     result = runner.run_fetcher(
         module, args, subsystem, searches=searches, target=target, task_id=_task_id()
@@ -94,6 +96,8 @@ def _run_cycle(
         runner.finalize_run(result.run, ingested_tweets=count, task_failed=failed)
         if subsystem == "live":
             sync_quarantine_from_live_state()
+        if on_complete is not None:
+            on_complete(result.run)
         runner.cleanup(result.root)
 
 
@@ -129,12 +133,59 @@ def poll_live_all() -> int:
 
 @shared_task(name="apps.fetching.tasks.backfill_historical_all")
 def backfill_historical_all() -> int:
+    """Backfill one bounded, oldest-first chunk of tracked accounts per tick.
+
+    Previously tried every tracked account in a single run and relied on
+    FETCH_CYCLE_TIMEOUT_SECONDS to bound it -- on the shared solo/concurrency=1
+    worker that meant either starving live/search fetching for the run's
+    duration or getting SIGKILLed mid-run with the whole tick's progress lost
+    (observed: 100% failure rate in production). Chunking makes each tick both
+    small enough to finish comfortably inside the timeout and cheap enough to
+    run far more often, so the backfill behaves like the continuous, always-
+    rotating archive builder it's meant to be -- just in small, frequent bites
+    instead of one long one. `historical_backfilled_at` is only advanced for a
+    chunk that reports "completed"; a partial/failed chunk keeps its accounts at
+    the front of the queue so nothing silently falls behind.
+    """
     with _cycle_lock("backfill_historical_all") as acquired:
         if not acquired:
             logger.warning("backfill_historical_all: skipped overlapping cycle")
             return 0
         reap_orphaned_fetch_runs()
-        return _run_cycle(HISTORICAL_MODULE, [], "historical")
+
+        chunk_size = settings.FETCH_HISTORICAL_CHUNK_SIZE
+        handles = list(
+            TwitterUser.objects.filter(tracking=True)
+            .order_by(F("historical_backfilled_at").asc(nulls_first=True), "id")
+            .values_list("handle", flat=True)[:chunk_size]
+        )
+        if not handles:
+            logger.info("backfill_historical_all: no tracked accounts to backfill")
+            return 0
+
+        def _mark_chunk(run: FetchRun) -> None:
+            if run.status == "completed":
+                updated = TwitterUser.objects.filter(handle__in=handles).update(
+                    historical_backfilled_at=timezone.now()
+                )
+                logger.info(
+                    "backfill_historical_all: chunk completed, %d account(s) marked backfilled: %s",
+                    updated, ", ".join(f"@{h}" for h in handles),
+                )
+            else:
+                logger.warning(
+                    "backfill_historical_all: chunk status=%s, not advancing backfill "
+                    "watermark, will retry first next tick: %s",
+                    run.status, ", ".join(f"@{h}" for h in handles),
+                )
+
+        return _run_cycle(
+            HISTORICAL_MODULE,
+            ["--only", ",".join(handles)],
+            "historical",
+            target=f"chunk:{len(handles)}",
+            on_complete=_mark_chunk,
+        )
 
 
 @shared_task(name="apps.fetching.tasks.run_search")

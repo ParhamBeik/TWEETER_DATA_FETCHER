@@ -321,6 +321,40 @@ def _persist_artifacts(root: Path, subsystem: str, run: FetchRun, return_code: i
     return summary, failure_ledger, status
 
 
+_LOG_HEAD_LINES = 200
+_LOG_TAIL_LINES = 200
+
+
+class _HeadTailLines:
+    """Keeps the first N and last N lines of a run instead of just the tail.
+
+    A plain deque(maxlen=...) evicts from the front, so an early-cycle failure
+    (e.g. account 3 of 50) gets silently dropped from FetchRun.log_excerpt once
+    a long run produces enough later output. Keeping both ends means the start
+    of the run survives even when the run runs long.
+    """
+
+    def __init__(self, head: int = _LOG_HEAD_LINES, tail: int = _LOG_TAIL_LINES) -> None:
+        self._head: list[str] = []
+        self._tail: deque[str] = deque(maxlen=tail)
+        self._head_limit = head
+        self._total = 0
+
+    def append(self, line: str) -> None:
+        self._total += 1
+        if len(self._head) < self._head_limit:
+            self._head.append(line)
+        else:
+            self._tail.append(line)
+
+    def __iter__(self):
+        omitted = self._total - len(self._head) - len(self._tail)
+        yield from self._head
+        if omitted > 0:
+            yield f"... [{omitted} line(s) omitted] ..."
+        yield from self._tail
+
+
 def _kill_process_group(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
@@ -333,7 +367,7 @@ def _kill_process_group(process: subprocess.Popen) -> None:
 def _await_process(
     process: subprocess.Popen, *, timeout: float, subsystem: str,
     literals: list[str] | None = None,
-) -> tuple[int, deque[str]]:
+) -> tuple[int, "_HeadTailLines"]:
     # Redact once, here, as each line is read: this is the single point every
     # line passes through on its way to both the Docker log and FetchRun.
     # log_excerpt, so neither can carry a secret that the other filtered.
@@ -342,7 +376,7 @@ def _await_process(
     def _clean(raw: str) -> str:
         return redact_text(raw.rstrip(), literals=literals)
 
-    lines: deque[str] = deque(maxlen=400)
+    lines = _HeadTailLines()
     stdout = process.stdout
     use_select = False
     if stdout is not None and hasattr(stdout, "fileno"):

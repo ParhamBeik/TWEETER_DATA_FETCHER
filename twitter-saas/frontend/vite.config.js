@@ -7,7 +7,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8000",
+        // The E2E run starts its own backend on a non-default port so it cannot
+        // collide with (and silently drive) another project's dev server.
+        target: `http://127.0.0.1:${process.env.E2E_API_PORT || 8000}`,
         changeOrigin: true,
       },
     },

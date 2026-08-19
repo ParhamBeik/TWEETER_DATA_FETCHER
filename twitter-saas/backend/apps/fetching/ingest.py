@@ -1,11 +1,14 @@
 """Upsert normalized fetcher tweet dicts into Postgres."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Iterable
 
 from apps.tweets.models import Search, SearchResult, Tweet, TweetMetric, TwitterUser
+
+logger = logging.getLogger(__name__)
 
 _EXTRAS_KEYS = (
     "media",
@@ -221,6 +224,10 @@ def ingest_tweets(items) -> int:
         update_fields=_TWEET_UPDATE_FIELDS,
     )
     _record_metrics(rows, previous)
+    logger.info(
+        "ingested %d tweet(s): %d unique row(s) upserted, %d duplicate(s) collapsed",
+        len(batch), len(rows), len(batch) - len(rows),
+    )
     return len(batch)
 
 
@@ -277,4 +284,7 @@ def ingest_search_results(search: Search, items) -> int:
             unique_fields=["search", "tweet"],
             update_fields=["rank"],
         )
+    logger.info(
+        "search %r: linked %d/%d fetched result(s)", search.name, len(links), len(batch),
+    )
     return len(links)

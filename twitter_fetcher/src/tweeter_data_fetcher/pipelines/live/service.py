@@ -100,6 +100,9 @@ class LiveMonitor:
                 "quarantined_at": now,
                 "quarantine_reason": str(reason)[:300],
             })
+            self.console.warning(
+                f"quarantined @{username} after {count} consecutive resolution failures: {str(reason)[:200]}"
+            )
         self.live_storage.update_account_state(username, updates)
         return updates
 
