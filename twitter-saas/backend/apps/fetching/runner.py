@@ -127,6 +127,13 @@ def _write_config(root: Path, searches: list | None = None) -> Path:
         authorization = next((value for key, value in headers.items() if key.lower() == "authorization"), "")
         if authorization.lower().startswith("bearer "):
             base.setdefault("api_auth", {})["bearer_token"] = authorization[7:].strip()
+        # Snapshot what this run started with so _persist_session can tell
+        # whether *this* subprocess actually refreshed the session, instead of
+        # blindly resaving on every run (see _persist_session).
+        (config_dir / "_session_snapshot.json").write_text(
+            json.dumps({"api_cookies": base["api_cookies"], "api_headers": base["api_headers"]}),
+            encoding="utf-8",
+        )
     (config_dir / "config.json").write_text(json.dumps(base, indent=2), encoding="utf-8")
     return config_dir / "config.json"
 
@@ -424,16 +431,32 @@ def _await_process(
 
 
 def _persist_session(root: Path) -> None:
-    """Copy refreshed scratch cookies/headers back onto the durable XSession."""
+    """Copy refreshed scratch cookies/headers back onto the durable XSession.
+
+    Live/historical/search now run as separate concurrent worker processes
+    (see docker-compose.yml queues), so multiple subprocesses can have the
+    session checked out at once. Only write fields this run actually changed
+    from what it started with (via the snapshot _write_config took) -- an
+    unconditional write here would let a run that never refreshed clobber a
+    concurrent run's genuine refresh with stale cookies, since whichever
+    finishes last always wins. No snapshot on disk (e.g. a scratch dir built
+    without _write_config) falls back to the old unconditional-write behavior.
+    """
     config = _read_json(root / "config" / "config.json", {})
     if not isinstance(config, dict):
         return
+    snapshot = _read_json(root / "config" / "_session_snapshot.json", None)
+    cookies = config.get("api_cookies")
+    headers = config.get("api_headers")
+    if isinstance(snapshot, dict):
+        if isinstance(cookies, dict) and cookies == snapshot.get("api_cookies"):
+            cookies = None
+        if isinstance(headers, dict) and headers == snapshot.get("api_headers"):
+            headers = None
     session = _active_session()
     if session is None:
         return
     fields = []
-    cookies = config.get("api_cookies")
-    headers = config.get("api_headers")
     if isinstance(cookies, dict) and cookies:
         session.cookies = cookies
         fields.append("cookies")

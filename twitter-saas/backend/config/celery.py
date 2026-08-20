@@ -12,6 +12,25 @@ app = Celery("twitter_saas")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
+# One queue per subsystem, each consumed by its own solo/concurrency=1 worker
+# (see docker-compose.yml). Previously all three shared a single worker
+# process, so a live cycle's in-process rate-limit sleep (which can run
+# 10-15+ minutes) blocked historical and search entirely regardless of their
+# own schedule -- separate queues/workers let them run concurrently instead.
+app.conf.task_routes = {
+    "apps.fetching.tasks.poll_live_all": {"queue": "live"},
+    "apps.fetching.tasks.fetch_account_live": {"queue": "live"},
+    "apps.fetching.tasks.backfill_historical_all": {"queue": "historical"},
+    "apps.fetching.tasks.fetch_account_historical": {"queue": "historical"},
+    "apps.fetching.tasks.repoll_searches": {"queue": "search"},
+    "apps.fetching.tasks.run_search": {"queue": "search"},
+    # Cheap daily maintenance, no dedicated worker needed -- piggyback on
+    # historical's queue. Without an explicit route these would sit
+    # unconsumed forever now that no worker listens to the old default queue.
+    "apps.fetching.tasks.purge_expired_search_tweets": {"queue": "historical"},
+    "apps.fetching.tasks.purge_old_fetch_runs": {"queue": "historical"},
+}
+
 
 @app.on_after_finalize.connect
 def setup_periodic_tasks(sender, **_kwargs):
