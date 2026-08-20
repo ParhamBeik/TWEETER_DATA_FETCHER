@@ -4,7 +4,7 @@
 Run:
     python -m fetcher.timeline
 
-For normal historical/live runs use ``tdf-historical`` or ``tdf-live``; this
+For normal historical/live runs use ``fetcher.historical`` or ``fetcher.live``; this
 module runs the lower-level sequential fetch engine with configured accounts.
 
 Code map:
