@@ -18,7 +18,6 @@ Flags:
 from __future__ import annotations
 
 
-import sys
 import argparse
 from datetime import datetime
 from pathlib import Path
@@ -236,26 +235,6 @@ def _print_report_summary(report: Dict[str, Any], json_path: Path, txt_path: Pat
     CONSOLE.info(f"Report TXT: {txt_path}")
 
 
-def _disabled_endpoint_result(username: str, endpoint: str) -> Dict[str, Any]:
-    return {
-        "account": username,
-        "endpoint": endpoint,
-        "status": "skipped",
-        "outcome": "skipped_disabled_by_cli",
-        "reason": "Endpoint disabled by historical runner toggle",
-        "pages": [],
-        "pages_fetched": 0,
-        "raw_batch_path": "",
-        "last_cursor": None,
-        "last_http_status": None,
-        "attempts": 0,
-        "error_samples": [],
-        "started_at": datetime.utcnow().isoformat() + "Z",
-        "finished_at": datetime.utcnow().isoformat() + "Z",
-        "window_coverage": None,
-    }
-
-
 def _fetch_or_skip_endpoint(
     *,
     engine: FetcherEngine,
@@ -301,7 +280,6 @@ def run_v4(
     processor = TweetSetProcessor()
     evaluator = RollingWindowEvaluator()
     console = engine.logger
-    console.info(f"Historical storage migration: {migration_report}")
 
     accounts = ordered_accounts(engine.account_map) if selected_accounts is None else selected_accounts
     if not accounts:
@@ -322,10 +300,9 @@ def run_v4(
             "endpoint_order": ["UserTweets"],
             "enabled_endpoints": ["UserTweets"],
             "accounts_requested": len(accounts),
-            "completion_rule": "tehran_jalali_rolling_window",
+            "completion_rule": "tehran_rolling_window",
             "pagination_safety_cap_pages": engine.pagination_safety_cap_pages,
             "first_request_warmup_seconds": engine.first_request_warmup_seconds,
-            "historical_storage_migration": migration_report,
             "data_root": str(engine.data_root),
         },
         "summary": {},

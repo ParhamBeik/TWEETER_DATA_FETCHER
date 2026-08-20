@@ -6,13 +6,11 @@ redis>=5.0
 django-cors-headers>=4.3
 gunicorn>=21.0
 
-# Tests
-pytest>=8.0
-pytest-django>=4.8
-
-# Vendored fetcher runtime deps (from tweeter-data-fetcher pyproject)
-jdatetime>=5.3
-pytz>=2026.2
+# X engine runtime
 requests>=2.0
 playwright>=1.0
 rich>=13.0
+
+# Tests
+pytest>=8.0
+pytest-django>=4.8

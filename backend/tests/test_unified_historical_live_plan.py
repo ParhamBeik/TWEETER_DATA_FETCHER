@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytz
+from zoneinfo import ZoneInfo
 
 from fetcher.processing import RollingWindowEvaluator, TweetSetProcessor, window_cutoff
 from fetcher.client import APIManager
@@ -16,16 +16,16 @@ def _tweet_at(dt: datetime) -> dict:
 
 class UnifiedHistoricalLivePlanTests(unittest.TestCase):
     def test_rolling_window_cutoff_is_timestamp_granular(self):
-        tz = pytz.timezone("Asia/Tehran")
-        cutoff = tz.localize(datetime(2026, 7, 7, 12, 0, 0))
+        tz = ZoneInfo("Asia/Tehran")
+        cutoff = datetime(2026, 7, 7, 12, 0, 0, tzinfo=tz)
         evaluator = RollingWindowEvaluator()
 
         self.assertTrue(evaluator.evaluate_tweets_cutoff([_tweet_at(cutoff - timedelta(seconds=1))], cutoff).complete)
         self.assertFalse(evaluator.evaluate_tweets_cutoff([_tweet_at(cutoff + timedelta(seconds=1))], cutoff).complete)
 
     def test_watermark_floors_before_configured_window(self):
-        tz = pytz.timezone("Asia/Tehran")
-        now = tz.localize(datetime(2026, 7, 7, 12, 0, 0))
+        tz = ZoneInfo("Asia/Tehran")
+        now = datetime(2026, 7, 7, 12, 0, 0, tzinfo=tz)
         cutoff = window_cutoff(
             window_days=1,
             watermark="2026-07-05T14:00:00+03:30",
@@ -33,7 +33,7 @@ class UnifiedHistoricalLivePlanTests(unittest.TestCase):
             now_dt=now,
         )
 
-        self.assertEqual(cutoff, tz.localize(datetime(2026, 7, 5, 0, 0, 0)))
+        self.assertEqual(cutoff, datetime(2026, 7, 5, 0, 0, 0, tzinfo=tz))
 
     def test_param_rule_out_after_three_failures(self):
         with tempfile.TemporaryDirectory() as tmp:

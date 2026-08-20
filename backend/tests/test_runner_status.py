@@ -40,8 +40,8 @@ class SearchStatusTests(unittest.TestCase):
     def test_search_state_does_not_sleep_failed_initial_404(self):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.storage = MagicMock()
-        monitor.storage._tehran_now.return_value = datetime.utcnow()
-        monitor.storage._jalali_batch_name.return_value = "batch"
+        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._batch_name.return_value = "batch"
         monitor.config = {}
         monitor.console = MagicMock()
         monitor.api_manager = MagicMock()
@@ -83,8 +83,8 @@ class SearchStatusTests(unittest.TestCase):
     def test_search_uses_configured_features(self):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.storage = MagicMock()
-        monitor.storage._tehran_now.return_value = datetime.utcnow()
-        monitor.storage._jalali_batch_name.return_value = "batch"
+        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._batch_name.return_value = "batch"
         monitor.config = {
             "graphql_endpoint_payloads": {
                 "SearchTimeline": {

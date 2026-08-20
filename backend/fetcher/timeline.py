@@ -37,15 +37,11 @@ from fetcher.processing import (
 from fetcher.browser import BrowserBootstrap, BrowserBootstrapResult
 from fetcher.storage import StorageManager
 from fetcher.config import load_tier_config
+from zoneinfo import ZoneInfo
+
 from fetcher.observability import EventRecorder, redact_exception
 from fetcher.observability import configure_logging
 from fetcher.observability import PipelineConsole
-
-try:
-    import pytz
-except ImportError:
-    print("ERROR: Missing dependency pytz. Run: pip3 install pytz")
-    raise
 
 
 TIMEZONE = "Asia/Tehran"
@@ -111,7 +107,7 @@ class FetcherEngine:
         self.window_evaluator = RollingWindowEvaluator()
 
         self.config = self.api_manager.config
-        self.tz = pytz.timezone(TIMEZONE)
+        self.tz = ZoneInfo(TIMEZONE)
         self.account_map, self.priority_policies = load_tier_config(self.config)
         self.max_cursor_error_retries = int(
             self.config.get("api_config", {}).get("cursor_error_max_retries", 3)

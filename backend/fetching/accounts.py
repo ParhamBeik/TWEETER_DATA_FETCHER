@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Count
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -131,10 +130,3 @@ def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
     }
 
 
-def recent_tweet_counts(handles: list[str]) -> dict[str, int]:
-    rows = (
-        Tweet.objects.filter(account__in=handles)
-        .values("account")
-        .annotate(total=Count("id"))
-    )
-    return {row["account"]: row["total"] for row in rows}

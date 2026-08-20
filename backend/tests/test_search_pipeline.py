@@ -152,8 +152,8 @@ class SearchPipelineTests(unittest.TestCase):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
         monitor.storage = MagicMock()
-        monitor.storage._tehran_now.return_value = datetime.utcnow()
-        monitor.storage._jalali_batch_name.return_value = "batch"
+        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._batch_name.return_value = "batch"
         monitor.storage.save_search_result_page.side_effect = lambda *args: Path(self.temp_dir) / f"page_{args[-2]}.json"
         monitor.raw_root = Path(self.temp_dir) / "raw"
         monitor.reports_root = Path(self.temp_dir) / "reports"
@@ -206,8 +206,8 @@ class SearchPipelineTests(unittest.TestCase):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
         monitor.storage = MagicMock()
-        monitor.storage._tehran_now.return_value = datetime.utcnow()
-        monitor.storage._jalali_batch_name.return_value = "batch"
+        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._batch_name.return_value = "batch"
         monitor.storage.save_search_result_page.side_effect = lambda *args: Path(self.temp_dir) / f"page_{args[-2]}.json"
         monitor.raw_root = Path(self.temp_dir) / "raw"
         monitor.reports_root = Path(self.temp_dir) / "reports"
