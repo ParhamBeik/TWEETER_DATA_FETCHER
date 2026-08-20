@@ -38,13 +38,13 @@ beforeEach(() => {
 describe("Login form", () => {
   it("starts in sign-in mode", () => {
     renderLogin();
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sign in to Signal Archive" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
   it("exposes both fields by accessible name", () => {
     renderLogin();
-    expect(screen.getByLabelText("Username")).toBeInTheDocument();
+    expect(screen.getByLabelText("Email or username")).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
@@ -53,12 +53,21 @@ describe("Login form", () => {
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
   });
 
+  it("shows and hides the password on demand", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+    await user.click(screen.getByRole("button", { name: "Show password" }));
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
+    await user.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
+  });
+
   it("keeps submit disabled until both fields are filled", async () => {
     const user = userEvent.setup();
     renderLogin();
-    const submit = screen.getByRole("button", { name: "Login" });
+    const submit = screen.getByRole("button", { name: "Sign in" });
     expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText("Username"), "operator");
+    await user.type(screen.getByLabelText("Email or username"), "operator");
     expect(submit).toBeDisabled();
     await user.type(screen.getByLabelText("Password"), "pw");
     expect(submit).toBeEnabled();
@@ -67,18 +76,22 @@ describe("Login form", () => {
   it("toggles to register mode and back", async () => {
     const user = userEvent.setup();
     renderLogin();
-    await user.click(screen.getByRole("button", { name: /Need an account/ }));
-    expect(screen.getByRole("heading", { name: "Create account" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Have an account/ }));
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Create account" }));
+    expect(screen.getByRole("heading", { name: "Create your account" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sign in", exact: false }));
+    expect(screen.getByRole("heading", { name: "Sign in to Signal Archive" })).toBeInTheDocument();
   });
 });
 
 describe("Login submission", () => {
   async function fillAndSubmit(user, buttonName = "Login") {
-    await user.type(screen.getByLabelText("Username"), "operator");
-    await user.type(screen.getByLabelText("Password"), "secret");
-    await user.click(screen.getByRole("button", { name: buttonName }));
+    const registrationPassword = buttonName === "Register" ? "StrongPass1!" : "secret";
+    await user.type(screen.getByLabelText("Email or username"), "operator");
+    await user.type(screen.getByLabelText("Password"), registrationPassword);
+    if (buttonName === "Register") {
+      await user.type(screen.getByLabelText("Confirm password"), registrationPassword);
+    }
+    await user.click(screen.getByRole("button", { name: buttonName === "Login" ? "Sign in" : "Create account" }));
   }
 
   it("posts to the login endpoint and stores the returned token", async () => {
@@ -97,7 +110,7 @@ describe("Login submission", () => {
     const user = userEvent.setup();
     api.mockResolvedValue({ token: "tok-456" });
     renderLogin();
-    await user.click(screen.getByRole("button", { name: /Need an account/ }));
+    await user.click(screen.getByRole("tab", { name: "Create account" }));
     await fillAndSubmit(user, "Register");
     await waitFor(() => expect(api).toHaveBeenCalledWith("/auth/register/", expect.anything()));
   });
@@ -127,9 +140,9 @@ describe("Login submission", () => {
     let release;
     api.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ token: "t" }); }));
     renderLogin();
-    await user.type(screen.getByLabelText("Username"), "operator");
+    await user.type(screen.getByLabelText("Email or username"), "operator");
     await user.type(screen.getByLabelText("Password"), "secret");
-    const submit = screen.getByRole("button", { name: "Login" });
+    const submit = screen.getByRole("button", { name: "Sign in" });
     await user.click(submit);
     expect(submit).toBeDisabled();
     expect(api).toHaveBeenCalledTimes(1);
