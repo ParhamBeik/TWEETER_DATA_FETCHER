@@ -45,7 +45,7 @@ services:
       DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
     mem_limit: 512m
 
-  worker:
+  worker_live:
     restart: unless-stopped
     logging: *json-logging
     environment:
@@ -59,6 +59,26 @@ services:
     # `inspect ping` can't answer while a -P solo worker is mid-task, so a busy
     # (working correctly) worker kept flapping unhealthy. No override here now;
     # inherit the base compose's healthcheck.
+    mem_limit: 768m
+
+  worker_historical:
+    restart: unless-stopped
+    logging: *json-logging
+    environment:
+      DJANGO_DEBUG: "0"
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
+      DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
+    mem_limit: 512m
+
+  worker_search:
+    restart: unless-stopped
+    logging: *json-logging
+    environment:
+      DJANGO_DEBUG: "0"
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
+      DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
     mem_limit: 3g
 
   beat:

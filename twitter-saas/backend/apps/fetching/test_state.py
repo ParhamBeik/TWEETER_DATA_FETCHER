@@ -272,6 +272,35 @@ def test_persist_session_reads_refreshed_scratch_config():
     assert session.headers["authorization"] == "Bearer new"
 
 
+@pytest.mark.django_db
+def test_persist_session_skips_unchanged_fields_to_avoid_clobbering_concurrent_refresh():
+    # Regression: with live/historical/search now separate worker processes,
+    # a run that never refreshed must not resave its stale starting snapshot
+    # over a concurrent run's genuine refresh (last-writer-wins would silently
+    # revert the session to old, possibly-expired cookies).
+    root = Path(tempfile.mkdtemp(prefix="tdf_sess_"))
+    (root / "config").mkdir(parents=True)
+    started_with = {
+        "api_cookies": {"auth_token": "old"},
+        "api_headers": {"authorization": "Bearer old"},
+    }
+    (root / "config" / "_session_snapshot.json").write_text(json.dumps(started_with), encoding="utf-8")
+    # This run's own subprocess never refreshed: config.json still equals the snapshot.
+    (root / "config" / "config.json").write_text(json.dumps(started_with), encoding="utf-8")
+
+    # Meanwhile a concurrent run already refreshed the shared session.
+    session = XSession.objects.create(
+        cookies={"auth_token": "refreshed-by-another-process"},
+        headers={"authorization": "Bearer refreshed-by-another-process"},
+    )
+
+    runner._persist_session(root)
+
+    session.refresh_from_db()
+    assert session.cookies["auth_token"] == "refreshed-by-another-process"
+    assert session.headers["authorization"] == "Bearer refreshed-by-another-process"
+
+
 def test_iter_search_tweets_scopes_to_product():
     root = Path(tempfile.mkdtemp(prefix="tdf_search_prod_"))
     latest = root / "data" / "search" / "processed" / "ai" / "latest"

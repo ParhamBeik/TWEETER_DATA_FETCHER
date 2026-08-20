@@ -78,12 +78,22 @@ services:
     restart: unless-stopped
     mem_limit: 448m
 
-  worker:
+  # Live/historical/search each get their own -P solo --concurrency=1 worker
+  # and queue instead of sharing one. They used to share a single worker
+  # process, so a live cycle's in-process rate-limit sleep (routinely
+  # 10-15+ minutes) blocked historical and search entirely, regardless of
+  # their own schedule -- that was a bigger contributor to "historical/search
+  # barely progress" than the beat interval was. -P solo (not prefork) is
+  # kept on all three: the shared X session's cookies/tx-id pools assume one
+  # in-flight fetcher subprocess per worker (see apps.fetching.runner
+  # _persist_session for the cross-worker session-write race this still
+  # allows, and why it only writes fields that actually changed).
+  worker_live:
     build:
       context: ..
       dockerfile: twitter-saas/backend/Dockerfile
     logging: *json-logging
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q live -n live@%h
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
@@ -107,11 +117,70 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    mem_limit: 512m
+    # Live's primary UserTweets path is HTTP-only; Chromium only fires via the
+    # reactive 404-rescue path in x_api/timeline.py, so this is a much lighter
+    # allowance than search's routine deep-pagination capture below.
+    shm_size: 256m
+
+  worker_historical:
+    build:
+      context: ..
+      dockerfile: twitter-saas/backend/Dockerfile
+    logging: *json-logging
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q historical -n historical@%h
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DJANGO_CACHE_URL: redis://redis:6379/2
+      PYTHONPATH: /app/fetcher
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    # Historical's UserTweets pagination never invokes the Chromium path, so
+    # no shm_size bump needed -- HTTP-only, like the process this replaced.
+    mem_limit: 384m
+
+  worker_search:
+    build:
+      context: ..
+      dockerfile: twitter-saas/backend/Dockerfile
+    logging: *json-logging
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q search -n search@%h
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DJANGO_CACHE_URL: redis://redis:6379/2
+      PYTHONPATH: /app/fetcher
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
     # Deep-search Chromium capture needs ~2g: below that the renderer hard-crashes
-    # mid-scroll ("Page crashed") and the run degrades to HTTP page 1. The other
-    # services were trimmed so the stack still fits a 3.8g Docker VM with headroom
-    # -- previously the limits summed to 3.5g and an over-committed worker got the
-    # kernel to kill *other* containers, Postgres included.
+    # mid-scroll ("Page crashed") and the run degrades to HTTP page 1. Historical
+    # and live were trimmed above precisely so the 3-worker split still fits the
+    # same total footprint the single worker previously needed -- a prior incident
+    # here (limits summing to 3.5g) got the kernel to kill *other* containers,
+    # Postgres included.
     mem_limit: 2g
     # Chromium's renderer allocates shared memory in /dev/shm; the 64m Docker
     # default crashes it mid-scroll during deep SearchTimeline capture.
