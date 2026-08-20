@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-"""Rich-first terminal console with subsystem tags and structured phase/page output."""
+"""Observability: Rich terminal console, rotating file logs, NDJSON events.
+
+The console owns the terminal and forwards every message to the package
+logger, so a line printed to the operator is always also on disk.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import sys
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from hashlib import sha256
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from typing import Any, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 try:
     from rich.console import Console
@@ -120,32 +133,6 @@ class PipelineConsole:
         title = " ".join(parts)
         self.banner(title)
 
-    def fetch_context(
-        self,
-        *,
-        account: str,
-        endpoint: str,
-        user_id: Optional[str] = None,
-        watermark: Optional[str] = None,
-        cutoff: Optional[str] = None,
-        account_index: Optional[int] = None,
-        account_total: Optional[int] = None,
-    ) -> None:
-        if self.verbosity == Verbosity.QUIET:
-            return
-        idx = ""
-        if account_index is not None and account_total is not None:
-            idx = f"[{account_index}/{account_total}] "
-        lines = [f"{idx}@{account}  endpoint={endpoint}"]
-        if user_id:
-            lines.append(f"  user_id={user_id}")
-        if watermark:
-            lines.append(f"  watermark={watermark}")
-        if cutoff:
-            lines.append(f"  cutoff={cutoff}")
-        for line in lines:
-            self.info(line)
-
     def page_row(
         self,
         *,
@@ -173,25 +160,6 @@ class PipelineConsole:
             f"{target}page={page}  transport={transport}  items={items}  "
             f"cursor={cursor_status}{http_part}{latency_part}{attempt_part}{recovery_part}{arrow}"
         )
-
-    def fetch_outcome(
-        self,
-        *,
-        account: str,
-        endpoint: str,
-        status: str,
-        outcome: str,
-        reason: str,
-        pages_fetched: int = 0,
-        coverage_summary: Optional[str] = None,
-    ) -> None:
-        cov = f"  coverage: {coverage_summary}" if coverage_summary else ""
-        if status == "completed":
-            self.success(f"@{account} {endpoint}: {outcome} ({pages_fetched} pages){cov}")
-        elif status == "partial":
-            self.warning(f"@{account} {endpoint}: {outcome} — {reason} ({pages_fetched} pages){cov}")
-        else:
-            self.error(f"@{account} {endpoint}: {outcome} — {reason}")
 
     def pagination(self, account: str, endpoint: str, page: int, cursor: Optional[str]) -> None:
         if self.verbosity == Verbosity.VERBOSE:
@@ -298,41 +266,8 @@ class PipelineConsole:
         else:
             self.info(f"Search {report.get('search')}: {report.get('status')}")
 
-    def coverage_table(self, rows: List[Dict[str, Any]], title: str = "Coverage Inventory") -> None:
-        if not rows:
-            self.warning("No coverage data to display")
-            return
-        if self.rich_enabled and Table is not None:
-            table = Table(title=f"{self._prefix()} {title}", show_lines=False)
-            for col in ("Account", "Endpoint", "Batches", "Pages", "Date Range", "Watermark", "Status"):
-                table.add_column(col, style="cyan" if col == "Account" else "white")
-            for row in rows:
-                table.add_row(
-                    row.get("account", ""),
-                    row.get("endpoint", ""),
-                    str(row.get("batches", 0)),
-                    str(row.get("pages", 0)),
-                    row.get("date_range", ""),
-                    row.get("watermark", ""),
-                    row.get("status", ""),
-                )
-            self._console.print(table)
-        else:
-            self.banner(title)
-            for row in rows:
-                self.info(
-                    f"@{row.get('account')} {row.get('endpoint')}: "
-                    f"{row.get('pages')} pages, {row.get('date_range')}, {row.get('status')}"
-                )
-
-
 # === File logging =========================================================
 
-import logging
-import sys
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-from typing import Optional
 
 
 # Single root logger for the whole package. Child loggers (console.<sub>,
@@ -462,15 +397,6 @@ def reset_logging() -> None:
 
 # === Structured events ====================================================
 
-import json
-import logging
-import re
-from hashlib import sha256
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -645,25 +571,6 @@ class EventRecorder:
             endpoint=endpoint,
             username=username,
         )
-
-    def emit_auto_refresh_done(
-        self,
-        *,
-        endpoint: str,
-        updated: List[str],
-        success: bool,
-        username: Optional[str] = None,
-    ) -> None:
-        self.emit(
-            "auto_refresh_done",
-            endpoint=endpoint,
-            updated=updated,
-            success=success,
-            username=username,
-        )
-
-    def emit_auto_refresh_param_updated(self, *, key: str, value_preview: str) -> None:
-        self.emit("auto_refresh_param_updated", key=key, value_preview=value_preview[:40])
 
     def _increment_summary(self, account: str, endpoint: str, status_code: int) -> None:
         summary: Dict[str, Any] = {}

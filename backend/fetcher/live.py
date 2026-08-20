@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -29,12 +28,6 @@ from fetcher.timeline import FetcherEngine
 Isolated v4 live-monitoring storage and viral-report helpers.
 """
 
-
-import json
-import re
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 
 
@@ -93,10 +86,10 @@ class LiveStorageManager:
         return (slug.strip("_") or "unknown")[:max_len]
 
     def now(self) -> datetime:
-        return self.storage._tehran_now()
+        return self.storage._now()
 
     def batch_name(self) -> str:
-        return self.storage._jalali_batch_name(self.now())
+        return self.storage._batch_name(self.now())
 
     def raw_batch_dir(self, username: str, endpoint: str) -> Path:
         target = self.raw_root / endpoint / self.safe_slug(username.lower()) / self.batch_name()

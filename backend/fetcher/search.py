@@ -25,13 +25,12 @@ import hashlib
 import json
 import logging
 import re
-import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 try:
     from rich.console import Console
@@ -417,35 +416,6 @@ class SearchTimelineMonitor:
         return bool(dated and max(dated) <= window_start)
 
     @staticmethod
-    def classify_search_stall(
-        *,
-        cursor: Optional[str],
-        next_cursor: Optional[str],
-        has_entries: bool,
-        new_items_count: int,
-        cursor_history: Set[str],
-    ) -> Optional[str]:
-        """Classify SearchTimeline pagination stalls for testable skip/continue behavior."""
-        if cursor and next_cursor and str(next_cursor) in cursor_history:
-            return "repeated_cursor_history"
-        if not next_cursor:
-            return "no_bottom_cursor"
-        return None
-
-    @staticmethod
-    def classify_search_failure(status_code: Optional[int], page: int, cursor: Optional[str]) -> str:
-        """Classify request failures without raising the full monitor."""
-        if status_code == 404 and cursor:
-            return "mid_pagination_404"
-        if page == 1:
-            return "first_page_failed"
-        if status_code == 429:
-            return "rate_limited"
-        if status_code:
-            return f"http_{status_code}"
-        return "request_failed"
-
-    @staticmethod
     def _classify_http_failure(status_code: int, has_pages: bool, cursor_value: Optional[str]) -> str:
         if status_code == 404 and cursor_value and has_pages:
             return "partial_cursor_404"
@@ -686,7 +656,7 @@ class SearchTimelineMonitor:
         }
 
     def _raw_batch_dir(self, slug: str, product: str) -> Path:
-        target = self.raw_root / slug / product.lower() / self.storage._jalali_batch_name()
+        target = self.raw_root / slug / product.lower() / self.storage._batch_name()
         target.mkdir(parents=True, exist_ok=True)
         return target
 
@@ -742,10 +712,10 @@ class SearchTimelineMonitor:
     def monitor_search(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
         product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
         slug = SearchQueryBuilder.slug(search_def)
-        raw_query = SearchQueryBuilder.build_raw_query(search_def, self.storage._tehran_now())
+        raw_query = SearchQueryBuilder.build_raw_query(search_def, self.storage._now())
         search_url = SearchQueryBuilder.build_human_search_url(raw_query, product)
         policy = self._policy_for_search(search_def)
-        jalali_batch = self.storage._jalali_batch_name()
+        jalali_batch = self.storage._batch_name()
         batch_dir = self.raw_root / slug / product.lower() / jalali_batch
         batch_dir.mkdir(parents=True, exist_ok=True)
         self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
@@ -1018,7 +988,7 @@ class SearchTimelineMonitor:
             
         self.search_state[state_key] = new_state
         self._save_json(self.state_file, self.search_state)
-        self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._jalali_batch_name()}.json", report)
+        self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._batch_name()}.json", report)
         return report
 
     def run_cycle(self, only_names: Optional[Set[str]] = None, force_run: bool = False) -> List[Dict[str, Any]]:

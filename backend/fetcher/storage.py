@@ -71,16 +71,8 @@ class StorageManager:
     def _now(self) -> datetime:
         return datetime.now(self.tz) if self.tz else datetime.utcnow()
 
-    # Retained under the old name: pipelines and tests call it directly.
-    _tehran_now = _now
-
     def _batch_name(self) -> str:
         return self._now().strftime("%Y-%m-%d_%H-%M")
-
-    _jalali_batch_name = _batch_name
-
-    def _date(self, dt: datetime) -> str:
-        return dt.strftime("%Y-%m-%d")
 
     def create_run_id(self) -> str:
         return f"run_{self._now().strftime('%Y-%m-%d_%H-%M-%S')}"

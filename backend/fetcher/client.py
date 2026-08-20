@@ -186,13 +186,6 @@ class APIManager:
         else:
             logger.warning(message)
 
-    def _error(self, message: str) -> None:
-        console = getattr(self, "console", None)
-        if console:
-            console.error(message)
-        else:
-            logger.error(message)
-
     def _request_state_store(self) -> RequestStateStore:
         store = getattr(self, "request_state", None)
         if store is None:
@@ -210,9 +203,6 @@ class APIManager:
     def _load_query_id_state(self) -> Dict[str, Dict[str, Any]]:
         return self._request_state_store().load("query_id_state.json", {})
 
-    def _save_query_id_state(self):
-        self._request_state_store().save("query_id_state.json", self.query_id_state)
-
     def _param_failures(self, state_value: Any) -> int:
         if isinstance(state_value, dict):
             return int(state_value.get("failures", 0) or 0)
@@ -222,10 +212,6 @@ class APIManager:
         if isinstance(state_value, dict):
             return state_value.get("status") == "stale" or self._param_failures(state_value) >= self.PARAM_FAILURE_LIMIT
         return state_value == "stale"
-    
-    def _save_tx_id_state(self):
-        """Persist per-tx-id state to disk."""
-        self._request_state_store().save("tx_id_state.json", self.tx_id_state)
     
     def _mark_tx_id(self, endpoint: str, tx_id: str, state: str):
         """Track tx-id health; 404 rule-out happens on the third consecutive failure."""
@@ -246,26 +232,6 @@ class APIManager:
         )
         self.query_id_state.setdefault(endpoint, {})[query_id] = result
     
-    def _all_tx_ids_stale(self, endpoint: str) -> bool:
-        """Check if every tx-id in the pool for this endpoint is marked stale."""
-        pool = self.real_tx_ids.get(endpoint, self.real_tx_ids.get("_default", []))
-        if not pool:
-            return False
-        
-        state_map = self.tx_id_state.get(endpoint, {})
-        for tx_id in pool:
-            if not self._param_ruled_out(state_map.get(tx_id)):
-                return False
-        
-        return True
-
-    def _all_query_ids_stale(self, endpoint: str) -> bool:
-        pool = self.query_id_pools.get(endpoint, [])
-        if not pool:
-            return False
-        state_map = self.query_id_state.get(endpoint, {})
-        return all(self._param_ruled_out(state_map.get(query_id)) for query_id in pool)
-        
     def _load_config(self) -> dict:
         """Load configuration from JSON"""
         if not self.config_path.exists():
@@ -934,17 +900,3 @@ class APIManager:
         """Get health status of an endpoint"""
         return self.endpoint_health.get(endpoint, EndpointHealth.UNKNOWN_ERROR)
 
-    def get_last_status(self, endpoint: str) -> Optional[int]:
-        """Get the last HTTP status observed for an endpoint."""
-        return self.last_status_by_endpoint.get(endpoint)
-    
-    def get_stats(self) -> dict:
-        """Get session statistics"""
-        elapsed = time.time() - self.session_start
-        return {
-            "requests_made": self.request_count,
-            "session_duration_seconds": int(elapsed),
-            "requests_per_minute": round(self.request_count / (elapsed / 60), 2) if elapsed > 0 else 0,
-            "rate_limits": self.rate_limits,
-            "endpoint_health": self.endpoint_health,
-        }
