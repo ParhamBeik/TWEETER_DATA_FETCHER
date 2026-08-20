@@ -1,9 +1,0 @@
-{
-  "status": "partial",
-  "outcome": "partial_safety_cap_reached",
-  "pages_fetched": 8,
-  "transport": "http",
-  "cursor_termination_reason": "safety_cap_reached",
-  "last_http_status": 200,
-  "reason": "Emergency safety page cap reached before rolling window completed"
-}
