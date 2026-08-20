@@ -190,14 +190,19 @@ FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", 
 # apps.fetching.tasks.backfill_historical_all), so it ticks far more often and
 # each tick finishes well under the timeout instead of racing it.
 #
-# Chunk size dropped 12 -> 4: with a high-volume account (e.g. @reuters, whose
-# pagination + rate-limit cooldown alone can approach the full 1800s budget)
-# mixed into a 12-account chunk, the chunk's cumulative time regularly blew
-# past FETCH_CYCLE_TIMEOUT_SECONDS, got SIGKILLed, and never advanced the
-# watermark -- observed stuck at 12/688 accounts backfilled for 24+ hours.
-# Smaller chunks finish reliably even with one heavy account inside.
+# Chunk size dropped 12 -> 4 -> 1. 4 wasn't enough either: oldest-backfilled-
+# first ordering has no idea which accounts are high-volume, so it can still
+# deal a chunk two heavy accounts at once (observed: @business + @reuters
+# together still blew the full 1800s budget and got SIGKILLed, same stuck-
+# forever symptom as the original 12-account chunks, just rarer). A chunk of
+# 1 makes this impossible by construction -- worst case is the single
+# heaviest account's own pagination + rate-limit cooldown, which historically
+# fits in ~15-20 minutes, comfortably inside the 1800s ceiling. Ticking every
+# FETCH_HISTORICAL_INTERVAL_SECONDS still processes accounts back-to-back;
+# _cycle_lock just makes an overlapping tick a cheap no-op skip instead of a
+# second fetcher racing the first.
 FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "300"))
-FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "4"))
+FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "1"))
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
 FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))
