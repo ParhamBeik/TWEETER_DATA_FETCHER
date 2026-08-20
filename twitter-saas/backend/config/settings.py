@@ -171,7 +171,16 @@ else:
 # Fetcher runtime knobs.
 # Redis _cycle_lock prevents overlapping workers, so ticks may be shorter than
 # the cycle timeout. The live scheduler admits only the current rate-budget slice.
-FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "300"))
+#
+# Priority is archive completeness over live freshness: the worker runs -P
+# solo --concurrency=1, so every task is serialized, and scheduling frequency
+# alone determines who gets worker time regardless of how fast each cycle
+# runs. Live used to tick 6x more often than historical/search (300s vs
+# 1800s) and crowded them out simply by being queued far more often. Live is
+# now on the same 1800s cadence as search; historical ticks far more
+# frequently (300s) than either, since it's the thing we now want to make
+# the most progress.
+FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "1800"))
 # Historical backfill used to try every tracked account in one run every
 # FETCH_HISTORICAL_INTERVAL_SECONDS and get SIGKILLed by FETCH_CYCLE_TIMEOUT_SECONDS
 # partway through -- the worker runs -P solo --concurrency=1, so one unbounded
@@ -180,8 +189,15 @@ FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", 
 # FETCH_HISTORICAL_CHUNK_SIZE accounts per tick, oldest-backfilled-first (see
 # apps.fetching.tasks.backfill_historical_all), so it ticks far more often and
 # each tick finishes well under the timeout instead of racing it.
-FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "1800"))
-FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "12"))
+#
+# Chunk size dropped 12 -> 4: with a high-volume account (e.g. @reuters, whose
+# pagination + rate-limit cooldown alone can approach the full 1800s budget)
+# mixed into a 12-account chunk, the chunk's cumulative time regularly blew
+# past FETCH_CYCLE_TIMEOUT_SECONDS, got SIGKILLed, and never advanced the
+# watermark -- observed stuck at 12/688 accounts backfilled for 24+ hours.
+# Smaller chunks finish reliably even with one heavy account inside.
+FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "300"))
+FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "4"))
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
 FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))
