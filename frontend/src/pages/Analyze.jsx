@@ -31,11 +31,11 @@ export default function Analyze() {
   }, [tab]);
 
   return (
-    <section className="space-y-6">
+    <section className="stack-md">
       <header>
         <p className="eyebrow">Analyze</p>
         <h2 className="page-title">What is accelerating in the archive?</h2>
-        <Link className="text-sm font-semibold text-accent" to="/searches">Open saved searches →</Link>
+        <Link className="inline-cta" to="/searches">Open saved searches →</Link>
       </header>
       <div className="tabs">
         {tabs.map((name) => (
@@ -52,14 +52,14 @@ export default function Analyze() {
       </div>
       {error && <p className="error">{error}</p>}
       {tab === "velocity" && (
-        <div className="space-y-4">
+        <div className="stack-sm">
           <p className="muted">Tweets ranked by engagement gained during the selected metric window.</p>
           {data.map((tweet) => <TweetCard key={tweet.id} tweet={tweet} />)}
           {!data.length && !error && <p className="muted">No metric deltas yet.</p>}
         </div>
       )}
       {tab === "topics" && (
-        <article className="panel h-[420px]">
+        <article className="panel panel-chart">
           {data.length ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.slice(0, 20)} layout="vertical" margin={{ left: 12, right: 16 }}>
@@ -79,11 +79,11 @@ export default function Analyze() {
         </article>
       )}
       {tab === "narratives" && (
-        <div className="space-y-3">
+        <div className="stack-sm">
           {data.filter((item) => item?.first && item?.follower).map((item, index) => (
             <article className="panel" key={`${item.first.tweet_id}-${item.follower.tweet_id}`}>
               <p className="eyebrow">Narrative {index + 1} · {(item.similarity * 100).toFixed(0)}% similar</p>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="pair-grid">
                 <p><strong>@{item.first.account}</strong><br />posted first · {new Date(item.first.created_at).toLocaleString()}</p>
                 <p><strong>@{item.follower.account}</strong><br />followed · {new Date(item.follower.created_at).toLocaleString()}</p>
               </div>

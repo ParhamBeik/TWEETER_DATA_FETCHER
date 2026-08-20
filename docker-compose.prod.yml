@@ -1,20 +1,29 @@
 # Production overlay for a dedicated ~16 GB VPS.
-# Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
-# Publish only the frontend. Terminate TLS on the host (Caddy/nginx) → :80.
-# Set strong secrets in .env before starting (REDIS_PASSWORD required).
-x-json-logging: &json-logging
+# Publish only the frontend; terminate TLS on the host (Caddy) -> :80.
+# REDIS_PASSWORD must be set in .env.
+x-logging: &logging
   driver: json-file
   options:
     max-size: "20m"
     max-file: "5"
 
+# Redis gets a password in prod, so every Python service needs the authed URLs.
+x-prod-app: &prod-app
+  restart: unless-stopped
+  logging: *logging
+  environment:
+    DJANGO_DEBUG: "0"
+    CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
+    DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
+
 services:
   postgres:
     ports: !reset []
     restart: unless-stopped
-    logging: *json-logging
+    logging: *logging
     mem_limit: 1g
 
   redis:
@@ -28,15 +37,14 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
     restart: unless-stopped
-    logging: *json-logging
+    logging: *logging
     mem_limit: 256m
     volumes:
       - redisdata:/data
 
   web:
+    <<: *prod-app
     ports: !reset []
-    restart: unless-stopped
-    logging: *json-logging
     environment:
       DJANGO_DEBUG: "0"
       ALLOW_REGISTRATION: "0"
@@ -45,69 +53,41 @@ services:
       DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
     mem_limit: 512m
 
+  # No healthcheck overrides here: compose merge replaces the whole healthcheck
+  # block, and an override using `celery inspect ping` made busy workers flap
+  # unhealthy. Inherit the base compose's /proc scan.
   worker_live:
-    restart: unless-stopped
-    logging: *json-logging
-    environment:
-      DJANGO_DEBUG: "0"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
-      DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
-    # This overlay used to redefine the healthcheck with `celery inspect ping`,
-    # which silently overrode the base compose's already-fixed /proc-scan check
-    # (compose merge replaces the whole healthcheck block, not per-field) --
-    # `inspect ping` can't answer while a -P solo worker is mid-task, so a busy
-    # (working correctly) worker kept flapping unhealthy. No override here now;
-    # inherit the base compose's healthcheck.
+    <<: *prod-app
     mem_limit: 768m
 
   worker_historical:
-    restart: unless-stopped
-    logging: *json-logging
-    environment:
-      DJANGO_DEBUG: "0"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
-      DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
+    <<: *prod-app
     mem_limit: 512m
 
   worker_search:
-    restart: unless-stopped
-    logging: *json-logging
-    environment:
-      DJANGO_DEBUG: "0"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
-      DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
+    <<: *prod-app
     mem_limit: 3g
 
   beat:
-    restart: unless-stopped
-    logging: *json-logging
-    environment:
-      DJANGO_DEBUG: "0"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
-      DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
+    <<: *prod-app
+    command: celery -A config beat -l info -s /tmp/celerybeat/celerybeat-schedule
     volumes:
       - beat-schedule:/tmp/celerybeat
-    command: celery -A config beat -l info -s /tmp/celerybeat/celerybeat-schedule
     mem_limit: 256m
 
   frontend:
     ports: !reset []
     expose: ["80"]
     restart: unless-stopped
-    logging: *json-logging
+    logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ > /dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
     mem_limit: 128m
-    # Only the frontend joins the shared edge network -- Caddy (deploy/edge/)
-    # terminates real HTTPS there and reverse-proxies to twitter-frontend:80.
-    # Postgres/Redis/web/worker/beat stay off it, private-network-only.
+    # Only the frontend joins the shared edge network -- Caddy terminates HTTPS
+    # there and proxies to twitter-frontend:80. Everything else stays private.
     networks:
       default:
       edge:

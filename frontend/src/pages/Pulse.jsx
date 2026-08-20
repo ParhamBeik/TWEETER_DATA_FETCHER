@@ -5,10 +5,10 @@ import { AXIS_PROPS, BAR_RADIUS_Y, SERIES, TOOLTIP_STYLE } from "../charts";
 
 function Stat({ label, value, hint }) {
   return (
-    <article className="rounded-2xl border border-line bg-surface p-5 shadow-lg shadow-black/10">
-      <p className="text-sm text-slate-400">{label}</p>
-      <strong className="mt-2 block text-3xl text-white">{value ?? "—"}</strong>
-      <small className="mt-2 block text-slate-500">{hint}</small>
+    <article className="stat-card">
+      <p className="stat-label">{label}</p>
+      <strong className="stat-value">{value ?? "—"}</strong>
+      <small className="stat-hint">{hint}</small>
     </article>
   );
 }
@@ -43,24 +43,24 @@ export default function Pulse() {
     }));
 
   return (
-    <section className="space-y-8">
+    <section className="stack-lg">
       <header>
         <p className="eyebrow">Archive pulse</p>
         <h2 className="page-title">What changed since you last looked?</h2>
         <p className="page-lede">Archive activity, collection health, and emerging topics in one view.</p>
       </header>
       {error && <p className="error">{error}</p>}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="stat-grid">
         <Stat label="Archive tweets" value={overview?.tweets} hint={`${overview?.tweets_in_window ?? 0} in the last 24 hours`} />
         <Stat label="Tracked accounts" value={overview?.tracked_accounts} hint={`${overview?.quarantined_accounts ?? 0} quarantined`} />
         <Stat label="Recent cycles" value={overview?.latest_runs?.length} hint="Latest completed, partial, or failed runs" />
         <Stat label="Topic spikes" value={topics.length} hint="Hashtags seen in the current window" />
       </div>
-      <div className="grid gap-5 lg:grid-cols-[1.4fr,1fr]">
-        <article className="panel min-h-80">
+      <div className="split-grid">
+        <article className="panel panel-tall">
           <h3>Recent ingestion</h3>
           <p className="muted">Tweets captured by the most recent runs.</p>
-          <div className="h-60">
+          <div className="chart-box">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={health} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <XAxis dataKey="name" {...AXIS_PROPS} />
@@ -80,11 +80,11 @@ export default function Pulse() {
         </article>
         <article className="panel">
           <h3>Topic spikes</h3>
-          <ul className="space-y-3">
+          <ul className="topic-list">
             {topics.slice(0, 8).map((topic) => (
-              <li className="flex items-center justify-between border-b border-line pb-3" key={topic.topic}>
+              <li className="topic-row" key={topic.topic}>
                 <span>#{topic.topic}</span>
-                <span className={topic.delta > 0 ? "text-accent" : "text-slate-400"}>
+                <span className={topic.delta > 0 ? "delta-up" : "delta-flat"}>
                   {topic.current_count} · {topic.delta >= 0 ? "+" : ""}{topic.delta}
                 </span>
               </li>

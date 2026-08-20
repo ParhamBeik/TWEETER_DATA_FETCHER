@@ -37,18 +37,6 @@ from .accounts import tracked_accounts_payload
 logger = logging.getLogger(__name__)
 
 SEED_DIR = Path(settings.BASE_DIR) / "seed"
-FETCHER_SRC = next(
-    (
-        path
-        for path in (
-            Path(os.environ["TDF_FETCHER_SRC"]) if os.environ.get("TDF_FETCHER_SRC") else None,
-            Path("/app/fetcher"),
-            Path(settings.BASE_DIR).parents[1] / "twitter_fetcher" / "src",
-        )
-        if path is not None and path.is_dir()
-    ),
-    Path("/app/fetcher"),
-)
 
 # Mirrors SearchQueryBuilder.slug so the runner can locate processed search exports.
 _SLUG_KEEP = re.compile(r"[^A-Za-z0-9_\\-]+")
@@ -523,7 +511,9 @@ def run_fetcher(
         env = dict(os.environ)
         env["TDF_PROJECT_ROOT"] = str(root)
         env["TDF_CONFIG"] = str(config_path)
-        env["PYTHONPATH"] = str(FETCHER_SRC) + os.pathsep + env.get("PYTHONPATH", "")
+        # cwd is the scratch root, so point the subprocess at this project for
+        # the engine package (it ships here as `fetcher/`).
+        env["PYTHONPATH"] = str(settings.BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
 
         # Snapshot the secrets before the run: auth refresh can rotate XSession
         # mid-run, and the log may quote either the old or the new value.
