@@ -1,145 +1,122 @@
-# TWEETER DATA FETCHER
+# Twitter Data Fetcher
 
-Twitter/X historical, live, and search pipelines packaged as a Python modular monolith (v4.1).
+Collects tweets from X for a tracked set of accounts and saved searches, stores
+them in Postgres, and serves them through a React operator console.
 
-All current-version code, config, tests, diagnostics, and runtime data live under `twitter_fetcher/`. The repo root holds that folder plus `LEGACY/` (read-only archive) and project metadata.
-
-## Install
-
-```bash
-source .venv/bin/activate
-pip install -e .
 ```
-
-Local authentication is ignored by Git. Canonical path: `twitter_fetcher/config/config.json`.
-
-```bash
-cp twitter_fetcher/config/config.example.json twitter_fetcher/config/config.json
-tdf-auth --interactive
+frontend/ (React)  ──/api──▶  Django + DRF  ──▶  Postgres   (the only durable store)
+                                   │
+                                   └──▶  Redis  ──▶  3 Celery workers
+                                                      │
+                                          each runs the X engine as a
+                                          subprocess in a temp dir, then
+                                          ingests the results into Postgres
 ```
-
-## Commands
-
-```bash
-tdf-historical --only elonmusk
-tdf-live --account elonmusk --once
-tdf-search --once
-tdf-coverage --format table
-tdf-auth --interactive
-```
-
-Installed `tdf-*` scripts call the package modules directly. Each runnable module also supports `python -m ... --help`:
-
-```bash
-python -m tweeter_data_fetcher.pipelines.historical.service --help
-python -m tweeter_data_fetcher.pipelines.live.service --help
-python -m tweeter_data_fetcher.pipelines.search.service --help
-python -m tweeter_data_fetcher.observability.coverage_inventory --help
-python -m tweeter_data_fetcher.x_api.auth --help
-```
-
-Live and historical fetch `UserTweets` only and write `4_union`. Search stays isolated under `twitter_fetcher/data/search/`.
 
 ## Layout
 
-```text
-twitter_fetcher/
-  config/                 tracked templates + accounts/searches
-  data/                   ignored runtime output (historical_live/, search/)
-  src/tweeter_data_fetcher/
-    pipelines/            historical, live, search orchestration
-    x_api/                HTTP, auth/browser, contracts, pagination
-    processing/           tweet parse + rolling windows
-    storage/              StorageManager + filesystem helpers
-    observability/        console, file logs, NDJSON events, reports
-    paths.py              single source of truth for project paths
-  tests/                  unit, integration, contract, fixtures
-  diagnostics/            evidence probes and findings reports
-LEGACY/                   archived v1–v3 (read-only)
+```
+backend/
+  config/      Django project: settings, urls, celery
+  tweets/      models, API views, serializers, analytics, admin
+  fetching/    Celery tasks + the runner that drives the engine
+  fetcher/     the X engine (HTTP, pagination, auth, parsing, storage)
+  tests/       one suite covering both the engine and the API
+frontend/      React + Vite SPA
+scripts/       deploy and backup
 ```
 
-Core classes: `FetcherEngine`, `APIManager`, `StorageManager`, `TweetSetProcessor`, `RollingWindowEvaluator`, `LiveMonitor`, `SearchTimelineMonitor`.
-
-## Configuration
-
-Resolution order:
-
-1. Explicit CLI/config path
-2. `TDF_CONFIG`
-3. `twitter_fetcher/config/`
-
-Tracked files:
-
-- `twitter_fetcher/config/config.example.json`
-- `twitter_fetcher/config/accounts.json`
-- `twitter_fetcher/config/searches.json`
-
-Never commit `twitter_fetcher/config/config.json`.
-
-## What The Pipelines Do
-
-Historical and live share `twitter_fetcher/data/historical_live/`:
-
-1. Resolve user IDs for active/due accounts
-2. Fetch `UserTweets` for all accounts
-3. Write `processed/4_union` (the only ingest path)
-
-Rolling cutoff:
-
-```text
-effective_cutoff = min(now - configured_window, floor(fetch_watermark))
-```
-
-Search stays isolated under `twitter_fetcher/data/search/` and never creates historical/live set folders.
-
-## Logging And Diagnosis
-
-Every pipeline shares one observability path:
-
-- Terminal: tagged Rich output (`[HIST]`, `[LIVE]`, `[SEARCH]`)
-- File log: rotating `twitter_fetcher/data/<subsystem>/logs/<subsystem>.log`
-- Events: `twitter_fetcher/data/<subsystem>/logs/events.jsonl`
-- HTTP details: `logs/errors/*.json` plus `http_summary.json`
-- Reports/state: under each subsystem's `reports/` and `state/`
+## Run it
 
 ```bash
-tail -f twitter_fetcher/data/historical_live/logs/historical_live.log
-grep '"run_id": "run_..."' twitter_fetcher/data/historical_live/logs/events.jsonl
-cat twitter_fetcher/data/historical_live/logs/http_summary.json
+cp .env.example .env          # set DJANGO_SECRET_KEY (32+ chars) at minimum
+docker compose up --build     # postgres, redis, web, 3 workers, beat, frontend
 ```
 
-Runtime data and HTTP detail files are gitignored. Secrets may appear in HTTP detail files — keep them local.
-
-## Endpoint Contracts, Pacing & Browser Fallback
-
-The pipelines use evidence-backed request contracts and pacing to maintain high reliability and bypass anti-scraping soft-blocks:
-
-| Endpoint | Primary Transport | Referer Header | Pacing & Strategy |
-|---|---|---|---|
-| `UserTweets` | `APIManager` (`requests`) | `https://x.com/{account}` | Direct GET, short inter-page sleep |
-| `SearchTimeline` | `APIManager` + Playwright | `https://x.com/search?...` | Page 1 via HTTP; deeper pages use Playwright |
-
-Detailed request templates, variable definitions, and diagnostic findings are documented in [`ENDPOINT_TEMPLATES_AND_PACING_GUIDE.md`](file:///Users/parham/Downloads/GITHUB_PROJECTS/TWEETER_DATA_FETCHER/twitter_fetcher/diagnostics/reports/ENDPOINT_TEMPLATES_AND_PACING_GUIDE.md).
-
-## Diagnostics
-
-Evidence-gathering scripts (not the pytest suite):
+Then, in another shell:
 
 ```bash
-python twitter_fetcher/diagnostics/verify_contract.py            # config-vs-baseline drift guard (production-wired)
-python twitter_fetcher/diagnostics/pagination_test.py             # multi-account UserTweets + SearchTimeline harness
-python twitter_fetcher/diagnostics/sniffer.py                     # headful Playwright request capture → sniffer_runs/
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py seed_data       # tracked accounts + searches
+docker compose exec web python manage.py load_xsession --file session.json
 ```
 
-Curated findings live in `twitter_fetcher/diagnostics/reports/`; the live `sniffer_runs/` capture dir is gitignored.
+The console is at http://localhost:8080, the Django admin at
+http://localhost:8002/admin/.
 
-`FetcherEngine` calls contract verification as a library function (no subprocess). Verification is skipped when no frozen baseline is present.
-
-## Verification
+### Without Docker
 
 ```bash
-.venv/bin/python -m pytest -q
-python -m compileall -q twitter_fetcher/src twitter_fetcher/tests twitter_fetcher/diagnostics
+pip install -r backend/requirements.txt
+cd backend
+python manage.py migrate && python manage.py runserver
+celery -A config worker -l info -Q live,historical,search   # second shell
+celery -A config beat -l info                               # third shell
+cd ../frontend && npm install && npm run dev                # http://localhost:5173
 ```
 
-SaaS operator console (`twitter-saas/`): Feed, archive search (`q=`), Trending, Export. One shared X session, one worker.
+## The X session
+
+One server-side X session serves every user; app users never supply X
+credentials. Provide it once:
+
+```json
+{
+  "cookies": {"auth_token": "…", "ct0": "…"},
+  "headers": {"authorization": "Bearer …", "x-csrf-token": "…"}
+}
+```
+
+`python manage.py load_xsession --file session.json` (or set `X_SESSION_JSON`).
+Re-running replaces the active session. The Session page in the console accepts
+the same payload, or a whole exported engine `config.json`.
+
+## API
+
+Token auth (`Authorization: Token <key>`) from `/api/auth/login/`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/auth/login/` \| `/register/` | returns a token |
+| GET | `/api/feed/` | tracked accounts + enabled searches; filters: `account`, `tier`, `since`, `until`, `run_id`, `q` |
+| GET | `/api/export/?format=jsonl\|csv` | stream the current feed |
+| GET/POST/PATCH | `/api/accounts/` | track accounts, set tier, clear quarantine |
+| POST | `/api/accounts/{handle}/fetch/` | on-demand live + historical for one handle |
+| GET | `/api/accounts/{handle}/tweets/` | one account's timeline |
+| GET | `/api/runs/` \| `/api/runs/{run_id}/` | cycle history and detail |
+| POST | `/api/cycles/` | queue one global cycle (`live`, `historical`, `search`) |
+| GET/POST | `/api/searches/` | list / create (creating enqueues a fetch) |
+| GET | `/api/searches/{id}/results/` | ranked results |
+| GET | `/api/stats/overview/`, `/api/analytics/{velocity,topics,accounts,narratives}/` | dashboard data |
+
+## Scheduling
+
+Beat ticks three periodic tasks, each on its own queue and worker so a
+rate-limit sleep in one cannot block the others:
+
+| Task | Default interval | Env var |
+| --- | --- | --- |
+| live poll (all due accounts) | 30 min | `FETCH_LIVE_INTERVAL_SECONDS` |
+| historical backfill (1 account/tick, oldest first) | 5 min | `FETCH_HISTORICAL_INTERVAL_SECONDS` |
+| search repoll (enabled searches) | 30 min | `FETCH_SEARCH_INTERVAL_SECONDS` |
+
+Search-only tweets are purged after 30 days, run records after 90.
+
+## Tests
+
+```bash
+cd backend  && python -m pytest -q    # engine + API, SQLite, no services needed
+cd frontend && npm test               # component suite
+```
+
+## Deploying
+
+`scripts/deploy_vps.sh` builds and restarts the stack. It is called by a small
+wrapper on the VPS that does the `git fetch`/`reset` first, so a deploy can
+never rewrite a script bash is still reading.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+`scripts/backup_pg.sh` writes a nightly gzipped `pg_dump` and keeps the last 14.

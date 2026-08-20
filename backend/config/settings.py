@@ -1,29 +1,16 @@
-"""Django settings for the twitter-saas backend.
+"""Django settings.
 
-Standalone project: the canonical fetcher lives under twitter_fetcher/src and
-is made importable as ``fetcher`` via PYTHONPATH (Docker) or the
-repo-relative path below (local pytest / manage.py).
+The X engine (``fetcher/``) is a package inside this project, so it needs no
+path wiring: the workers run it as ``python -m fetcher.<pipeline>``.
 """
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Prefer image copy (/app/fetcher); fall back to repo layout for local runs.
-_FETCHER_CANDIDATES = [
-    Path(os.environ["TDF_FETCHER_SRC"]) if os.environ.get("TDF_FETCHER_SRC") else None,
-    Path("/app/fetcher"),
-    BASE_DIR.parents[1] / "twitter_fetcher" / "src",  # repo_root/twitter_fetcher/src
-]
-for _candidate in _FETCHER_CANDIDATES:
-    if _candidate is not None and _candidate.is_dir() and str(_candidate) not in sys.path:
-        sys.path.insert(0, str(_candidate))
-        break
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"

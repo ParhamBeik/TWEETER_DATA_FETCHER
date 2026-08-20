@@ -414,8 +414,8 @@ def run_interactive_cli() -> None:
 
     if success:
         print("\n\u2705 You can now run your scripts:")
-        print("  tdf-historical --only elonmusk")
-        print("  tdf-live --account elonmusk --once")
+        print("  python -m fetcher.historical --only elonmusk")
+        print("  python -m fetcher.live --account elonmusk --once")
         print("  tdf-search --once")
     else:
         print(

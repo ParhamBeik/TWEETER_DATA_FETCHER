@@ -6,7 +6,7 @@ accounts, then builds the seven processed set-algebra folders per account under
 ``data/historical_live/`` and writes a per-run report.
 
 Run:
-    tdf-historical --only elonmusk
+    python -m fetcher.historical --only elonmusk
     python -m fetcher.historical --only elonmusk
 
 Flags:
