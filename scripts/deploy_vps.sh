@@ -8,10 +8,22 @@
 # a script bash is still reading): it fetches, resets to origin/main, *then*
 # calls this script, which only ever runs as a complete, already-on-disk
 # file. Keep it that way; don't merge the fetch/reset into this file. See
-# /opt/apps/deploy_twitter.sh on the VPS (same pattern as bama's
-# /opt/apps/deploy_bama.sh + bama-saas/deploy/vps_pull_deploy.sh).
+# /opt/apps/deploy_twitter.sh on the VPS.
 set -euo pipefail
-cd "$(dirname "$0")/.."/twitter-saas
+cd "$(dirname "$0")/.."
+
+# The compose files moved from twitter-saas/ to the repo root. .env is
+# gitignored, so a pull leaves the old one behind where compose no longer
+# looks; carry it over once rather than booting without secrets.
+if [ ! -f .env ] && [ -f twitter-saas/.env ]; then
+  echo "migrating twitter-saas/.env -> ./.env"
+  mv twitter-saas/.env .env
+fi
+
+if [ ! -f .env ]; then
+  echo "FATAL: no .env at $(pwd). Copy .env.example and fill it in." >&2
+  exit 1
+fi
 
 docker compose build
 docker compose up -d --remove-orphans

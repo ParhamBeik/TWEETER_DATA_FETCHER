@@ -1,21 +1,52 @@
-# Twitter SaaS — full stack. Postgres is the sole durable store; Redis is the
-# Celery broker/result backend. web serves the API+admin; worker runs fetch
-# jobs; beat schedules the periodic live/historical/search cycles; frontend
-# (nginx) serves the React SPA and reverse-proxies /api/ + /admin/ to web so
-# the browser uses a single origin on :8080.
+# Full stack. Postgres is the sole durable store; Redis is the Celery broker.
+# web serves API+admin, three workers run fetch jobs (one queue each), beat
+# schedules the cycles, frontend (nginx) serves the SPA and proxies /api/ so
+# the browser sees one origin on :8080.
 #
-# Build context is the git repo root so images install the canonical fetcher
-# from twitter_fetcher/src (no vendored copy).
-x-json-logging: &json-logging
+# The project name is pinned: it decides the volume prefix, so leaving it to be
+# derived from the directory name would orphan twitter-saas_pgdata (the live
+# database) the moment this file moved.
+name: twitter-saas
+
+x-logging: &logging
   driver: json-file
   options:
     max-size: "20m"
     max-file: "5"
 
+# Every Python service is the same image and environment; only the command,
+# memory ceiling and shm size differ.
+x-app: &app
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  logging: *logging
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+    DJANGO_CACHE_URL: redis://redis:6379/2
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+# `celery inspect ping` cannot answer while a -P solo worker is executing a
+# task, so a long fetch cycle used to mark the container unhealthy. Check the
+# process is alive instead. pgrep isn't in python:3.11-slim; scan /proc.
+x-worker-healthcheck: &worker-healthcheck
+  test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
 services:
   postgres:
     image: postgres:16-alpine
-    logging: *json-logging
+    logging: *logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-twitter_saas}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -23,8 +54,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     # Host 5434: portfolio uses 5432, bama defaults to 5433.
-    ports:
-      - "5434:5432"
+    ports: ["5434:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -35,9 +65,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    logging: *json-logging
-    ports:
-      - "6380:6379"
+    logging: *logging
+    ports: ["6380:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -47,182 +76,74 @@ services:
     mem_limit: 96m
 
   web:
-    build:
-      context: ..
-      dockerfile: twitter-saas/backend/Dockerfile
-    logging: *json-logging
+    <<: *app
     command: >
       sh -c "python manage.py collectstatic --noinput || true &&
              python manage.py migrate --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      DJANGO_CACHE_URL: redis://redis:6379/2
-      PYTHONPATH: /app/fetcher
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    ports:
-      - "8002:8000"
+    ports: ["8002:8000"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/admin/login/ > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
-    restart: unless-stopped
     mem_limit: 448m
 
-  # Live/historical/search each get their own -P solo --concurrency=1 worker
-  # and queue instead of sharing one. They used to share a single worker
-  # process, so a live cycle's in-process rate-limit sleep (routinely
-  # 10-15+ minutes) blocked historical and search entirely, regardless of
-  # their own schedule -- that was a bigger contributor to "historical/search
-  # barely progress" than the beat interval was. -P solo (not prefork) is
-  # kept on all three: the shared X session's cookies/tx-id pools assume one
-  # in-flight fetcher subprocess per worker (see apps.fetching.runner
-  # _persist_session for the cross-worker session-write race this still
+  # Live/historical/search each get their own -P solo --concurrency=1 worker and
+  # queue. Sharing one worker meant a live cycle's in-process rate-limit sleep
+  # (routinely 10-15+ min) blocked historical and search entirely regardless of
+  # their own schedule. -P solo is kept on all three: the shared X session's
+  # cookies/tx-id pools assume one in-flight fetcher subprocess per worker (see
+  # fetching.runner._persist_session for the cross-worker write race this still
   # allows, and why it only writes fields that actually changed).
   worker_live:
-    build:
-      context: ..
-      dockerfile: twitter-saas/backend/Dockerfile
-    logging: *json-logging
+    <<: *app
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q live -n live@%h
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      DJANGO_CACHE_URL: redis://redis:6379/2
-      PYTHONPATH: /app/fetcher
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      # `inspect ping` cannot answer while a -P solo worker is executing a task,
-      # so a long fetch cycle used to mark this container unhealthy. Check that
-      # the worker process is alive instead.
-      # pgrep isn't installed in the python:3.11-slim image; grep the /proc
-      # cmdline files directly instead (no extra package needed).
-      test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
+    healthcheck: *worker-healthcheck
     mem_limit: 512m
-    # Live's primary UserTweets path is HTTP-only; Chromium only fires via the
-    # reactive 404-rescue path in x_api/timeline.py, so this is a much lighter
-    # allowance than search's routine deep-pagination capture below.
+    # Live's UserTweets path is HTTP-only; Chromium only fires via the reactive
+    # 404-rescue path in fetcher/timeline.py, so this is a lighter allowance
+    # than search's routine deep-pagination capture.
     shm_size: 256m
 
   worker_historical:
-    build:
-      context: ..
-      dockerfile: twitter-saas/backend/Dockerfile
-    logging: *json-logging
+    <<: *app
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q historical -n historical@%h
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      DJANGO_CACHE_URL: redis://redis:6379/2
-      PYTHONPATH: /app/fetcher
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-    # Historical's UserTweets pagination never invokes the Chromium path, so
-    # no shm_size bump needed -- HTTP-only, like the process this replaced.
+    healthcheck: *worker-healthcheck
+    # UserTweets pagination never invokes Chromium here -- HTTP only.
     mem_limit: 384m
 
   worker_search:
-    build:
-      context: ..
-      dockerfile: twitter-saas/backend/Dockerfile
-    logging: *json-logging
+    <<: *app
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q search -n search@%h
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      DJANGO_CACHE_URL: redis://redis:6379/2
-      PYTHONPATH: /app/fetcher
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "grep -aq 'celery -A config worker' /proc/[1-9]*/cmdline"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
+    healthcheck: *worker-healthcheck
     # Deep-search Chromium capture needs ~2g: below that the renderer hard-crashes
-    # mid-scroll ("Page crashed") and the run degrades to HTTP page 1. Historical
-    # and live were trimmed above precisely so the 3-worker split still fits the
-    # same total footprint the single worker previously needed -- a prior incident
-    # here (limits summing to 3.5g) got the kernel to kill *other* containers,
-    # Postgres included.
+    # mid-scroll ("Page crashed") and the run degrades to HTTP page 1. Live and
+    # historical were trimmed above so the 3-worker split fits the same total
+    # footprint one worker needed -- limits summing to 3.5g once got the kernel
+    # to kill other containers, Postgres included.
     mem_limit: 2g
-    # Chromium's renderer allocates shared memory in /dev/shm; the 64m Docker
-    # default crashes it mid-scroll during deep SearchTimeline capture.
+    # Chromium's renderer allocates in /dev/shm; the 64m default crashes it.
     shm_size: 512m
 
   beat:
-    build:
-      context: ..
-      dockerfile: twitter-saas/backend/Dockerfile
-    logging: *json-logging
+    <<: *app
     command: celery -A config beat -l info
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
-      DJANGO_CACHE_URL: redis://redis:6379/2
-      PYTHONPATH: /app/fetcher
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
-      # pgrep isn't installed in the python:3.11-slim image; grep the /proc
-      # cmdline files directly instead (no extra package needed).
       test: ["CMD-SHELL", "grep -aq 'celery -A config beat' /proc/[1-9]*/cmdline"]
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
     mem_limit: 192m
 
   frontend:
     build:
-      context: ..
-      dockerfile: twitter-saas/frontend/Dockerfile
-    logging: *json-logging
-    ports:
-      - "8080:80"
-    depends_on:
-      - web
+      context: .
+      dockerfile: frontend/Dockerfile
+    logging: *logging
+    ports: ["8080:80"]
+    depends_on: [web]
     restart: unless-stopped
     mem_limit: 64m
 

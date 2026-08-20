@@ -1,15 +1,10 @@
-# Docker build context is the git repo root (twitter-saas compose).
+# Build context is the repo root.
 .git/
 .venv/
-LEGACY/
-graphify-out/
-twitter_fetcher/data/
-twitter_fetcher/diagnostics/sniffer_runs/
+.env
 **/__pycache__/
 **/*.pyc
 **/.pytest_cache/
-twitter-saas/frontend/node_modules/
-twitter-saas/frontend/dist/
-twitter-saas/.env
+frontend/node_modules/
+frontend/dist/
 **/*.sqlite3
-agent-transcripts/

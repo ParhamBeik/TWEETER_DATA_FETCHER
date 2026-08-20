@@ -1,7 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 :root {
   --bg: #0b1020;
   --panel: #121a2d;
@@ -949,4 +945,70 @@ input:focus {
   .session-panel {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Layout primitives ------------------------------------------------------
+   These replace the handful of Tailwind utilities the dashboard pages used,
+   so the app has one styling system instead of two. */
+.stack-sm > * + * { margin-top: 0.75rem; }
+.stack-md > * + * { margin-top: 1.5rem; }
+.stack-lg > * + * { margin-top: 2rem; }
+
+.stat-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.split-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1.4fr 1fr;
+}
+
+.pair-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+@media (max-width: 900px) {
+  .split-grid { grid-template-columns: 1fr; }
+}
+
+.stat-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 1.25rem;
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+}
+
+.stat-label { margin: 0; font-size: 0.875rem; color: var(--muted); }
+.stat-value { display: block; margin-top: 0.5rem; font-size: 1.875rem; color: #fff; }
+.stat-hint { display: block; margin-top: 0.5rem; color: var(--muted); }
+
+.panel-tall { min-height: 20rem; }
+.panel-chart { height: 420px; }
+.chart-box { height: 15rem; }
+
+.topic-list { list-style: none; margin: 0; padding: 0; }
+.topic-list > * + * { margin-top: 0.75rem; }
+
+.topic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+.delta-up { color: var(--accent); }
+.delta-flat { color: var(--muted); }
+
+.inline-cta {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
 }
