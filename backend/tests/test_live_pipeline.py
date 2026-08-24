@@ -4,8 +4,25 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from fetcher.client import APIManager
 from fetcher.live import LiveMonitor
 from fetcher.live import LiveStorageManager
+
+
+def _api_manager_with_budget(rate_limits):
+    """A mocked APIManager whose rate-limit arithmetic is the real one.
+
+    These tests express "how much budget is left" as a realistic rate_limits
+    dict, which is what the engine actually persists. Binding the real
+    remaining_requests keeps that intent while exercising the shared accessor
+    both live and the pagination engine read the budget through.
+    """
+    manager = MagicMock()
+    manager.rate_limits = rate_limits
+    manager.remaining_requests = lambda endpoint, reserve=0: APIManager.remaining_requests(
+        manager, endpoint, reserve
+    )
+    return manager
 
 
 class LivePipelineTests(unittest.TestCase):
@@ -89,8 +106,7 @@ class LivePipelineTests(unittest.TestCase):
             support_request_count=1,
             error=None,
         )
-        monitor.api_manager = MagicMock()
-        monitor.api_manager.rate_limits = {"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}}
+        monitor.api_manager = _api_manager_with_budget({"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}})
         monitor.live_storage = MagicMock()
         monitor.live_storage.scheduler_state.return_value = {}
         monitor._get_live_user_id = MagicMock(side_effect=["1", "2"])
@@ -121,8 +137,7 @@ class LivePipelineTests(unittest.TestCase):
         monitor.fetcher.bootstrap_browser_context.return_value = MagicMock(
             ok=True, route="https://x.com/unavailable", support_request_count=1, error=None
         )
-        monitor.api_manager = MagicMock()
-        monitor.api_manager.rate_limits = {"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}}
+        monitor.api_manager = _api_manager_with_budget({"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}})
         monitor.live_storage = LiveStorageManager(
             Path(self.temp_dir), data_root_override=Path(self.temp_dir) / "data"
         )
@@ -151,8 +166,7 @@ class LivePipelineTests(unittest.TestCase):
         monitor.fetcher = MagicMock()
         monitor.fetcher.pagination_safety_cap_pages = 1
         monitor.fetcher.recorder = MagicMock()
-        monitor.api_manager = MagicMock()
-        monitor.api_manager.rate_limits = {"UserTweets": {"limit": 7, "remaining": 7, "reset": 0}}
+        monitor.api_manager = _api_manager_with_budget({"UserTweets": {"limit": 7, "remaining": 7, "reset": 0}})
         monitor.live_storage = MagicMock()
         monitor.live_storage.scheduler_state.return_value = {"next_account": "two"}
         monitor._get_live_user_id = MagicMock(side_effect=["2", "3"])

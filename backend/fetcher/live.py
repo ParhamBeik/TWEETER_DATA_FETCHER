@@ -167,6 +167,10 @@ class LiveMonitor:
     ENDPOINTS = ("UserTweets",)
     QUARANTINE_FAILURE_THRESHOLD = 3
     RATE_LIMIT_RESERVE = 5
+    # Live keeps the last few hours current; that is one or two pages of timeline.
+    # It used to inherit the engine's 50-page archive cap, so a single account
+    # could spend a whole rate window on tweets the archive walk already owns.
+    MAX_PAGES = 3
 
     def __init__(self, config_path: Optional[str] = None):
         self.project_root = PROJECT_ROOT
@@ -256,7 +260,12 @@ class LiveMonitor:
             max_pages=safety_cap_pages,
             window_days=None,
             cutoff=cutoff,
-            force_refetch=False,
+            # Always start from the top of the timeline. Live is a snapshot of the
+            # last few hours, so resuming a previous poll's cursor would walk away
+            # from the newest tweets -- and it would otherwise inherit whatever raw
+            # batch the deep archive walk left behind in the shared endpoint state.
+            force_refetch=True,
+            resume_cursor=None,
         )
 
     def _process_sets(self, username: str, endpoint_pages: Dict[str, List[Dict[str, Any]]], live_window_hours: int) -> Dict[str, List[Dict[str, Any]]]:
@@ -316,7 +325,7 @@ class LiveMonitor:
                 user_id,
                 endpoint,
                 live_window_hours=live_window_hours,
-                safety_cap_pages=self.fetcher.pagination_safety_cap_pages,
+                safety_cap_pages=self.MAX_PAGES,
             )
             result["endpoints"][endpoint] = {k: v for k, v in endpoint_result.items() if k != "pages"}
             endpoint_pages[endpoint] = endpoint_result.get("pages", [])
@@ -337,13 +346,7 @@ class LiveMonitor:
         return result
 
     def _available_timeline_requests(self) -> int:
-        state = self.api_manager.rate_limits.get("UserTweets", {})
-        limit = int(state.get("limit", 0) or 0)
-        remaining = int(state.get("remaining", limit) or 0)
-        reset = int(state.get("reset", 0) or 0)
-        if reset and reset <= int(time.time()):
-            remaining = limit
-        return max(0, remaining - self.RATE_LIMIT_RESERVE)
+        return self.api_manager.remaining_requests("UserTweets", self.RATE_LIMIT_RESERVE)
 
     def _rotate_due_accounts(self, accounts: List[str]) -> List[str]:
         if not accounts:
@@ -454,7 +457,7 @@ class LiveMonitor:
                     user_id,
                     endpoint,
                     live_window_hours=int(policy.get("live_window_hours", 24)),
-                    safety_cap_pages=self.fetcher.pagination_safety_cap_pages,
+                    safety_cap_pages=self.MAX_PAGES,
                 )
                 report["accounts"][username]["endpoints"][endpoint] = {k: v for k, v in endpoint_result.items() if k != "pages"}
                 endpoint_pages_by_account[username][endpoint] = endpoint_result.get("pages", [])

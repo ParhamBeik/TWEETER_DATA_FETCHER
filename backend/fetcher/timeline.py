@@ -47,6 +47,16 @@ from fetcher.observability import PipelineConsole
 TIMEZONE = "Asia/Tehran"
 DEFAULT_HISTORICAL_MAX_PAGES = 15
 
+# A profile timeline that has run out of tweets does NOT stop handing out bottom
+# cursors: past the last real tweet X keeps returning pages whose only entries
+# are the two cursor entries. Without this stop the loop paginates into that void
+# until the safety cap, reports "partial", and -- because a partial run may not
+# advance the backfill watermark -- refetches the same account from page 1 on
+# every single tick, forever. Observed in production: one account burning the
+# whole shared UserTweets budget every 15 minutes and starving live polling to
+# zero. Two consecutive tweet-less pages is the end of the timeline.
+EMPTY_PAGE_STREAK = 2
+
 
 def _cursor_reference(cursor: Optional[str]) -> Optional[str]:
     """Return a stable diagnostic fingerprint without exposing the cursor."""
@@ -398,9 +408,12 @@ class FetcherEngine:
         cutoff: Optional[datetime] = None,
         batch_dir: Optional[Path] = None,
         force_refetch: bool = False,
+        min_remaining: int = 0,
+        resume_cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
         started_at = datetime.utcnow().isoformat() + "Z"
         attempts = 0
+        empty_page_streak = 0
         error_samples: List[Dict[str, Any]] = []
         last_http_status: Optional[int] = None
         latest_window_coverage: Optional[Dict[str, Any]] = None
@@ -499,7 +512,10 @@ class FetcherEngine:
             # Advance the rolling-window watermark ONLY on a successful completion, using
             # the run's start time. A partial/failed run leaves the old watermark intact
             # so the next run re-covers the gap (backfill goes beyond the last fetch).
-            if state_status == "completed":
+            # A resumed archive tick is excluded: it started thousands of tweets deep in
+            # the past and never saw the top of the timeline, so it cannot claim to have
+            # fetched everything up to `started_at`.
+            if state_status == "completed" and not archive_resume:
                 completion_meta["fetch_watermark"] = started_at
             self.storage_manager.update_endpoint_state(
                 account,
@@ -526,29 +542,45 @@ class FetcherEngine:
         field_toggles = self._timeline_field_toggles(endpoint)
         existing_state = self.storage_manager.get_endpoint_state(account, endpoint)
         status_value = str(existing_state.get("status", "pending"))
-        resume_cursor = existing_state.get("last_cursor")
+        saved_cursor = existing_state.get("last_cursor")
         raw_batch_path = existing_state.get("raw_batch_path")
-        if force_refetch:
+        # An explicit resume_cursor is the deep archive walk handing back its own
+        # position from a previous tick. It must win over `last_cursor`, which the
+        # shallow live poll writes to this same (account, endpoint) row: the two
+        # walks sit at completely different depths in the timeline and inheriting
+        # each other's cursor would either restart the archive at the top or send
+        # the live poll thousands of tweets into the past.
+        archive_resume = bool(resume_cursor and str(resume_cursor) not in {"__START__", "__END__"})
+        if archive_resume or force_refetch:
             batch_dir = self.storage_manager.create_raw_batch_dir(endpoint, account)
-            existing_pages = []
-            cursor = None
-            status_value = "pending"
         elif batch_dir is None:
             if raw_batch_path and Path(str(raw_batch_path)).exists():
                 batch_dir = Path(str(raw_batch_path))
             else:
                 batch_dir = self.storage_manager.create_raw_batch_dir(endpoint, account)
 
-        existing_pages = [] if force_refetch else self.storage_manager.load_raw_pages_from_batch(batch_dir)
-        cursor: Optional[str] = None if force_refetch else (
-            str(resume_cursor)
-            if (
-                resume_cursor
-                and status_value in {"running", "paused", "failed"}
-                and str(resume_cursor) not in {"__START__", "__END__"}
-            )
-            else None
+        # Each archive tick is its own batch, so its page numbering restarts and
+        # `safety_cap` acts as this tick's page budget rather than a lifetime cap.
+        existing_pages = (
+            [] if (archive_resume or force_refetch)
+            else self.storage_manager.load_raw_pages_from_batch(batch_dir)
         )
+        if archive_resume:
+            cursor: Optional[str] = str(resume_cursor)
+            status_value = "running"
+        elif force_refetch:
+            cursor = None
+            status_value = "pending"
+        else:
+            cursor = (
+                str(saved_cursor)
+                if (
+                    saved_cursor
+                    and status_value in {"running", "paused", "failed"}
+                    and str(saved_cursor) not in {"__START__", "__END__"}
+                )
+                else None
+            )
         if cursor:
             self.logger.warning(
                 f"Resuming @{account} {endpoint} from saved cursor: {cursor}"
@@ -587,6 +619,25 @@ class FetcherEngine:
         context_refreshed = False
 
         while page <= safety_cap:
+            # Historical and live spend one shared endpoint budget. The deep walk
+            # stops at a floor so the live poller always has requests left; before
+            # this, one backfill drained the bucket every tick and live deferred
+            # every account it had. Stopping here keeps the cursor, so the walk
+            # resumes from this exact page next tick instead of restarting.
+            if min_remaining and self.api_manager.remaining_requests(endpoint, min_remaining) <= 0:
+                cursor_termination_reason = "quota_floor_reached"
+                self.logger.warning(
+                    f"@{account} {endpoint} paused at page {page}: budget down to the "
+                    f"{min_remaining}-request floor reserved for live polling"
+                )
+                return finish_with_state(
+                    status="partial",
+                    outcome="paused_for_quota",
+                    reason=f"{endpoint} budget reached the {min_remaining}-request reserve floor",
+                    pages=all_items,
+                    cursor_value=cursor,
+                    raw_batch=batch_dir,
+                )
             page_started = time.monotonic()
             cursor_termination_reason = None
             variables = self._timeline_variables(endpoint, user_id, cursor)
@@ -968,6 +1019,14 @@ class FetcherEngine:
                 },
             )
 
+            # Count this page's own tweets, not the raw entry count: past the end
+            # of a timeline X keeps serving pages whose only entries are the two
+            # cursor entries, which is why an entry-count check would never fire.
+            if self.window_evaluator.extract_endpoint_tweets([payload], account, endpoint):
+                empty_page_streak = 0
+            else:
+                empty_page_streak += 1
+
             if coverage and coverage.complete:
                 cursor_termination_reason = "current_chain_window_crossed"
                 self.logger.info(
@@ -980,6 +1039,21 @@ class FetcherEngine:
                     reason=f"Rolling window complete: {coverage.reason}",
                     pages=all_items,
                     cursor_value=next_cursor if next_cursor else "__END__",
+                    raw_batch=batch_dir,
+                )
+
+            if empty_page_streak >= EMPTY_PAGE_STREAK:
+                cursor_termination_reason = "timeline_exhausted"
+                self.logger.info(
+                    f"@{account} {endpoint} timeline exhausted: {empty_page_streak} "
+                    f"consecutive pages with no tweets (cursor still offered)"
+                )
+                return finish_with_state(
+                    status="completed",
+                    outcome="success_timeline_exhausted",
+                    reason=f"{empty_page_streak} consecutive pages returned no tweets",
+                    pages=all_items,
+                    cursor_value="__END__",
                     raw_batch=batch_dir,
                 )
 

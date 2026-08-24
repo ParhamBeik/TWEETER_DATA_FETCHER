@@ -729,6 +729,23 @@ class APIManager:
             time.sleep(sleep_for)
         return sleep_for
 
+    def remaining_requests(self, endpoint: str, reserve: int = 0) -> int:
+        """Requests left in this endpoint's window, above ``reserve``.
+
+        A bucket whose reset time has already passed counts as refilled: the
+        header that proves it only arrives with the next response, and waiting
+        for that would idle a full window. ``reserve`` is how many requests the
+        caller must leave for someone else -- historical and live share one
+        bucket, so the deep backfill reserves the live poller's floor.
+        """
+        state = self.rate_limits.get(endpoint, {})
+        limit = int(state.get("limit", 0) or 0)
+        remaining = int(state.get("remaining", limit) or 0)
+        reset = int(state.get("reset", 0) or 0)
+        if reset and reset <= int(time.time()):
+            remaining = limit
+        return max(0, remaining - int(reserve))
+
     def seconds_until_reset(self, endpoint: str, safety_buffer_seconds: Optional[int] = None) -> int:
         """Return seconds until the persisted endpoint reset time."""
         if safety_buffer_seconds is None:
