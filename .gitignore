@@ -9,8 +9,11 @@ node_modules/
 frontend/dist/
 
 # IDE / OS
+# NB: .github/ is deliberately NOT here. It was, grouped in with the editor
+# dirs, which meant the CI workflow never reached GitHub and no push has ever
+# been tested there -- the only runs on record are GitHub's own dependency
+# graph job.
 .claude/
-.github/
 .vscode/
 .DS_Store
 

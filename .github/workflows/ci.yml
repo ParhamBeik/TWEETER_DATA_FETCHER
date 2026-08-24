@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, simplify]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same branch supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (engine + API)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Byte-compile every source tree
+        # Catches syntax errors in modules no test happens to import.
+        run: python -m compileall -q config fetcher fetching tweets tests
+
+      - name: Check for missing migrations
+        # A model edited without `makemigrations` boots fine locally and then
+        # fails on a fresh deploy; fail here instead.
+        run: python manage.py makemigrations --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings_test
+
+      - name: Run the suite
+        # pytest.ini pins DJANGO_SETTINGS_MODULE=config.settings_test
+        # (SQLite + eager Celery), so no services are required.
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the component suite
+        run: npm test
+
+      - name: Verify the production bundle builds
+        # A test suite can pass while the real Vite build breaks on an
+        # unresolved import; the app is served from this bundle.
+        run: npm run build
+
+  deploy:
+    name: Deploy to the VPS
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    # Never cancel a deploy in flight: the wrapper resets the checkout and
+    # rebuilds containers, and killing it partway leaves the box in a state
+    # neither commit describes. Queue instead.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Authorize against the VPS
+        # Host key comes from a secret rather than StrictHostKeyChecking=no:
+        # this step hands a private key to whatever answers on port 22, so the
+        # host has to prove who it is first.
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Pull, rebuild, and health-check
+        # The wrapper lives outside the repo on purpose: it is what runs
+        # `git reset --hard`, and a script cannot safely rewrite itself while
+        # bash is still reading it. It calls scripts/deploy_vps.sh afterwards,
+        # which fails the job if the API does not come back up.
+        run: |
+          ssh -i ~/.ssh/id_deploy \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              -o ConnectTimeout=20 \
+              "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+              /opt/apps/deploy_twitter.sh
+
+      - name: Discard the key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
