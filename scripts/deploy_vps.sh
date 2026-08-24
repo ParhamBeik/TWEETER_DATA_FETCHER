@@ -26,39 +26,24 @@ if [ ! -f .env ]; then
 fi
 
 docker compose build
-docker compose up -d --remove-orphans
 
-# Prove the API actually came back before reporting success. A build that
-# succeeds and a container that boot-loops look identical to `up -d`, and CI
-# calls this script -- a green deploy job that left the site down is worse than
-# a red one. 401 is the expected answer from an authenticated API.
-echo "waiting for the API to answer..."
-for attempt in $(seq 1 30); do
-  status=$(docker compose exec -T web \
-    python -c "import urllib.request,urllib.error
-try:
-    urllib.request.urlopen('http://127.0.0.1:8000/api/feed/', timeout=5)
-    print(200)
-except urllib.error.HTTPError as exc:
-    print(exc.code)
-except Exception:
-    print(0)" 2>/dev/null | tr -d '\r') || status=0
-  case "$status" in
-    401|403|200) echo "API healthy (HTTP $status) after ${attempt} attempt(s)"; break ;;
-  esac
-  if [ "$attempt" -eq 30 ]; then
-    echo "FATAL: API did not answer after 30 attempts" >&2
-    docker compose ps
-    docker compose logs --tail 50 web >&2
-    exit 1
-  fi
-  sleep 5
-done
+# Prove the app actually came back before reporting success. A build that
+# succeeds and a container that boot-loops look identical to a bare `up -d`,
+# and CI calls this script -- a green deploy job that left the site down is
+# worse than a red one. `--wait` blocks on the healthchecks already declared in
+# docker-compose.yml (gunicorn, all four celery containers, postgres, redis)
+# rather than reimplementing them here.
+if ! docker compose up -d --remove-orphans --wait --wait-timeout 240; then
+  echo "FATAL: services did not become healthy" >&2
+  docker compose ps
+  docker compose logs --tail 50 web >&2
+  exit 1
+fi
 
-# "Backend up" is not "site up". The check above talks to gunicorn directly, so
-# an nginx container that failed to start or lost its proxy config would still
-# leave the deploy green while nobody could reach the app. Ask the thing users
-# actually hit.
+# "Backend up" is not "site up": the frontend is the one service with no
+# healthcheck of its own, so `--wait` only proves its container started. An
+# nginx that lost its proxy config would still leave the deploy green while
+# nobody could reach the app. Ask the thing users actually hit.
 echo "waiting for the frontend to serve..."
 for attempt in $(seq 1 20); do
   if docker compose exec -T frontend wget -q -O /dev/null http://127.0.0.1/ 2>/dev/null; then
