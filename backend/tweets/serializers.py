@@ -16,6 +16,7 @@ class TwitterUserSerializer(serializers.ModelSerializer):
 
 class AccountOpsSerializer(TwitterUserSerializer):
     poll_interval_seconds = serializers.IntegerField(read_only=True)
+    observed_median_gap_seconds = serializers.IntegerField(read_only=True, allow_null=True)
     live_window_hours = serializers.IntegerField(read_only=True)
     historical_window_days = serializers.IntegerField(read_only=True)
     last_checked_at = serializers.DateTimeField(read_only=True, allow_null=True)
@@ -26,6 +27,7 @@ class AccountOpsSerializer(TwitterUserSerializer):
     class Meta(TwitterUserSerializer.Meta):
         fields = TwitterUserSerializer.Meta.fields + [
             "poll_interval_seconds",
+            "observed_median_gap_seconds",
             "live_window_hours",
             "historical_window_days",
             "last_checked_at",

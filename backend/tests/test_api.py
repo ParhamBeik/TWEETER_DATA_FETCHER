@@ -319,13 +319,30 @@ def test_feed_filters_by_tier(client_user):
 
 @pytest.mark.django_db
 def test_accounts_list_exposes_priority_and_policy(client_user):
+    from fetching.accounts import policy_for
+
     client, _ = client_user
     TwitterUser.objects.create(handle="jack", tracking=True, priority=1, display_name="Jack")
     data = client.get("/api/accounts/").data
     rows = data if isinstance(data, list) else data["results"]
     assert rows[0]["handle"] == "jack"
     assert rows[0]["priority"] == 1
-    assert rows[0]["poll_interval_seconds"] == 120
+    # An unmeasured account reports its tier default. Asserted against the policy
+    # rather than a literal, so re-tiering does not need a test edit to match.
+    assert rows[0]["poll_interval_seconds"] == policy_for(1)["poll_interval_seconds"]
+
+
+@pytest.mark.django_db
+def test_accounts_list_reports_the_measured_cadence_when_there_is_one(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(
+        handle="jack", tracking=True, priority=1,
+        poll_interval_seconds=2400, observed_median_gap_seconds=2400,
+    )
+    data = client.get("/api/accounts/").data
+    rows = data if isinstance(data, list) else data["results"]
+    assert rows[0]["poll_interval_seconds"] == 2400
+    assert rows[0]["observed_median_gap_seconds"] == 2400
 
 
 @pytest.mark.django_db

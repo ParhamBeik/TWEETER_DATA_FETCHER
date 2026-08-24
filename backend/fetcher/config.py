@@ -64,14 +64,33 @@ def load_json_config(
 #
 # Priority 1 is polled fastest and keeps the widest rolling window; 7 is the
 # fallback for any account with no configured tier.
+#
+# The tier does not set the polling cadence outright, it sets the band the
+# cadence must fall inside. The actual interval is measured from how often the
+# account really posts (fetching.accounts.interval_for), so an important account
+# that goes quiet is still checked often and a chatty low-tier one cannot
+# outspend it. `poll_interval_seconds` here is the value used until there is
+# enough history to measure -- the fastest the tier allows.
+#
+# The bands are sized against the shared UserTweets budget of 50 requests per
+# 15 minutes (4,800/day): 68 accounts at their band minimum is ~2,600 polls/day,
+# and settles well below that once measured rates replace the defaults, leaving
+# the rest of the window for the archive walk.
 DEFAULT_PRIORITY_POLICIES: Dict[int, Dict] = {
-    1: {"poll_interval_seconds": 120, "live_window_hours": 24, "historical_window_days": 7},
-    2: {"poll_interval_seconds": 240, "live_window_hours": 20, "historical_window_days": 6},
-    3: {"poll_interval_seconds": 360, "live_window_hours": 16, "historical_window_days": 5},
-    4: {"poll_interval_seconds": 540, "live_window_hours": 12, "historical_window_days": 4},
-    5: {"poll_interval_seconds": 780, "live_window_hours": 9, "historical_window_days": 3},
-    6: {"poll_interval_seconds": 1020, "live_window_hours": 6, "historical_window_days": 2},
-    7: {"poll_interval_seconds": 1440, "live_window_hours": 3, "historical_window_days": 2},
+    1: {"poll_interval_seconds": 900, "poll_interval_min_seconds": 900, "poll_interval_max_seconds": 3600,
+        "live_window_hours": 24, "historical_window_days": 7},
+    2: {"poll_interval_seconds": 1800, "poll_interval_min_seconds": 1800, "poll_interval_max_seconds": 7200,
+        "live_window_hours": 20, "historical_window_days": 6},
+    3: {"poll_interval_seconds": 1800, "poll_interval_min_seconds": 1800, "poll_interval_max_seconds": 10800,
+        "live_window_hours": 16, "historical_window_days": 5},
+    4: {"poll_interval_seconds": 3600, "poll_interval_min_seconds": 3600, "poll_interval_max_seconds": 14400,
+        "live_window_hours": 12, "historical_window_days": 4},
+    5: {"poll_interval_seconds": 3600, "poll_interval_min_seconds": 3600, "poll_interval_max_seconds": 21600,
+        "live_window_hours": 9, "historical_window_days": 3},
+    6: {"poll_interval_seconds": 5400, "poll_interval_min_seconds": 5400, "poll_interval_max_seconds": 28800,
+        "live_window_hours": 6, "historical_window_days": 2},
+    7: {"poll_interval_seconds": 7200, "poll_interval_min_seconds": 7200, "poll_interval_max_seconds": 43200,
+        "live_window_hours": 3, "historical_window_days": 2},
 }
 
 FALLBACK_PRIORITY = 7
@@ -113,26 +132,40 @@ def load_tier_config(config: Dict) -> Tuple[Dict[str, Dict], Dict[int, Dict]]:
             username = str(record.get("username", "")).strip()
             if not username:
                 continue
-            account_map[username.lower()] = {
+            entry = {
                 "username": username,
                 "display_name": str(record.get("display_name") or username).strip() or username,
                 "priority": priority,
             }
+            # Cadence measured from this account's own posting rate, written by
+            # fetching.tasks.recompute_poll_intervals. Absent for an account with
+            # too little history, which then falls back to the tier default.
+            measured = record.get("poll_interval_seconds")
+            if measured:
+                entry["poll_interval_seconds"] = int(measured)
+            account_map[username.lower()] = entry
     return account_map, policy_map
 
 
 def get_priority_policy(
     username: str, account_map: Dict[str, Dict], policy_map: Dict[int, Dict]
 ) -> Dict:
-    """Return the policy for ``username``, falling back to priority 7."""
+    """Return the policy for ``username``, falling back to priority 7.
+
+    A per-account ``poll_interval_seconds`` overrides the tier's, which is how
+    the measured cadence reaches the live poller.
+    """
     meta = account_map.get(username.lower()) or {}
     priority = meta.get("priority", FALLBACK_PRIORITY)
-    return {
+    policy = {
         **policy_map.get(priority, policy_map[FALLBACK_PRIORITY]),
         "username": meta.get("username", username),
         "display_name": meta.get("display_name", username),
         "priority": priority,
     }
+    if meta.get("poll_interval_seconds"):
+        policy["poll_interval_seconds"] = int(meta["poll_interval_seconds"])
+    return policy
 
 
 def ordered_accounts(account_map: Dict[str, Dict]) -> List[str]:

@@ -27,6 +27,14 @@ class TwitterUser(models.Model):
     # its place. Ordering by this ascending (nulls first) is what makes the
     # chunked backfill self-resuming across ticks.
     historical_backfilled_at = models.DateTimeField(null=True, blank=True)
+    # How often to poll this account, measured from how often it actually posts
+    # and clamped into the band its priority allows (see
+    # fetching.tasks.recompute_poll_intervals). Null until there is enough
+    # history to measure, at which point the tier default applies instead.
+    # observed_median_gap_seconds is the raw measurement, kept so the console can
+    # show why an interval is what it is.
+    poll_interval_seconds = models.PositiveIntegerField(null=True, blank=True)
+    observed_median_gap_seconds = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:  # pragma: no cover - trivial

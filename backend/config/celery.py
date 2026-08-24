@@ -29,6 +29,7 @@ app.conf.task_routes = {
     # unconsumed forever now that no worker listens to the old default queue.
     "fetching.tasks.purge_expired_search_tweets": {"queue": "historical"},
     "fetching.tasks.purge_old_fetch_runs": {"queue": "historical"},
+    "fetching.tasks.recompute_poll_intervals": {"queue": "historical"},
 }
 
 
@@ -61,4 +62,11 @@ def setup_periodic_tasks(sender, **_kwargs):
         schedule(86400.0),
         app.signature("fetching.tasks.purge_old_fetch_runs"),
         name="purge-old-fetch-runs",
+    )
+    # Daily re-tiering: polling cadence follows each account's measured posting
+    # rate, so it has to be recomputed as that rate drifts.
+    sender.add_periodic_task(
+        schedule(86400.0),
+        app.signature("fetching.tasks.recompute_poll_intervals"),
+        name="recompute-poll-intervals",
     )
