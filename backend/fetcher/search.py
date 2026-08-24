@@ -723,10 +723,22 @@ class SearchTimelineMonitor:
         window_start: datetime,
         cursor: Optional[str],
         cursor_history: Set[str],
+        known_ground: Optional[datetime] = None,
     ) -> Tuple[bool, Optional[str]]:
         next_cursor = page_result.get("next_cursor")
         if self._page_crossed_search_window(page_result.get("tweets", []), window_start):
             return True, "success_search_window_crossed"
+        # Reaching what the last successful run already stored is a success, and
+        # has to be recognised here as well as in the browser's scroll predicate.
+        # Without this clause the page loop never breaks for that reason, the
+        # for/else labels the run "partial_browser_predicate", and a partial run
+        # is not allowed to advance `newest_seen_at` -- so the very optimization
+        # that stopped early could never move the mark it stops at, and every
+        # later poll would scroll back to the same ageing boundary.
+        if known_ground is not None and self._page_crossed_search_window(
+            page_result.get("tweets", []), known_ground
+        ):
+            return True, "success_reached_known_ground"
         if cursor and next_cursor and str(next_cursor) in cursor_history:
             return True, "repeated_cursor_history"
         if not next_cursor:
@@ -925,6 +937,7 @@ class SearchTimelineMonitor:
                 window_start=window_start,
                 cursor=cursor,
                 cursor_history=cursor_history,
+                known_ground=known_ground,
             )
             if stop_pagination:
                 exhausted_reason = stop_reason or "pagination_stopped"
@@ -982,6 +995,7 @@ class SearchTimelineMonitor:
         outputs = self._save_exports(slug, product, raw_query, tweets, debug, metadata)
         successful_reasons = {
             "success_search_window_crossed",
+            "success_reached_known_ground",
             "no_bottom_cursor",
             "repeated_cursor_history",
             "depth_one_complete",

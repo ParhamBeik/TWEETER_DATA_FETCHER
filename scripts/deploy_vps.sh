@@ -55,4 +55,23 @@ except Exception:
   sleep 5
 done
 
+# "Backend up" is not "site up". The check above talks to gunicorn directly, so
+# an nginx container that failed to start or lost its proxy config would still
+# leave the deploy green while nobody could reach the app. Ask the thing users
+# actually hit.
+echo "waiting for the frontend to serve..."
+for attempt in $(seq 1 20); do
+  if docker compose exec -T frontend wget -q -O /dev/null http://127.0.0.1/ 2>/dev/null; then
+    echo "frontend healthy after ${attempt} attempt(s)"
+    break
+  fi
+  if [ "$attempt" -eq 20 ]; then
+    echo "FATAL: frontend did not serve after 20 attempts" >&2
+    docker compose ps
+    docker compose logs --tail 50 frontend >&2
+    exit 1
+  fi
+  sleep 3
+done
+
 docker image prune -f

@@ -186,3 +186,62 @@ def test_an_unparseable_page_never_stops_the_scroll(monkeypatch):
 )
 def test_known_ground_survives_a_missing_or_broken_state_blob(state, expected):
     assert SearchTimelineMonitor._parse_known_ground(state) == expected
+
+
+def test_reaching_known_ground_is_a_success_the_run_can_record(monkeypatch):
+    """The optimization has to be able to advance the mark it stops at.
+
+    The browser reports stop_reason="predicate" for both stop conditions, so if
+    the page loop only recognised the window crossing, a known-ground stop fell
+    through to "partial_browser_predicate" -- and a partial run may not advance
+    newest_seen_at. The fast path could never move its own high-water mark.
+    """
+    from fetcher.search import SearchTimelineMonitor
+
+    monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
+    monitor._tweet_datetime = lambda tweet: tweet["at"]
+    monitor._page_crossed_search_window = (
+        SearchTimelineMonitor._page_crossed_search_window.__get__(monitor)
+    )
+
+    stop, reason = monitor.should_stop_search_pagination(
+        page_result={"tweets": [{"at": _at(7)}], "next_cursor": "c2"},
+        window_start=_at(240),
+        cursor="c1",
+        cursor_history=set(),
+        known_ground=_at(6),
+    )
+
+    assert stop is True
+    assert reason == "success_reached_known_ground"
+
+
+def test_the_known_ground_reason_counts_as_a_completed_run():
+    import inspect
+
+    from fetcher.search import SearchTimelineMonitor
+
+    source = inspect.getsource(SearchTimelineMonitor.monitor_search)
+    successful = source.split("successful_reasons = {")[1].split("}")[0]
+    assert "success_reached_known_ground" in successful
+
+
+def test_fresh_pages_do_not_trip_the_known_ground_stop(monkeypatch):
+    from fetcher.search import SearchTimelineMonitor
+
+    monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
+    monitor._tweet_datetime = lambda tweet: tweet["at"]
+    monitor._page_crossed_search_window = (
+        SearchTimelineMonitor._page_crossed_search_window.__get__(monitor)
+    )
+
+    stop, reason = monitor.should_stop_search_pagination(
+        page_result={"tweets": [{"at": _at(1)}], "next_cursor": "c2"},
+        window_start=_at(240),
+        cursor="c1",
+        cursor_history=set(),
+        known_ground=_at(6),
+    )
+
+    assert stop is False
+    assert reason is None

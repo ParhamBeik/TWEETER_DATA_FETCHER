@@ -221,3 +221,71 @@ class ArchiveWalkTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArchiveCompletionTests(unittest.TestCase):
+    """Which outcomes may end an account's archive walk for good.
+
+    Unit level on the bookkeeping function, because the distinction being
+    guarded is a pure mapping from an outcome to a decision -- and getting it
+    wrong is silent: the account simply never gets collected again.
+    """
+
+    def _record(self, outcome, *, status="completed", pages=5, previous=None):
+        from fetcher.historical import _record_backfill_progress
+
+        saved = {}
+        storage = MagicMock()
+        storage.update_endpoint_state = lambda account, endpoint, meta=None, **_: saved.update(meta or {})
+        _record_backfill_progress(
+            storage, "business", "UserTweets", previous or {},
+            {"status": status, "outcome": outcome, "pages_fetched": pages, "last_cursor": "c9"},
+        )
+        return saved
+
+    def test_covering_the_rolling_window_does_not_end_the_archive_walk(self):
+        """The regression: this reports status=completed but a cursor remains.
+
+        Treating it as the end marked active accounts permanently archived after
+        a few pages, and left the resumable cursor unused.
+        """
+        saved = self._record("success_window_complete")
+
+        self.assertNotIn("backfill_complete", saved)
+        self.assertEqual(saved["backfill_cursor"], "c9")
+
+    def test_running_out_of_tweets_ends_the_walk(self):
+        saved = self._record("success_timeline_exhausted")
+
+        self.assertIs(saved["backfill_complete"], True)
+        self.assertIsNone(saved["backfill_cursor"])
+
+    def test_reaching_the_true_end_of_pagination_ends_the_walk(self):
+        saved = self._record("success_true_end")
+
+        self.assertIs(saved["backfill_complete"], True)
+
+    def test_pausing_for_quota_is_not_a_stall(self):
+        """It is the design working. Counting it demotes healthy accounts that
+        happen to sit late in a chunk that ran the shared bucket down."""
+        saved = self._record(
+            "paused_for_quota", status="partial", pages=0, previous={"backfill_stalled_ticks": 2},
+        )
+
+        self.assertEqual(saved["backfill_stalled_ticks"], 2)
+        self.assertNotIn("backfill_complete", saved)
+
+    def test_a_tick_that_fetched_nothing_for_any_other_reason_is_a_stall(self):
+        saved = self._record(
+            "failed_initial_auth", status="failed", pages=0, previous={"backfill_stalled_ticks": 2},
+        )
+
+        self.assertEqual(saved["backfill_stalled_ticks"], 3)
+
+    def test_progress_clears_the_stall_counter(self):
+        saved = self._record(
+            "partial_safety_cap_reached", status="partial", pages=25,
+            previous={"backfill_stalled_ticks": 4},
+        )
+
+        self.assertEqual(saved["backfill_stalled_ticks"], 0)

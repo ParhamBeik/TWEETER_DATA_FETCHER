@@ -57,6 +57,13 @@ DEFAULT_HISTORICAL_MAX_PAGES = 15
 # zero. Two consecutive tweet-less pages is the end of the timeline.
 EMPTY_PAGE_STREAK = 2
 
+# Outcomes that prove pagination reached the actual end of an account's
+# timeline. `success_window_complete` is deliberately NOT one of them: it only
+# means the caller's rolling window was satisfied, with a live cursor still on
+# offer, so treating it as the end would let a deep archive walk declare an
+# account fully collected after covering a few days of it.
+TIMELINE_END_OUTCOMES = frozenset({"success_true_end", "success_timeline_exhausted"})
+
 
 def _cursor_reference(cursor: Optional[str]) -> Optional[str]:
     """Return a stable diagnostic fingerprint without exposing the cursor."""
