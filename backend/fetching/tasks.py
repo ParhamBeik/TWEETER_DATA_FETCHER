@@ -15,7 +15,7 @@ from django.utils import timezone
 from tweets.models import EndpointState, FetchRun, Search, SearchResult, Tweet, TwitterUser
 
 from . import runner
-from .accounts import sync_quarantine_from_live_state
+from .accounts import interval_for, median_gap_seconds, sync_quarantine_from_live_state
 from .ingest import ingest_search_results, ingest_tweets
 
 logger = logging.getLogger(__name__)
@@ -249,6 +249,38 @@ def repoll_searches() -> int:
         if not searches:
             return 0
         return _run_cycle(SEARCH_MODULE, ["--once"], "search", searches=searches)
+
+
+@shared_task(name="fetching.tasks.recompute_poll_intervals")
+def recompute_poll_intervals() -> int:
+    """Re-derive each account's polling cadence from how often it actually posts.
+
+    A fixed per-tier interval spends the same quota on an account that posts
+    forty times a day and one that posts twice a week. Measuring the real rate
+    and clamping it into the tier's band spends the budget where there is
+    something to collect, while keeping importance in charge at the edges.
+    """
+    since = timezone.now() - timedelta(days=settings.FETCH_INTERVAL_SAMPLE_DAYS)
+    updated = 0
+    for user in TwitterUser.objects.filter(tracking=True):
+        times = list(
+            Tweet.objects.filter(
+                account__iexact=user.handle, created_at__gte=since, created_at__isnull=False
+            ).values_list("created_at", flat=True)
+        )
+        gap = median_gap_seconds(times)
+        interval = interval_for(user.priority, gap)
+        if (user.poll_interval_seconds, user.observed_median_gap_seconds) == (interval, gap):
+            continue
+        user.poll_interval_seconds = interval
+        user.observed_median_gap_seconds = gap
+        user.save(update_fields=["poll_interval_seconds", "observed_median_gap_seconds"])
+        updated += 1
+        logger.info(
+            "recompute_poll_intervals: @%s tier=%s median_gap=%ss -> poll every %ss",
+            user.handle, user.priority, gap, interval,
+        )
+    return updated
 
 
 @shared_task(name="fetching.tasks.purge_expired_search_tweets")

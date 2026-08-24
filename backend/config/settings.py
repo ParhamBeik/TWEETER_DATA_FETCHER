@@ -200,6 +200,10 @@ FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR"
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
 FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))
+# How far back recompute_poll_intervals looks when measuring an account's real
+# posting rate. Long enough to survive a quiet week, short enough that an
+# account which changed its habits is re-tiered within the month.
+FETCH_INTERVAL_SAMPLE_DAYS = int(os.environ.get("FETCH_INTERVAL_SAMPLE_DAYS", "30"))
 SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "0") == "1"

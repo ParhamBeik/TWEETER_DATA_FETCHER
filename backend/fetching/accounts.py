@@ -24,6 +24,45 @@ def policy_for(priority: int) -> dict:
     return dict(DEFAULT_PRIORITY_POLICIES[clamp_priority(priority)])
 
 
+# An account needs at least this many timestamped tweets in the measurement
+# window before its median gap means anything; below it the tier default is a
+# better guess than a sample of two.
+MIN_SAMPLE_TWEETS = 6
+
+
+def median_gap_seconds(times: list) -> int | None:
+    """Median seconds between consecutive posts, or None on too small a sample.
+
+    Median rather than mean because posting is bursty: a single overnight gap
+    would drag a mean far past anything the account actually does.
+    """
+    ordered = sorted(t for t in times if t is not None)
+    if len(ordered) < MIN_SAMPLE_TWEETS:
+        return None
+    gaps = sorted(
+        (later - earlier).total_seconds() for earlier, later in zip(ordered, ordered[1:])
+    )
+    middle = len(gaps) // 2
+    value = gaps[middle] if len(gaps) % 2 else (gaps[middle - 1] + gaps[middle]) / 2
+    return int(value)
+
+
+def interval_for(priority: int, gap_seconds: int | None) -> int:
+    """Polling interval for an account: its own rate, clamped into its tier's band.
+
+    The tier expresses how much this account matters, the measurement expresses
+    how much there is to collect. Importance wins at the edges -- a priority-1
+    account that goes quiet is still checked hourly, and a chatty priority-7 one
+    cannot poll its way past a priority-1.
+    """
+    policy = policy_for(priority)
+    low = int(policy["poll_interval_min_seconds"])
+    high = int(policy["poll_interval_max_seconds"])
+    if not gap_seconds:
+        return int(policy["poll_interval_seconds"])
+    return max(low, min(high, int(gap_seconds)))
+
+
 def tracked_accounts_payload(cap: int | None = None) -> dict:
     """CLI accounts.json buckets from tracked TwitterUser rows."""
     limit = cap if cap is not None else settings.FETCH_MAX_ACCOUNTS_PER_RUN
@@ -33,12 +72,15 @@ def tracked_accounts_payload(cap: int | None = None) -> dict:
     buckets = {f"priority_{index}": [] for index in range(1, 8)}
     for user in qs:
         priority = clamp_priority(user.priority)
-        buckets[f"priority_{priority}"].append(
-            {
-                "username": user.handle,
-                "display_name": user.display_name or user.handle,
-            }
-        )
+        record = {
+            "username": user.handle,
+            "display_name": user.display_name or user.handle,
+        }
+        # Only measured cadences travel; an account without one falls back to
+        # its tier default inside the engine rather than carrying a duplicate.
+        if user.poll_interval_seconds:
+            record["poll_interval_seconds"] = int(user.poll_interval_seconds)
+        buckets[f"priority_{priority}"].append(record)
     return buckets
 
 
@@ -111,7 +153,7 @@ def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
     policy = policy_for(user.priority)
     state = (live or live_state_map()).get(user.handle.lower(), {})
     last_checked = _parse_when(state.get("last_checked_at"))
-    interval = int(policy["poll_interval_seconds"])
+    interval = int(user.poll_interval_seconds or policy["poll_interval_seconds"])
     watermarks = {}
     for row in EndpointState.objects.filter(account__iexact=user.handle):
         data = row.data if isinstance(row.data, dict) else {}
@@ -119,6 +161,7 @@ def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
     recent_since = timezone.now() - timedelta(hours=24)
     return {
         "poll_interval_seconds": interval,
+        "observed_median_gap_seconds": user.observed_median_gap_seconds,
         "live_window_hours": policy["live_window_hours"],
         "historical_window_days": policy["historical_window_days"],
         "last_checked_at": last_checked,
