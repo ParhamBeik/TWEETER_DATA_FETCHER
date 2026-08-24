@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Feed from "./Feed";
-import { api, setToken } from "../api";
+import { api, setTokens } from "../api";
 
 // Component tests: Feed is where filter state, pagination and export converge,
 // so it is driven through the DOM with only the network boundary mocked.
@@ -153,7 +153,7 @@ describe("Feed filters", () => {
 
 describe("Feed export", () => {
   beforeEach(() => {
-    setToken("tok-123");
+    setTokens({ access: "access-123", refresh: "refresh-123" });
     vi.stubGlobal("URL", {
       ...URL,
       createObjectURL: vi.fn(() => "blob:mock"),
@@ -187,7 +187,7 @@ describe("Feed export", () => {
     expect(url).toContain("/api/export/");
     expect(url).toContain("format=csv");
     expect(url).toContain("account=elonmusk");
-    expect(init.headers.Authorization).toBe("Token tok-123");
+    expect(init.headers.Authorization).toBe("Bearer access-123");
   });
 
   it("requests JSONL from the JSONL button", async () => {

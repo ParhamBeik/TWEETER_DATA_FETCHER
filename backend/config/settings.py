@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "tweets",
     "fetching",
@@ -87,8 +88,17 @@ DATABASES = {
     }
 }
 
+# Signup is open, so the password rules are the only thing standing between a
+# weak password and an account on a system that drives a shared X session.
+# MinimumLength alone accepted "password1" and any handle already in the repo.
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 LANGUAGE_CODE = "en-us"
@@ -104,7 +114,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Session auth stays for the Django admin's browsable pages. The old
+        # TokenAuthentication is gone: its tokens never expire, so a leaked one
+        # is valid until someone notices and deletes the row by hand.
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
@@ -112,6 +125,20 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "config.pagination.StandardCursorPagination",
     "PAGE_SIZE": 30,
+}
+
+from datetime import timedelta  # noqa: E402  (kept next to the settings it configures)
+
+SIMPLE_JWT = {
+    # Short access token, long refresh: a stolen access token expires on its
+    # own, and a stolen refresh token can be revoked.
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # Each refresh issues a new refresh token and blacklists the one used, so a
+    # replayed refresh token is dead on arrival.
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
 }
 
 # Never all-origins: this API is token-authenticated and drives a shared X
@@ -212,7 +239,10 @@ FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "1
 FETCH_INTERVAL_SAMPLE_DAYS = int(os.environ.get("FETCH_INTERVAL_SAMPLE_DAYS", "30"))
 SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
-ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "0") == "1"
+# Signup is open by default. New accounts are read-only (see
+# tweets.permissions.IsStaffOrReadOnly); operating the fetcher and replacing the
+# shared X session require staff, granted from the Django admin.
+ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "1") == "1"
 
 # Without this, Django's DEFAULT_LOGGING routes unhandled view/admin exceptions
 # only to mail_admins, which has no email backend configured here -- the

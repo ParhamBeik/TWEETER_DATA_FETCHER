@@ -18,6 +18,8 @@ from rest_framework.views import APIView
 
 from fetching.accounts import clamp_priority, clear_live_quarantine, live_state_map
 
+from .permissions import IsStaff, IsStaffOrReadOnly
+
 from config.pagination import (
     CreatedAtCursorPagination,
     FetchRunCursorPagination,
@@ -123,6 +125,9 @@ class AccountViewSet(viewsets.ModelViewSet):
     """Operator account list: tiers, tracking, quarantine, on-demand fetch."""
 
     serializer_class = AccountOpsSerializer
+    # Reading the roster is fine for any signed-in user; changing tiers, tracking
+    # or quarantine, and triggering a fetch all spend the shared X rate budget.
+    permission_classes = [IsStaffOrReadOnly]
     lookup_field = "handle"
     pagination_class = None
     http_method_names = ["get", "post", "patch", "head", "options"]
@@ -214,6 +219,8 @@ class FetchRunDetailView(RetrieveAPIView):
 class CycleView(APIView):
     """Trigger one global live/historical/search cycle."""
 
+    permission_classes = [IsStaff]
+
     def post(self, request):
         subsystem = str(request.data.get("subsystem") or "").lower()
         from fetching.tasks import backfill_historical_all, poll_live_all, repoll_searches
@@ -232,6 +239,10 @@ class CycleView(APIView):
 
 class XSessionView(APIView):
     """Read safe session health or replace the active operator session."""
+
+    # Staff-only including the read: session health names the X account the
+    # shared session belongs to and when it was last refreshed.
+    permission_classes = [IsStaff]
 
     def get(self, request):
         from fetching.session import session_health
@@ -271,6 +282,9 @@ class SearchViewSet(viewsets.ModelViewSet):
     """List/create searches; creating one enqueues an on-demand fetch."""
 
     serializer_class = SearchSerializer
+    # Anyone signed in may browse saved searches; creating one starts a browser
+    # bootstrap against the shared session, so that is an operator action.
+    permission_classes = [IsStaffOrReadOnly]
     # No PATCH: it let any authenticated user rewrite another search's raw_query
     # or set enabled=False (silently dropping it from repoll_searches and from
     # everyone's feed), and no UI ever called it. Edit via admin if needed.

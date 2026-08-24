@@ -11,6 +11,7 @@ For install and usage see `README.md`. This file is the working contract.
 | Tweet upsert / dedup / metric snapshots | `backend/fetching/ingest.py` |
 | Models (sole durable store) | `backend/tweets/models.py` |
 | API | `backend/tweets/views.py`, `analytics.py`, `auth_views.py`, `urls.py` |
+| Auth (JWT) + the staff gate | `backend/tweets/auth_views.py`, `permissions.py` |
 | HTTP transport, tx/query-id health | `backend/fetcher/client.py` |
 | Pagination engine | `backend/fetcher/timeline.py` |
 | Pipelines | `backend/fetcher/{historical,live,search}.py` |
@@ -54,6 +55,17 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
   folders, `UserTweetsAndReplies`, or set algebra.
 - Accounts quarantine after three consecutive user-ID resolution failures.
   Clearing quarantine must clear both the Postgres row and the live state blob.
+- All three fetchers share one X rate budget. The archive walk must always
+  leave `FETCH_HISTORICAL_QUOTA_FLOOR` requests for live polling; anything that
+  can paginate needs a stop condition that does not depend on the API
+  withholding a cursor, since a timeline past its last tweet keeps offering
+  one.
+- The archive walk keeps its own `backfill_cursor` in the endpoint state blob.
+  Never resume it from `last_cursor` -- the shallow live poll writes that, and
+  the two walks sit at different depths in the timeline.
+- Signup is open and new users are non-staff. Any endpoint that spends X quota
+  or touches the shared session needs `IsStaff`/`IsStaffOrReadOnly`; the
+  project-wide default is only `IsAuthenticated`.
 - Search stays isolated under `data/search/` and never creates historical/live
   set folders.
 

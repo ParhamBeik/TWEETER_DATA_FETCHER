@@ -13,7 +13,22 @@ from tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser, XS
 
 @pytest.fixture
 def client_user(db):
-    user = User.objects.create_user(username="alice", password="pw")
+    """An operator: staff, because this suite exercises the operator console.
+
+    Signup is open and ordinary users are read-only, so the endpoints below that
+    retier accounts, replace the X session, or start a cycle all require staff.
+    The read-only side of that boundary is covered in test_auth_api.py.
+    """
+    user = User.objects.create_user(username="alice", password="pw", is_staff=True)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client, user
+
+
+@pytest.fixture
+def client_reader(db):
+    """A plain signed-in account, as an open signup produces."""
+    user = User.objects.create_user(username="reader", password="pw")
     client = APIClient()
     client.force_authenticate(user=user)
     return client, user
@@ -443,3 +458,28 @@ def test_undated_tweet_is_not_fabricated_and_does_not_stay_pinned(client_user):
     ids = [t["tweet_id"] for t in client.get("/api/feed/").data["results"]]
     assert "undated" in ids, "an undated tweet must not vanish from the feed"
     assert ids[0] == "newer", "an undated tweet must not stay pinned above newer content"
+
+
+# --- Operator boundary ------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_a_reader_can_browse_but_not_change_the_account_roster(client_reader):
+    client, _ = client_reader
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=3)
+
+    assert client.get("/api/accounts/").status_code == 200
+    assert client.patch("/api/accounts/jack/", {"priority": 1}, format="json").status_code == 403
+    assert client.post("/api/accounts/", {"handle": "new"}, format="json").status_code == 403
+    assert client.post("/api/accounts/jack/fetch/").status_code == 403
+    assert TwitterUser.objects.get(handle="jack").priority == 3
+
+
+@pytest.mark.django_db
+def test_a_reader_can_browse_but_not_create_searches(client_reader):
+    client, _ = client_reader
+    Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True)
+
+    assert client.get("/api/searches/").status_code == 200
+    assert client.post("/api/searches/", {"raw_query": "new"}, format="json").status_code == 403
+    assert Search.objects.count() == 1

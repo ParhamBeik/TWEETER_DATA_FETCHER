@@ -671,6 +671,46 @@ input:focus {
   font-weight: 700;
 }
 
+/* Sign in / sign up are separate routes now, so the footer link is a real
+   anchor rather than the old mode-toggle button. */
+.auth-footer a {
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+/* Per-field message from the server, shown under the input it names. */
+.auth-field-error {
+  margin-top: 6px;
+  color: var(--danger, #e5484d);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.auth-optional {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.auth-restoring {
+  padding: 48px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.topbar-user {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .status {
   color: var(--accent);
 }

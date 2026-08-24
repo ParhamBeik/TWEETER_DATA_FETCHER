@@ -69,23 +69,30 @@ credentials. Provide it once:
 
 `python manage.py load_xsession --file session.json` (or set `X_SESSION_JSON`).
 Re-running replaces the active session. The Session page in the console accepts
-the same payload, or a whole exported engine `config.json`.
+the same payload, or a whole exported engine `config.json`. Both are *staff*-only.
 
 ## API
 
-Token auth (`Authorization: Token <key>`) from `/api/auth/login/`.
+JWT auth (`Authorization: Bearer <access>`) from `/api/auth/login/` or
+`/register/`. Access tokens last 30 minutes; the frontend refreshes them
+transparently. Signup is open, and new accounts are **read-only** -- the
+operator endpoints below (marked *staff*) need `is_staff`, granted in
+`/admin/`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/auth/login/` \| `/register/` | returns a token |
+| POST | `/api/auth/register/` \| `/login/` | returns `{access, refresh, user}` |
+| POST | `/api/auth/refresh/` | rotates the pair; the spent refresh token is blacklisted |
+| POST | `/api/auth/logout/` | blacklists the refresh token |
+| GET | `/api/auth/me/` | current identity, including `is_staff` |
 | GET | `/api/feed/` | tracked accounts + enabled searches; filters: `account`, `tier`, `since`, `until`, `run_id`, `q` |
 | GET | `/api/export/?format=jsonl\|csv` | stream the current feed |
-| GET/POST/PATCH | `/api/accounts/` | track accounts, set tier, clear quarantine |
-| POST | `/api/accounts/{handle}/fetch/` | on-demand live + historical for one handle |
+| GET/POST/PATCH | `/api/accounts/` | read for all; write is *staff* (track, set tier, clear quarantine) |
+| POST | `/api/accounts/{handle}/fetch/` | *staff* — on-demand live + historical for one handle |
 | GET | `/api/accounts/{handle}/tweets/` | one account's timeline |
 | GET | `/api/runs/` \| `/api/runs/{run_id}/` | cycle history and detail |
-| POST | `/api/cycles/` | queue one global cycle (`live`, `historical`, `search`) |
-| GET/POST | `/api/searches/` | list / create (creating enqueues a fetch) |
+| POST | `/api/cycles/` | *staff* — queue one global cycle (`live`, `historical`, `search`) |
+| GET/POST | `/api/searches/` | read for all; create is *staff* (and enqueues a fetch) |
 | GET | `/api/searches/{id}/results/` | ranked results |
 | GET | `/api/stats/overview/`, `/api/analytics/{velocity,topics,accounts,narratives}/` | dashboard data |
 
@@ -97,8 +104,24 @@ rate-limit sleep in one cannot block the others:
 | Task | Default interval | Env var |
 | --- | --- | --- |
 | live poll (all due accounts) | 30 min | `FETCH_LIVE_INTERVAL_SECONDS` |
-| historical backfill (1 account/tick, oldest first) | 5 min | `FETCH_HISTORICAL_INTERVAL_SECONDS` |
-| search repoll (enabled searches) | 30 min | `FETCH_SEARCH_INTERVAL_SECONDS` |
+| historical archive walk (1 account/tick) | 5 min | `FETCH_HISTORICAL_INTERVAL_SECONDS` |
+| search dispatch (queues whoever is due) | 5 min | `FETCH_SEARCH_DISPATCH_SECONDS` |
+| recompute poll intervals | daily | — |
+
+All three fetchers spend **one** X rate budget (`UserTweets` 50 per 15 min),
+so the split between them is explicit:
+
+- **Live** keeps the last few hours current. It polls each account on its own
+  cadence, measured from how often that account really posts and clamped into
+  the band its priority tier allows, and never paginates deeper than 3 pages.
+- **The archive walk** is a finite backward pass per account. It resumes from
+  its own stored cursor each tick, stops after
+  `FETCH_HISTORICAL_PAGES_PER_TICK` pages, always leaves
+  `FETCH_HISTORICAL_QUOTA_FLOOR` requests for live, and leaves the queue for
+  good once it reaches the end of an account's timeline.
+- **Search** runs one query per task on its own `Search.interval_seconds`, so
+  no query can be starved by the ones ahead of it. Deep pages come from browser
+  scrolling, and a repoll stops once it reaches tweets the last run stored.
 
 Search-only tweets are purged after 30 days, run records after 90.
 
@@ -111,9 +134,15 @@ cd frontend && npm test               # component suite
 
 ## Deploying
 
-`scripts/deploy_vps.sh` builds and restarts the stack. It is called by a small
-wrapper on the VPS that does the `git fetch`/`reset` first, so a deploy can
-never rewrite a script bash is still reading.
+A push to `main` deploys automatically: GitHub Actions runs both test suites,
+then SSHes to the VPS as the unprivileged `deploy` user and runs the wrapper.
+See `.github/workflows/ci.yml`; it needs the `VPS_HOST`, `VPS_USER`,
+`VPS_SSH_KEY` and `VPS_KNOWN_HOSTS` secrets.
+
+`scripts/deploy_vps.sh` builds, restarts, and then polls the API until it
+answers -- a deploy that leaves the site down fails the job. It is called by a
+small wrapper on the VPS that does the `git fetch`/`reset` first, so a deploy
+can never rewrite a script bash is still reading.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
