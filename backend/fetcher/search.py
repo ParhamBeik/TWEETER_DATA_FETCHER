@@ -415,6 +415,45 @@ class SearchTimelineMonitor:
         dated = [value for value in dated if value is not None]
         return bool(dated and max(dated) <= window_start)
 
+    def _deep_stop_predicate(
+        self, window_start: datetime, known_ground: Optional[datetime]
+    ) -> Any:
+        """Decide when to stop scrolling for deeper pages.
+
+        Deep search pages come from a real browser scrolling the results page,
+        so the cost here is minutes of wall clock, not API quota -- and the run
+        is bounded by a wall-clock timeout, which is why the last query of a
+        multi-query cycle used to be killed every time. Two things make further
+        pages worthless: the rolling window has been crossed, or the page is
+        entirely at or older than the newest tweet the previous run already
+        stored. The second turns a repoll from dozens of scrolls into one or two.
+
+        Only meaningful on `Latest`. `Top` is relevance-ranked, so an old tweet
+        on page 1 says nothing about what page 2 holds.
+        """
+        seen: Set[str] = set()
+
+        def stop(payload: Dict[str, Any]) -> bool:
+            if not validate_graphql_payload("SearchTimeline", payload).ok:
+                return False
+            tweets = self._parse_search_page(payload, seen, capture_debug=False)["tweets"]
+            if self._page_crossed_search_window(tweets, window_start):
+                return True
+            return known_ground is not None and self._page_crossed_search_window(tweets, known_ground)
+
+        return stop
+
+    @staticmethod
+    def _parse_known_ground(state: Dict[str, Any]) -> Optional[datetime]:
+        """The newest tweet a previous successful run of this search stored."""
+        raw = state.get("newest_seen_at") if isinstance(state, dict) else None
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(str(raw).replace("Z", ""))
+        except ValueError:
+            return None
+
     @staticmethod
     def _classify_http_failure(status_code: int, has_pages: bool, cursor_value: Optional[str]) -> str:
         if status_code == 404 and cursor_value and has_pages:
@@ -733,6 +772,11 @@ class SearchTimelineMonitor:
         page_output_paths: List[str] = []
         rolling_hours = int(policy["rolling_hours"])
         window_start = datetime.utcnow() - timedelta(hours=max(1, rolling_hours))
+        # Where the previous successful run of this search got to. Pages entirely
+        # older than this are already stored, so scrolling to them is wasted time.
+        known_ground = self._parse_known_ground(
+            self.search_state.get(self._state_key(search_def, product), {})
+        )
         variables_template = self._build_base_variables(search_def, raw_query, product)
         search_features = (
             self.config.get("graphql_endpoint_payloads", {})
@@ -782,26 +826,18 @@ class SearchTimelineMonitor:
             if not deep_search:
                 exhausted_reason = "depth_one_complete"
             else:
-                preview_seen: Set[str] = set()
-
-                def crossed_window(payload: Dict[str, Any]) -> bool:
-                    if not validate_graphql_payload("SearchTimeline", payload).ok:
-                        return False
-                    preview = self._parse_search_page(payload, preview_seen, capture_debug=False)
-                    return self._page_crossed_search_window(preview["tweets"], window_start)
-
-                # The rolling-window stop is a CHRONOLOGICAL test, so it is only
-                # meaningful on `Latest`. `Top` is relevance-ranked: its page 1
-                # routinely contains tweets older than the window, which tripped
-                # this predicate on the very first page and capped every deep Top
-                # search at one page. Depth on Top is bounded by page_cap instead.
+                # The stop tests are CHRONOLOGICAL, so they are only meaningful on
+                # `Latest`. `Top` is relevance-ranked: its page 1 routinely contains
+                # tweets older than the window, which tripped this predicate on the
+                # very first page and capped every deep Top search at one page.
+                # Depth on Top is bounded by page_cap instead.
                 chronological = SearchQueryBuilder.normalize_product(product) == "Latest"
                 # HTTP p1 kept; browser supplies deeper pages (skip duplicate first capture when possible).
                 bootstrap = self.fetcher.bootstrap_browser_context(
                     search_url=search_url,
                     capture_endpoint="SearchTimeline",
                     max_pages=page_cap,
-                    stop_when=crossed_window if chronological else None,
+                    stop_when=self._deep_stop_predicate(window_start, known_ground) if chronological else None,
                 )
                 self._after_bootstrap(bootstrap, "SearchTimeline")
                 attempts += len(bootstrap.target_pages.get("SearchTimeline", []))
@@ -824,22 +860,14 @@ class SearchTimelineMonitor:
             exhausted_reason = str(http_failure)
             if deep_search:
                 transport = "browser"
-                preview_seen = set()
-
-                def crossed_window_fallback(payload: Dict[str, Any]) -> bool:
-                    if not validate_graphql_payload("SearchTimeline", payload).ok:
-                        return False
-                    preview = self._parse_search_page(payload, preview_seen, capture_debug=False)
-                    return self._page_crossed_search_window(preview["tweets"], window_start)
-
                 # Same chronological-only gate as the HTTP-success path above:
-                # the window-crossing stop is meaningless on relevance-ranked `Top`.
+                # these stops are meaningless on relevance-ranked `Top`.
                 chronological = product == "Latest"
                 bootstrap = self.fetcher.bootstrap_browser_context(
                     search_url=search_url,
                     capture_endpoint="SearchTimeline",
                     max_pages=page_cap,
-                    stop_when=crossed_window_fallback if chronological else None,
+                    stop_when=self._deep_stop_predicate(window_start, known_ground) if chronological else None,
                 )
                 self._after_bootstrap(bootstrap, "SearchTimeline")
                 attempts += len(bootstrap.target_pages.get("SearchTimeline", []))
@@ -980,7 +1008,19 @@ class SearchTimelineMonitor:
             "last_status": exhausted_reason if is_success else f"error_http_{last_http_status}",
             "last_counts": report["counts"]
         }
-        
+
+        # High-water mark for the next run's early stop. Only ever advanced, and
+        # only by a successful run: a partial run has not proven it saw the top
+        # of the results, so trusting its newest tweet would leave a hole no
+        # later run goes back for.
+        seen_times = [value for value in (self._tweet_datetime(t) for t in tweets) if value]
+        newest = max(seen_times) if seen_times else None
+        previous_ground = self._parse_known_ground(current_state)
+        if is_success and newest and (previous_ground is None or newest > previous_ground):
+            new_state["newest_seen_at"] = newest.isoformat() + "Z"
+        elif previous_ground:
+            new_state["newest_seen_at"] = current_state.get("newest_seen_at")
+
         if is_success:
             new_state["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
         else:

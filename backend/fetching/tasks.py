@@ -83,9 +83,13 @@ def _run_cycle(
                 count += ingest_search_results(
                     search, runner.iter_search_tweets(result.root, search.slug, search.product)
                 )
-                if result.run.status == "completed":
-                    search.last_run_at = timezone.now()
-                    search.save(update_fields=["last_run_at"])
+                # Stamped on every attempt, not only a completed one. This is what
+                # dispatch_due_searches schedules from, so leaving it unset after a
+                # partial run would re-queue that search on every dispatcher tick
+                # and spend a browser bootstrap every few minutes on the one query
+                # least able to finish. A partial run waits its normal interval.
+                search.last_run_at = timezone.now()
+                search.save(update_fields=["last_run_at"])
         else:
             count = ingest_tweets(runner.iter_processed_tweets(result.root, subsystem))
         return count
@@ -226,20 +230,58 @@ def backfill_historical_all() -> int:
 
 @shared_task(name="fetching.tasks.run_search")
 def run_search(search_id: int) -> int:
+    """Run one saved search, alone, with the whole cycle budget to itself."""
     search = Search.objects.filter(id=search_id).first()
     if search is None:
         return 0
-    return _run_cycle(
-        SEARCH_MODULE,
-        ["--once", "--only", search.slug],
-        "search",
-        target=f"{search.slug}:{search.product}",
-        searches=[search],
-    )
+    # Locked per search: dispatch_due_searches and a manual trigger can both
+    # reach this, and two browser bootstraps against the one shared X session
+    # is exactly the race _cycle_lock exists to prevent.
+    with _cycle_lock(f"run_search:{search_id}") as acquired:
+        if not acquired:
+            logger.warning("run_search(%s): already running, skipped", search.slug)
+            return 0
+        return _run_cycle(
+            SEARCH_MODULE,
+            ["--once", "--only", search.slug],
+            "search",
+            target=f"{search.slug}:{search.product}",
+            searches=[search],
+        )
+
+
+@shared_task(name="fetching.tasks.dispatch_due_searches")
+def dispatch_due_searches() -> int:
+    """Queue each enabled search that is due, on its own interval.
+
+    Replaces a fleet-wide cycle that ran every enabled search back-to-back in
+    one subprocess under one FETCH_CYCLE_TIMEOUT_SECONDS. Deep search pages come
+    from browser scrolling, minutes per query, so the budget ran out partway
+    through and the last query in the list was SIGKILLed on every single cycle
+    -- it never once completed. One task per search means each gets the full
+    budget, and cadence lives in the DB instead of the beat schedule.
+    """
+    now = timezone.now()
+    queued = 0
+    for search in Search.objects.filter(enabled=True):
+        due_at = search.last_run_at + timedelta(seconds=search.interval_seconds) if search.last_run_at else None
+        if due_at is not None and due_at > now:
+            continue
+        run_search.delay(search.id)
+        queued += 1
+    if queued:
+        logger.info("dispatch_due_searches: queued %d search(es)", queued)
+    return queued
 
 
 @shared_task(name="fetching.tasks.repoll_searches")
 def repoll_searches() -> int:
+    """Run every enabled search in one cycle.
+
+    No longer scheduled -- dispatch_due_searches supersedes it -- but kept
+    registered and callable: the task name is a wire identifier, and dropping it
+    would strand any message already queued under it.
+    """
     with _cycle_lock("repoll_searches") as acquired:
         if not acquired:
             logger.warning("repoll_searches: skipped overlapping cycle")

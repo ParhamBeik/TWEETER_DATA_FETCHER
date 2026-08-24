@@ -197,7 +197,13 @@ FETCH_HISTORICAL_PAGES_PER_TICK = int(os.environ.get("FETCH_HISTORICAL_PAGES_PER
 # live poller (which reserves 5 more for itself). With no floor the backfill
 # drained the bucket every tick and live deferred 100% of its accounts.
 FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "20"))
+# Fallback cadence for a Search created without one. Per-search cadence now
+# lives on the row itself (Search.interval_seconds).
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
+# How often the dispatcher checks which searches are due. This is not the fetch
+# cadence -- it only needs to be fine-grained enough that a search due at T
+# starts shortly after T.
+FETCH_SEARCH_DISPATCH_SECONDS = int(os.environ.get("FETCH_SEARCH_DISPATCH_SECONDS", "300"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
 FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))
 # How far back recompute_poll_intervals looks when measuring an account's real
