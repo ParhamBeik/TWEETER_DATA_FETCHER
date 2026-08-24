@@ -28,6 +28,14 @@ LIVE_MODULE = "fetcher.live"
 # handle, so those must never be treated as dead.
 _STATUS = re.compile(r"HTTP (\d{3})")
 
+# The answer X actually gives for a handle nobody owns: HTTP 200, no `errors`
+# array, and an empty `data.user` -- which validate_graphql_payload reports as
+# `expected_data_missing`. Reading only for HTTP 404 (as this first did) never
+# fires, so four nonexistent handles stayed "inconclusive" forever. A suspended
+# or withheld account is a different shape: it comes back as `graphql_errors`
+# with a message, and stays UNKNOWN.
+_NO_SUCH_USER = "UserByScreenName semantic failure: expected_data_missing"
+
 DEAD = "dead"
 ALIVE = "alive"
 UNKNOWN = "unknown"
@@ -43,6 +51,8 @@ def classify(state: dict) -> tuple[str, str]:
         return DEAD, evidence
     if match and match.group(1) in {"401", "403"}:
         return UNKNOWN, f"{evidence} (operator session problem, not the handle)"
+    if _NO_SUCH_USER in evidence:
+        return DEAD, evidence
     return UNKNOWN, evidence or "no recorded evidence"
 
 
