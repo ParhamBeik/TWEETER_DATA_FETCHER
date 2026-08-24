@@ -16,7 +16,7 @@ from fetching.management.commands.verify_handles import (
 from tweets.models import KeyValueState, TwitterUser
 
 
-def test_a_404_is_the_only_evidence_that_a_handle_is_dead():
+def test_a_404_is_evidence_that_a_handle_is_dead():
     verdict, _ = classify(
         {
             "availability_failure_count": 3,
@@ -24,6 +24,37 @@ def test_a_404_is_the_only_evidence_that_a_handle_is_dead():
         }
     )
     assert verdict == DEAD
+
+
+def test_an_empty_user_object_is_also_evidence_that_a_handle_is_dead():
+    """What X really answers for a handle nobody owns: 200 with no user.
+
+    All four known-dead handles produced exactly this and were reported
+    "inconclusive", because the classifier only ever looked for HTTP 404.
+    """
+    verdict, _ = classify(
+        {
+            "availability_failure_count": 3,
+            "last_availability_evidence": (
+                "user_id_resolution_failed: UserByScreenName semantic failure: "
+                "expected_data_missing"
+            ),
+        }
+    )
+    assert verdict == DEAD
+
+
+def test_a_suspended_account_is_not_treated_as_dead():
+    """Suspended/withheld comes back as a GraphQL error, not an empty user."""
+    verdict, _ = classify(
+        {
+            "availability_failure_count": 3,
+            "last_availability_evidence": (
+                "user_id_resolution_failed: UserByScreenName semantic failure: graphql_errors"
+            ),
+        }
+    )
+    assert verdict == UNKNOWN
 
 
 @pytest.mark.parametrize("status", ["401", "403"])
