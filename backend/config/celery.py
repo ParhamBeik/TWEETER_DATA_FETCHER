@@ -24,6 +24,7 @@ app.conf.task_routes = {
     "fetching.tasks.fetch_account_historical": {"queue": "historical"},
     "fetching.tasks.repoll_searches": {"queue": "search"},
     "fetching.tasks.run_search": {"queue": "search"},
+    "fetching.tasks.dispatch_due_searches": {"queue": "search"},
     # Cheap daily maintenance, no dedicated worker needed -- piggyback on
     # historical's queue. Without an explicit route these would sit
     # unconsumed forever now that no worker listens to the old default queue.
@@ -47,10 +48,13 @@ def setup_periodic_tasks(sender, **_kwargs):
         app.signature("fetching.tasks.backfill_historical_all"),
         name="historical-backfill-all-accounts",
     )
+    # Cheap dispatcher rather than the fetch itself: it only checks which
+    # searches are due and queues one task each, so per-search cadence lives in
+    # the DB and every search gets a whole cycle budget instead of sharing one.
     sender.add_periodic_task(
-        schedule(settings.FETCH_SEARCH_INTERVAL_SECONDS),
-        app.signature("fetching.tasks.repoll_searches"),
-        name="repoll-enabled-searches",
+        schedule(settings.FETCH_SEARCH_DISPATCH_SECONDS),
+        app.signature("fetching.tasks.dispatch_due_searches"),
+        name="dispatch-due-searches",
     )
     # Daily retention: search-only tweets (30d) and old FetchRun rows (90d).
     sender.add_periodic_task(

@@ -116,6 +116,10 @@ class Search(models.Model):
     # deep search runs, so it belongs next to depth rather than hardcoded.
     rolling_hours = models.PositiveIntegerField(default=24)
     enabled = models.BooleanField(default=True)
+    # Each search now runs as its own task on its own cadence. They used to share
+    # one fleet-wide cycle bounded by a single wall-clock timeout, so whichever
+    # query came last was killed mid-run every time.
+    interval_seconds = models.PositiveIntegerField(default=1800)
     last_run_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
