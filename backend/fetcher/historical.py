@@ -27,8 +27,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from fetcher.config import PROJECT_ROOT
 
 from fetcher.config import get_priority_policy, ordered_accounts
-from fetcher.timeline import FetcherEngine
-from fetcher.processing import RollingWindowEvaluator, TweetSetProcessor, window_cutoff
+from fetcher.timeline import TIMELINE_END_OUTCOMES, FetcherEngine
+from fetcher.processing import RollingWindowEvaluator, TweetSetProcessor
 from fetcher.storage import StorageManager
 from fetcher.observability import attach_run_id
 from fetcher.observability import PipelineConsole
@@ -267,27 +267,24 @@ def _fetch_or_skip_endpoint(
 
     state = storage.get_endpoint_state(username, endpoint)
     backfill_cursor = state.get("backfill_cursor")
-    # The archive walk is a single backward pass per account, spread over many
-    # ticks. It resumes from where the last tick stopped instead of re-walking
-    # from page 1, which is what made the old force_refetch=True version refetch
-    # the same head of the timeline every 15 minutes and never reach the tail.
-    # Cutoff/window still apply on the first tick (no cursor yet) so a fresh
-    # account is bounded by its tier window; once resumed, depth is bounded by
-    # the page budget and the end of the timeline.
     if backfill_cursor:
         CONSOLE.info(f"@{username} {endpoint} resuming archive walk at page {int(state.get('backfill_pages_done', 0)) + 1}")
-        cutoff = None
-    else:
-        watermark = storage.get_fetch_watermark(username, endpoint)
-        cutoff = window_cutoff(window_days=window_days, watermark=watermark, floor="day")
 
+    # No rolling-window cutoff, on any tick. The archive walk is a single
+    # backward pass that should run until the timeline runs out; bounding it by
+    # the tier's 2-7 day window would stop it a few pages in with
+    # `success_window_complete`, which is how the previous revision managed to
+    # mark an active account fully archived after covering one week of it.
+    # Keeping the recent window fresh is live polling's job, not this one.
+    # Depth here is bounded by the page budget, the quota floor, and the end of
+    # the timeline -- nothing else.
     result = engine._fetch_endpoint_result(
         account=username,
         user_id=user_id,
         endpoint=endpoint,
         max_pages=PAGES_PER_TICK,
-        window_days=None if backfill_cursor else window_days,
-        cutoff=cutoff,
+        window_days=None,
+        cutoff=None,
         force_refetch=not backfill_cursor,
         min_remaining=QUOTA_FLOOR,
         resume_cursor=backfill_cursor,
@@ -311,17 +308,28 @@ def _record_backfill_progress(
     of the timeline is allowed to mark the walk complete.
     """
     fetched = int(result.get("pages_fetched", 0) or 0)
+    outcome = str(result.get("outcome") or "")
     pages_done = int(previous.get("backfill_pages_done", 0) or 0) + fetched
-    finished = result.get("status") == "completed"
+    # Completion is decided by the outcome, never by the status. A run that
+    # merely satisfied a rolling window also reports status="completed" while
+    # still holding a live cursor, and treating that as the end is how an active
+    # account got marked permanently archived after a few pages.
+    finished = outcome in TIMELINE_END_OUTCOMES
     cursor = result.get("last_cursor")
+    # A tick that fetched nothing made no progress. The queue sorts on this so an
+    # account that cannot advance (dead session, permanent 404) sinks to the back
+    # instead of blocking every account behind it -- which is exactly how one
+    # stuck account starved the whole fleet before. Pausing at the shared quota
+    # floor is explicitly not a stall: it is the system working as designed, and
+    # counting it would demote whichever healthy accounts happen to sit late in a
+    # chunk that ran the bucket down.
+    stalled = int(previous.get("backfill_stalled_ticks", 0) or 0)
     meta: Dict[str, Any] = {
         "backfill_pages_done": pages_done,
-        "backfill_last_outcome": result.get("outcome"),
-        # A tick that fetched nothing made no progress. The queue sorts on this
-        # so an account that cannot advance (dead session, permanent 404) sinks
-        # to the back instead of blocking every account behind it -- which is
-        # exactly how one stuck account starved the whole fleet before.
-        "backfill_stalled_ticks": 0 if fetched else int(previous.get("backfill_stalled_ticks", 0) or 0) + 1,
+        "backfill_last_outcome": outcome,
+        "backfill_stalled_ticks": (
+            stalled if outcome == "paused_for_quota" else (0 if fetched else stalled + 1)
+        ),
     }
     if finished:
         meta["backfill_complete"] = True
