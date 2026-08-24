@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, getToken } from "../api";
+import { api, authorizedFetch } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import RunStatus from "../RunStatus";
 import TweetCard from "../TweetCard";
@@ -77,12 +77,9 @@ export default function Feed() {
       if (value) params.set(key, value);
     });
     params.set("format", fmt);
-    const headers = {};
-    const token = getToken();
-    if (token) headers.Authorization = `Token ${token}`;
     let url;
     try {
-      const res = await fetch(`/api/export/?${params}`, { headers });
+      const res = await authorizedFetch(`/api/export/?${params}`);
       if (!res.ok) {
         // Previously any non-OK read "Export failed" with no cause, and a network
         // rejection escaped as an unhandled promise with no message at all.

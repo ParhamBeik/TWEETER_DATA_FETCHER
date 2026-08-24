@@ -1,27 +1,30 @@
-import { useState } from "react";
-import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { getToken, setToken } from "./api";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { useAuth } from "./auth";
 import Feed from "./pages/Feed";
 import Search from "./pages/Search";
 import Accounts from "./pages/Accounts";
 import Cycles from "./pages/Cycles";
 import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import Pulse from "./pages/Pulse";
 import Analyze from "./pages/Analyze";
 
 function RequireAuth({ children }) {
-  return getToken() ? children : <Navigate to="/login" replace />;
+  const { authed, status } = useAuth();
+  // Hold the route while the stored refresh token is being tried, or a reload
+  // redirects a signed-in user to /login before the session is restored.
+  if (status === "restoring") return <p className="auth-restoring">Restoring your session…</p>;
+  return authed ? children : <Navigate to="/login" replace />;
+}
+
+function RedirectIfAuthed({ children }) {
+  const { authed, status } = useAuth();
+  if (status === "restoring") return null;
+  return authed ? <Navigate to="/" replace /> : children;
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(Boolean(getToken()));
-  const navigate = useNavigate();
-
-  function logout() {
-    setToken(null);
-    setAuthed(false);
-    navigate("/login");
-  }
+  const { authed, isStaff, user, signOut } = useAuth();
 
   return (
     <div className="app">
@@ -34,9 +37,13 @@ export default function App() {
             <Link to="/analyze">Analyze</Link>
             <Link to="/searches">Searches</Link>
             <Link to="/accounts">Accounts</Link>
-            <Link to="/ops">Ops</Link>
-            <button className="link" onClick={logout}>
-              Logout
+            {/* Ops drives the collector and the shared X session. The API
+                rejects a non-staff caller regardless; hiding it keeps the
+                console honest about what this account can do. */}
+            {isStaff && <Link to="/ops">Ops</Link>}
+            <span className="topbar-user">{user?.username}</span>
+            <button className="link" onClick={signOut}>
+              Sign out
             </button>
           </nav>
         )}
@@ -44,7 +51,22 @@ export default function App() {
 
       <main>
         <Routes>
-          <Route path="/login" element={<Login onAuth={() => setAuthed(true)} />} />
+          <Route
+            path="/login"
+            element={
+              <RedirectIfAuthed>
+                <Login />
+              </RedirectIfAuthed>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <RedirectIfAuthed>
+                <Signup />
+              </RedirectIfAuthed>
+            }
+          />
           <Route
             path="/"
             element={
