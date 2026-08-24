@@ -9,10 +9,10 @@ from typing import Callable, Optional
 from celery import current_task, shared_task
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Exists, F, OuterRef
+from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import EndpointState, FetchRun, Search, SearchResult, Tweet, TwitterUser
 
 from . import runner
 from .accounts import sync_quarantine_from_live_state
@@ -131,21 +131,60 @@ def poll_live_all() -> int:
         return _run_cycle(LIVE_MODULE, ["--once"], "live")
 
 
+def _archive_state() -> dict[str, dict]:
+    """Per-account archive-walk state, keyed by lowercased handle.
+
+    The engine normalizes handles to lowercase when it writes sync state; the
+    TwitterUser table preserves the display casing. Joining in Python beats an
+    iexact subquery for a fleet this size and keeps one obvious mapping.
+    """
+    return {
+        str(row.account).lower(): (row.data if isinstance(row.data, dict) else {})
+        for row in EndpointState.objects.filter(endpoint="UserTweets")
+    }
+
+
+def _backfill_queue(limit: int) -> list[str]:
+    """Tracked accounts whose archive walk is unfinished, most deserving first.
+
+    Ordered by how many ticks an account has failed to make progress (so a stuck
+    account sinks instead of blocking the queue), then by tier, then by id. An
+    account is dropped for good once its walk reaches the end of the timeline.
+    """
+    archive = _archive_state()
+    pending = [
+        user
+        for user in TwitterUser.objects.filter(tracking=True, quarantined=False).order_by("priority", "id")
+        if not archive.get(user.handle.lower(), {}).get("backfill_complete")
+    ]
+    pending.sort(
+        key=lambda user: (
+            int(archive.get(user.handle.lower(), {}).get("backfill_stalled_ticks", 0) or 0),
+            int(user.priority or 7),
+            user.id,
+        )
+    )
+    return [user.handle for user in pending[:limit]]
+
+
 @shared_task(name="fetching.tasks.backfill_historical_all")
 def backfill_historical_all() -> int:
-    """Backfill one bounded, oldest-first chunk of tracked accounts per tick.
+    """Advance the archive walk for one bounded chunk of accounts per tick.
 
-    Previously tried every tracked account in a single run and relied on
-    FETCH_CYCLE_TIMEOUT_SECONDS to bound it -- on the shared solo/concurrency=1
-    worker that meant either starving live/search fetching for the run's
-    duration or getting SIGKILLed mid-run with the whole tick's progress lost
-    (observed: 100% failure rate in production). Chunking makes each tick both
-    small enough to finish comfortably inside the timeout and cheap enough to
-    run far more often, so the backfill behaves like the continuous, always-
-    rotating archive builder it's meant to be -- just in small, frequent bites
-    instead of one long one. `historical_backfilled_at` is only advanced for a
-    chunk that reports "completed"; a partial/failed chunk keeps its accounts at
-    the front of the queue so nothing silently falls behind.
+    The backfill is a finite job: each account's timeline is walked backwards
+    once, resuming from its own stored cursor, until it runs out of tweets. A
+    tick is a bite of that walk (FETCH_HISTORICAL_PAGES_PER_TICK pages), small
+    enough to finish well inside FETCH_CYCLE_TIMEOUT_SECONDS on the solo
+    worker, and it always leaves FETCH_HISTORICAL_QUOTA_FLOOR requests in the
+    shared bucket for live polling.
+
+    This replaced a version that re-walked each account from page 1 every tick
+    and could only advance its queue on a fully "completed" run. An account
+    whose timeline ended without the API ever withholding a cursor could never
+    report completed, so it was refetched forever and the 67 accounts behind it
+    were never reached. Completion is now proven per account by the engine
+    (see fetcher.historical._record_backfill_progress) rather than inferred
+    from the chunk's run status.
     """
     with _cycle_lock("backfill_historical_all") as acquired:
         if not acquired:
@@ -153,31 +192,28 @@ def backfill_historical_all() -> int:
             return 0
         reap_orphaned_fetch_runs()
 
-        chunk_size = settings.FETCH_HISTORICAL_CHUNK_SIZE
-        handles = list(
-            TwitterUser.objects.filter(tracking=True)
-            .order_by(F("historical_backfilled_at").asc(nulls_first=True), "id")
-            .values_list("handle", flat=True)[:chunk_size]
-        )
+        handles = _backfill_queue(settings.FETCH_HISTORICAL_CHUNK_SIZE)
         if not handles:
-            logger.info("backfill_historical_all: no tracked accounts to backfill")
+            logger.info("backfill_historical_all: every tracked account is fully archived")
             return 0
 
-        def _mark_chunk(run: FetchRun) -> None:
-            if run.status == "completed":
-                updated = TwitterUser.objects.filter(handle__in=handles).update(
-                    historical_backfilled_at=timezone.now()
-                )
-                logger.info(
-                    "backfill_historical_all: chunk completed, %d account(s) marked backfilled: %s",
-                    updated, ", ".join(f"@{h}" for h in handles),
-                )
-            else:
-                logger.warning(
-                    "backfill_historical_all: chunk status=%s, not advancing backfill "
-                    "watermark, will retry first next tick: %s",
-                    run.status, ", ".join(f"@{h}" for h in handles),
-                )
+        def _mark_chunk(_run: FetchRun) -> None:
+            archive = _archive_state()
+            for handle in handles:
+                state = archive.get(handle.lower(), {})
+                pages = state.get("backfill_pages_done", 0)
+                if state.get("backfill_complete"):
+                    TwitterUser.objects.filter(handle=handle).update(
+                        historical_backfilled_at=timezone.now()
+                    )
+                    logger.info(
+                        "backfill_historical_all: @%s fully archived after %s page(s)", handle, pages,
+                    )
+                else:
+                    logger.info(
+                        "backfill_historical_all: @%s at %s page(s), outcome=%s, resumes next tick",
+                        handle, pages, state.get("backfill_last_outcome"),
+                    )
 
         return _run_cycle(
             HISTORICAL_MODULE,

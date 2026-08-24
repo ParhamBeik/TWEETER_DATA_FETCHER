@@ -19,6 +19,7 @@ from __future__ import annotations
 
 
 import argparse
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,6 +36,17 @@ from fetcher.observability import PipelineConsole
 
 ENDPOINTS = ("UserTweets",)
 CONSOLE = PipelineConsole("historical")
+
+# Pages this account may fetch in one tick. The archive walk is resumable, so a
+# tick is a bite of a long job rather than an attempt to finish it: small enough
+# to land well inside the Celery wall-clock timeout, frequent enough that the
+# whole fleet keeps moving. Set from Django settings by fetching.runner.
+PAGES_PER_TICK = max(1, int(os.environ.get("TDF_HISTORICAL_PAGES_PER_TICK", "25")))
+
+# Requests the archive walk must leave in the shared UserTweets bucket for the
+# live poller, which reserves 5 more on top of this for itself. Without a floor
+# the deep walk drained the bucket every tick and live deferred every account.
+QUOTA_FLOOR = max(0, int(os.environ.get("TDF_HISTORICAL_QUOTA_FLOOR", "20")))
 
 
 # Raw page loading and verification -----------------------------------------
@@ -253,18 +265,75 @@ def _fetch_or_skip_endpoint(
         window_days=window_days,
     )
 
-    watermark = storage.get_fetch_watermark(username, endpoint)
-    cutoff = window_cutoff(window_days=window_days, watermark=watermark, floor="day")
+    state = storage.get_endpoint_state(username, endpoint)
+    backfill_cursor = state.get("backfill_cursor")
+    # The archive walk is a single backward pass per account, spread over many
+    # ticks. It resumes from where the last tick stopped instead of re-walking
+    # from page 1, which is what made the old force_refetch=True version refetch
+    # the same head of the timeline every 15 minutes and never reach the tail.
+    # Cutoff/window still apply on the first tick (no cursor yet) so a fresh
+    # account is bounded by its tier window; once resumed, depth is bounded by
+    # the page budget and the end of the timeline.
+    if backfill_cursor:
+        CONSOLE.info(f"@{username} {endpoint} resuming archive walk at page {int(state.get('backfill_pages_done', 0)) + 1}")
+        cutoff = None
+    else:
+        watermark = storage.get_fetch_watermark(username, endpoint)
+        cutoff = window_cutoff(window_days=window_days, watermark=watermark, floor="day")
 
-    return engine._fetch_endpoint_result(
+    result = engine._fetch_endpoint_result(
         account=username,
         user_id=user_id,
         endpoint=endpoint,
-        max_pages=engine.pagination_safety_cap_pages,
-        window_days=window_days,
+        max_pages=PAGES_PER_TICK,
+        window_days=None if backfill_cursor else window_days,
         cutoff=cutoff,
-        force_refetch=True,
-    ), window_coverage
+        force_refetch=not backfill_cursor,
+        min_remaining=QUOTA_FLOOR,
+        resume_cursor=backfill_cursor,
+    )
+    _record_backfill_progress(storage, username, endpoint, state, result)
+    return result, window_coverage
+
+
+def _record_backfill_progress(
+    storage: StorageManager,
+    username: str,
+    endpoint: str,
+    previous: Dict[str, Any],
+    result: Dict[str, Any],
+) -> None:
+    """Save where this tick's archive walk stopped so the next one resumes there.
+
+    ``last_cursor`` is not usable for this: the shallow live poll writes to the
+    same (account, endpoint) row and the two walks sit at different depths. The
+    archive keeps its own cursor, and only a run that proved it reached the end
+    of the timeline is allowed to mark the walk complete.
+    """
+    fetched = int(result.get("pages_fetched", 0) or 0)
+    pages_done = int(previous.get("backfill_pages_done", 0) or 0) + fetched
+    finished = result.get("status") == "completed"
+    cursor = result.get("last_cursor")
+    meta: Dict[str, Any] = {
+        "backfill_pages_done": pages_done,
+        "backfill_last_outcome": result.get("outcome"),
+        # A tick that fetched nothing made no progress. The queue sorts on this
+        # so an account that cannot advance (dead session, permanent 404) sinks
+        # to the back instead of blocking every account behind it -- which is
+        # exactly how one stuck account starved the whole fleet before.
+        "backfill_stalled_ticks": 0 if fetched else int(previous.get("backfill_stalled_ticks", 0) or 0) + 1,
+    }
+    if finished:
+        meta["backfill_complete"] = True
+        meta["backfill_cursor"] = None
+        meta["backfill_completed_at"] = datetime.utcnow().isoformat() + "Z"
+        CONSOLE.success(f"@{username} {endpoint} archive walk complete after {pages_done} page(s)")
+    elif cursor and str(cursor) not in {"__START__", "__END__"}:
+        meta["backfill_cursor"] = str(cursor)
+    # Any other outcome (a hard failure before the first page) leaves the stored
+    # cursor untouched, so the next tick retries the same position rather than
+    # silently restarting the account from the top.
+    storage.update_endpoint_state(username, endpoint, meta=meta)
 
 
 def run_v4(

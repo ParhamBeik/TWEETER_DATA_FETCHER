@@ -511,6 +511,11 @@ def run_fetcher(
         env = dict(os.environ)
         env["TDF_PROJECT_ROOT"] = str(root)
         env["TDF_CONFIG"] = str(config_path)
+        # Archive-walk budget. The engine runs as a subprocess, so these cross the
+        # boundary as env rather than settings imports; naming them here keeps the
+        # knob a single .env entry instead of two independent defaults.
+        env["TDF_HISTORICAL_PAGES_PER_TICK"] = str(settings.FETCH_HISTORICAL_PAGES_PER_TICK)
+        env["TDF_HISTORICAL_QUOTA_FLOOR"] = str(settings.FETCH_HISTORICAL_QUOTA_FLOOR)
         # cwd is the scratch root, so point the subprocess at this project for
         # the engine package (it ships here as `fetcher/`).
         env["PYTHONPATH"] = str(settings.BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")

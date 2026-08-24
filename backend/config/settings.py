@@ -187,6 +187,16 @@ FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", 
 # second fetcher racing the first.
 FETCH_HISTORICAL_INTERVAL_SECONDS = int(os.environ.get("FETCH_HISTORICAL_INTERVAL_SECONDS", "300"))
 FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", "1"))
+# Pages one account may fetch per backfill tick. The archive walk keeps its own
+# cursor and resumes where the previous tick stopped, so this bounds a tick, not
+# the account: a 900-tweet timeline finishes over a few ticks instead of being
+# retried from page 1 forever. Passed to the engine subprocess by
+# fetching.runner.run_fetcher as TDF_HISTORICAL_PAGES_PER_TICK.
+FETCH_HISTORICAL_PAGES_PER_TICK = int(os.environ.get("FETCH_HISTORICAL_PAGES_PER_TICK", "25"))
+# Requests the archive walk must leave in the shared UserTweets bucket for the
+# live poller (which reserves 5 more for itself). With no floor the backfill
+# drained the bucket every tick and live deferred 100% of its accounts.
+FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "20"))
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
 FETCH_CYCLE_TIMEOUT_SECONDS = int(os.environ.get("FETCH_CYCLE_TIMEOUT_SECONDS", "1800"))
 FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "100"))

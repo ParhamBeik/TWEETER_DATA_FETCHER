@@ -8,13 +8,14 @@ from django.utils import timezone
 
 from fetching.ingest import upsert_tweet
 from fetching.tasks import (
+    _backfill_queue,
     backfill_historical_all,
     poll_live_all,
     purge_expired_search_tweets,
     purge_old_fetch_runs,
     repoll_searches,
 )
-from tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import EndpointState, FetchRun, Search, SearchResult, Tweet, TwitterUser
 
 
 @pytest.fixture(autouse=True)
@@ -136,3 +137,60 @@ def test_backfill_and_repoll_run_one_cycle(settings):
         assert run.call_args_list[0].args[2] == "historical"
         assert run.call_args_list[1].args[2] == "search"
         assert run.call_args_list[1].kwargs["searches"] == [search]
+
+
+# --- Archive backfill queue -------------------------------------------------
+#
+# Integration level (real DB, real queue function): the behaviour under test is
+# a join between TwitterUser rows and the engine's EndpointState blobs, and the
+# lowercasing mismatch between those two stores is exactly what a mocked version
+# would paper over.
+
+
+def _archive(handle: str, **data):
+    EndpointState.objects.create(account=handle.lower(), endpoint="UserTweets", data=data)
+
+
+@pytest.mark.django_db
+def test_backfill_queue_drops_accounts_whose_archive_is_complete():
+    TwitterUser.objects.create(handle="Business", tracking=True, priority=1)
+    TwitterUser.objects.create(handle="Reuters", tracking=True, priority=2)
+    _archive("Business", backfill_complete=True, backfill_pages_done=43)
+
+    assert _backfill_queue(10) == ["Reuters"]
+
+
+@pytest.mark.django_db
+def test_backfill_queue_sinks_an_account_that_cannot_make_progress():
+    """The starvation bug: one stuck account must not block everyone behind it."""
+    TwitterUser.objects.create(handle="Stuck", tracking=True, priority=1)
+    TwitterUser.objects.create(handle="Healthy", tracking=True, priority=7)
+    _archive("Stuck", backfill_stalled_ticks=3)
+
+    assert _backfill_queue(10) == ["Healthy", "Stuck"]
+
+
+@pytest.mark.django_db
+def test_backfill_queue_prefers_higher_tier_when_all_are_progressing():
+    TwitterUser.objects.create(handle="Low", tracking=True, priority=7)
+    TwitterUser.objects.create(handle="High", tracking=True, priority=1)
+
+    assert _backfill_queue(1) == ["High"]
+
+
+@pytest.mark.django_db
+def test_backfill_queue_skips_quarantined_accounts():
+    TwitterUser.objects.create(handle="Ghost", tracking=True, priority=1, quarantined=True)
+    TwitterUser.objects.create(handle="Real", tracking=True, priority=7)
+
+    assert _backfill_queue(10) == ["Real"]
+
+
+@pytest.mark.django_db
+def test_backfill_stops_dispatching_once_every_account_is_archived():
+    TwitterUser.objects.create(handle="Business", tracking=True)
+    _archive("Business", backfill_complete=True)
+
+    with patch("fetching.tasks._run_cycle") as run:
+        assert backfill_historical_all() == 0
+        run.assert_not_called()
