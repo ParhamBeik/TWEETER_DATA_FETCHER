@@ -1,5 +1,6 @@
 """Integration tests: feed merge/order and search create enqueue, through DRF."""
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
@@ -483,3 +484,129 @@ def test_a_reader_can_browse_but_not_create_searches(client_reader):
     assert client.get("/api/searches/").status_code == 200
     assert client.post("/api/searches/", {"raw_query": "new"}, format="json").status_code == 403
     assert Search.objects.count() == 1
+
+
+def _post(client_handle, tweet_id, **over):
+    """One tracked-account tweet, through the real ingest path."""
+    item = {
+        "rest_id": tweet_id,
+        "author_id": tweet_id,
+        "account": client_handle,
+        "text": f"post {tweet_id}",
+        "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        "source_endpoint": "UserTweets",
+    }
+    item.update(over)
+    return upsert_tweet(item)
+
+
+@pytest.mark.django_db
+def test_feed_sorted_by_engagement_ranks_by_the_shared_formula(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    _post("jack", "quiet", likes=1, retweets=0, views=0)
+    _post("jack", "loud", likes=10, retweets=100, views=1000)
+    _post("jack", "middling", likes=50, retweets=1, views=2)
+
+    body = client.get("/api/feed/?sort=top").data
+
+    assert [t["tweet_id"] for t in body["results"]] == ["loud", "middling", "quiet"]
+    # `top` cannot use a cursor (engagement is neither unique nor monotonic), so
+    # it pages by offset -- which still reports `next` for InfiniteSentinel.
+    assert "count" in body
+
+
+@pytest.mark.django_db
+def test_feed_latest_still_pages_by_cursor(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    _post("jack", "1")
+
+    body = client.get("/api/feed/").data
+
+    assert "count" not in body  # cursor pagination, not offset
+    assert [t["tweet_id"] for t in body["results"]] == ["1"]
+
+
+@pytest.mark.django_db
+def test_feed_filters_by_post_type(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    _post("jack", "plain", type="Tweet")
+    _post("jack", "answer", type="Reply")
+    _post("jack", "boost", type="Retweet")
+
+    ids = {t["tweet_id"] for t in client.get("/api/feed/?types=reply,retweet").data["results"]}
+
+    assert ids == {"answer", "boost"}
+
+
+@pytest.mark.django_db
+def test_feed_media_only_excludes_text_posts(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    _post("jack", "text")
+    _post("jack", "photo", media=[{"type": "photo", "url": "https://pbs.twimg.com/a.jpg"}])
+
+    ids = [t["tweet_id"] for t in client.get("/api/feed/?has_media=1").data["results"]]
+
+    assert ids == ["photo"]
+
+
+@pytest.mark.django_db
+def test_feed_window_bounds_by_posted_time(client_user):
+    from django.utils import timezone as dj_timezone
+
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    _post("jack", "old")
+    recent = _post("jack", "new")
+    Tweet.objects.filter(pk=recent.pk).update(
+        created_at=dj_timezone.now() - timedelta(minutes=10)
+    )
+
+    ids = [t["tweet_id"] for t in client.get("/api/feed/?window=1h").data["results"]]
+
+    assert ids == ["new"]
+
+
+@pytest.mark.django_db
+def test_feed_names_the_search_that_found_a_tweet(client_user):
+    client, _ = client_user
+    search = Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True)
+    tweet = _post("stranger", "found")
+    SearchResult.objects.create(search=search, tweet=tweet, rank=0)
+
+    row = client.get("/api/feed/").data["results"][0]
+
+    assert row["searches"] == ["ai"]
+    assert row["source_endpoint"] == "UserTweets"
+
+
+@pytest.mark.django_db
+def test_feed_filters_by_several_accounts_at_once(client_user):
+    """Repeatable ?account=, the same spelling the analytics endpoints take.
+
+    params.get() keeps only the last value, so a two-account selection used to
+    come back as one account's posts.
+    """
+    client, _ = client_user
+    for handle in ("jack", "elon", "paul"):
+        TwitterUser.objects.create(handle=handle, tracking=True)
+        _post(handle, handle)
+
+    body = client.get("/api/feed/?account=jack&account=elon").data
+
+    assert sorted(t["tweet_id"] for t in body["results"]) == ["elon", "jack"]
+
+
+@pytest.mark.django_db
+def test_feed_accepts_a_comma_joined_account_list(client_user):
+    client, _ = client_user
+    for handle in ("jack", "elon"):
+        TwitterUser.objects.create(handle=handle, tracking=True)
+        _post(handle, handle)
+
+    body = client.get("/api/feed/?account=@Jack,elon").data
+
+    assert sorted(t["tweet_id"] for t in body["results"]) == ["elon", "jack"]

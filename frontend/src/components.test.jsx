@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import InfiniteSentinel from "./InfiniteSentinel";
 import RunStatus from "./RunStatus";
 import { api } from "./api";
+import { pivotSeries } from "./charts";
+import { compact } from "./format";
 
 // Unit tests for the two shared widgets. IntersectionObserver is stubbed per-test
 // so the sentinel's callback can be fired deterministically.
@@ -145,5 +147,77 @@ describe("RunStatus", () => {
     const { container } = render(<RunStatus />);
     await waitFor(() => expect(api).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+// Unit tests: the two shared pure helpers with real branching. Everything else
+// in format.js/charts.js is a one-liner covered by the component tests above.
+
+describe("compact", () => {
+  it("leaves counts under a thousand alone", () => {
+    expect(compact(0)).toBe("0");
+    expect(compact(999)).toBe("999");
+  });
+
+  it("keeps one decimal below ten of a unit and drops it above", () => {
+    expect(compact(1234)).toBe("1.2K");
+    expect(compact(12345)).toBe("12K");
+    expect(compact(3400000)).toBe("3.4M");
+    expect(compact(2100000000)).toBe("2.1B");
+  });
+
+  it("handles negatives and non-numbers without producing NaN", () => {
+    expect(compact(-1500)).toBe("-1.5K");
+    expect(compact(null)).toBe("0");
+    expect(compact(undefined)).toBe("0");
+  });
+});
+
+describe("pivotSeries", () => {
+  const rows = [
+    { bucket: "2026-01-02T01:00:00Z", source_subsystem: "live", count: 2 },
+    { bucket: "2026-01-02T01:00:00Z", source_subsystem: "historical", count: 5 },
+    { bucket: "2026-01-02T02:00:00Z", source_subsystem: "live", count: 3 },
+  ];
+
+  it("collapses long-format rows into one row per bucket", () => {
+    const { rows: wide, keys } = pivotSeries(rows, "source_subsystem");
+    expect(keys.sort()).toEqual(["historical", "live"]);
+    expect(wide).toHaveLength(2);
+    expect(wide[0]).toMatchObject({ live: 2, historical: 5 });
+  });
+
+  // A missing key would otherwise render as a gap and shift the stack, making
+  // the second bucket look like it belongs to a different series.
+  it("fills an absent key with zero rather than leaving a hole", () => {
+    const { rows: wide } = pivotSeries(rows, "source_subsystem");
+    expect(wide[1]).toMatchObject({ live: 3, historical: 0 });
+  });
+
+  it("orders buckets chronologically whatever order the API returned", () => {
+    const { rows: wide } = pivotSeries([...rows].reverse(), "source_subsystem");
+    expect(wide.map((r) => r.bucket)).toEqual([
+      "2026-01-02T01:00:00Z",
+      "2026-01-02T02:00:00Z",
+    ]);
+  });
+
+  it("buckets an unlabelled row under 'unknown' instead of dropping it", () => {
+    const { keys } = pivotSeries([{ bucket: "2026-01-02T01:00:00Z", count: 1 }], "source_subsystem");
+    expect(keys).toEqual(["unknown"]);
+  });
+
+  it("reads a named value field for series that are not plain counts", () => {
+    const { rows: wide } = pivotSeries(
+      [{ bucket: "2026-01-02T01:00:00Z", endpoint: "UserTweets", requests: 25 }],
+      "endpoint",
+      "requests",
+    );
+    expect(wide[0]).toMatchObject({ UserTweets: 25 });
+  });
+
+  it("returns nothing for an empty or missing series", () => {
+    expect(pivotSeries([], "endpoint")).toEqual({ rows: [], keys: [] });
+    expect(pivotSeries(undefined, "endpoint")).toEqual({ rows: [], keys: [] });
   });
 });

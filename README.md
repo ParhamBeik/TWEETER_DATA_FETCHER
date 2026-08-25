@@ -85,7 +85,7 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 | POST | `/api/auth/refresh/` | rotates the pair; the spent refresh token is blacklisted |
 | POST | `/api/auth/logout/` | blacklists the refresh token |
 | GET | `/api/auth/me/` | current identity, including `is_staff` |
-| GET | `/api/feed/` | tracked accounts + enabled searches; filters: `account`, `tier`, `since`, `until`, `run_id`, `q` |
+| GET | `/api/feed/` | tracked accounts + enabled searches. Filters: `account`, `tier`, `since`, `until`, `window`, `run_id`, `q`, `types` (`tweet,reply,retweet,quote`), `has_media`. `sort=latest\|top` — `top` ranks by engagement and pages by offset, `latest` pages by cursor |
 | GET | `/api/export/?format=jsonl\|csv` | stream the current feed |
 | GET/POST/PATCH | `/api/accounts/` | read for all; write is *staff* (track, set tier, clear quarantine) |
 | POST | `/api/accounts/{handle}/fetch/` | *staff* — on-demand live + historical for one handle |
@@ -95,6 +95,14 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 | GET/POST | `/api/searches/` | read for all; create is *staff* (and enqueues a fetch) |
 | GET | `/api/searches/{id}/results/` | ranked results |
 | GET | `/api/stats/overview/`, `/api/analytics/{velocity,topics,accounts,narratives}/` | dashboard data |
+| GET | `/api/analytics/ingestion/` | bucketed capture split by subsystem, archive coverage, run outcomes and request spend |
+| GET | `/api/stats/pipeline/` | point-in-time collector state: quota per endpoint, endpoint health, cadence, backfill progress |
+
+Every analytics endpoint takes the same window: `range=1h|24h|7d|30d|90d` (or
+`since`/`until`), `bucket=auto|hour|day|week` (auto is hourly under 48h, daily
+above), and a repeatable `account=`. The window is clamped to 90 days.
+`/api/analytics/topics/` also takes `dimension=hashtags|phrases|both`, where
+`phrases` mines words and bigrams out of the tweet text itself.
 
 ## Scheduling
 

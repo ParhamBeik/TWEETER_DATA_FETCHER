@@ -12,10 +12,15 @@ from django.core.cache import cache
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from tweets.models import EndpointState, FetchRun, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
 
 from . import runner
-from .accounts import interval_for, median_gap_seconds, sync_quarantine_from_live_state
+from .accounts import (
+    archive_state,
+    interval_for,
+    median_gap_seconds,
+    sync_quarantine_from_live_state,
+)
 from .ingest import ingest_search_results, ingest_tweets
 
 logger = logging.getLogger(__name__)
@@ -51,7 +56,7 @@ def _run_and_ingest(module: str, args: list[str], subsystem: str, target: str) -
     count = 0
     failed = False
     try:
-        count = ingest_tweets(runner.iter_processed_tweets(result.root, subsystem))
+        count = ingest_tweets(runner.iter_processed_tweets(result.root, subsystem), subsystem)
         return count
     except Exception:
         failed = True
@@ -81,7 +86,9 @@ def _run_cycle(
         if subsystem == "search":
             for search in searches or []:
                 count += ingest_search_results(
-                    search, runner.iter_search_tweets(result.root, search.slug, search.product)
+                    search,
+                    runner.iter_search_tweets(result.root, search.slug, search.product),
+                    subsystem,
                 )
                 # Stamped on every attempt, not only a completed one. This is what
                 # dispatch_due_searches schedules from, so leaving it unset after a
@@ -91,7 +98,9 @@ def _run_cycle(
                 search.last_run_at = timezone.now()
                 search.save(update_fields=["last_run_at"])
         else:
-            count = ingest_tweets(runner.iter_processed_tweets(result.root, subsystem))
+            count = ingest_tweets(
+                runner.iter_processed_tweets(result.root, subsystem), subsystem
+            )
         return count
     except Exception:
         failed = True
@@ -136,16 +145,8 @@ def poll_live_all() -> int:
 
 
 def _archive_state() -> dict[str, dict]:
-    """Per-account archive-walk state, keyed by lowercased handle.
-
-    The engine normalizes handles to lowercase when it writes sync state; the
-    TwitterUser table preserves the display casing. Joining in Python beats an
-    iexact subquery for a fleet this size and keeps one obvious mapping.
-    """
-    return {
-        str(row.account).lower(): (row.data if isinstance(row.data, dict) else {})
-        for row in EndpointState.objects.filter(endpoint="UserTweets")
-    }
+    """Per-account archive-walk state, keyed by lowercased handle."""
+    return archive_state()
 
 
 def _backfill_queue(limit: int) -> list[str]:

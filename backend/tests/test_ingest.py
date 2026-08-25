@@ -78,3 +78,21 @@ def test_ingest_tweets_counts_and_dedupes():
     items = [_item(rest_id="1"), _item(rest_id="2"), _item(rest_id="1")]
     assert ingest_tweets(items) == 3  # counts each successful upsert call
     assert Tweet.objects.count() == 2  # but only two distinct keys persist
+
+
+@pytest.mark.django_db
+def test_source_subsystem_credits_whoever_saw_the_tweet_first():
+    """The archive walk keeps the credit when live re-sees the same tweet.
+
+    Live polls every tracked account every half hour, so a mutable column would
+    hand every backfilled tweet to "live" within a cycle or two and the
+    collection-flow chart would show the backfill contributing nothing.
+    """
+    ingest_tweets([_item()], "historical")
+    assert Tweet.objects.get().source_subsystem == "historical"
+
+    ingest_tweets([_item(likes=99)], "live")
+
+    tweet = Tweet.objects.get()
+    assert tweet.source_subsystem == "historical"
+    assert tweet.likes == 99  # everything else still refreshes

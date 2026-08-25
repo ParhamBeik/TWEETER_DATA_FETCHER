@@ -70,6 +70,12 @@ class Tweet(models.Model):
 
     source_language = models.CharField(max_length=16, blank=True, null=True)
     source_endpoint = models.CharField(max_length=64, blank=True, default="")
+    # Which pipeline first captured this tweet: live, historical, or search.
+    # source_endpoint cannot answer that -- live and the archive walk both hit
+    # UserTweets. Written on insert only (it is deliberately absent from
+    # ingest._TWEET_UPDATE_FIELDS), so a live poll re-seeing a backfilled tweet
+    # does not rewrite the credit. Blank on rows ingested before this existed.
+    source_subsystem = models.CharField(max_length=16, blank=True, default="", db_index=True)
     conversation_id = models.CharField(max_length=64, blank=True, null=True)
 
     entities = models.JSONField(default=dict, blank=True)
@@ -83,6 +89,10 @@ class Tweet(models.Model):
         indexes = [
             models.Index(fields=["account", "-created_at"]),
             models.Index(fields=["-created_at", "-id"]),
+            # Ingestion analytics bucket on when we saw a tweet, not when it was
+            # posted, and split that by which pipeline captured it.
+            models.Index(fields=["-ingested_at"]),
+            models.Index(fields=["source_subsystem", "-ingested_at"]),
         ]
 
     def __str__(self) -> str:  # pragma: no cover - trivial

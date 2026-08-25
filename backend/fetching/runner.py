@@ -250,6 +250,11 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
     sub = "historical_live" if subsystem in ("historical", "live") else subsystem
     base = root / "data" / sub
     event_counts: Counter[str] = Counter()
+    # Which endpoint the run's requests actually went to. event_counts gives the
+    # total, and recent_events is capped at 100, so neither can attribute a long
+    # run's spend to UserTweets vs SearchTimeline -- this can.
+    pages_by_endpoint: Counter[str] = Counter()
+    items_by_endpoint: Counter[str] = Counter()
     recent_events = []
     for event_file in (base / "logs").rglob("events.jsonl") if (base / "logs").exists() else ():
         for line in event_file.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -257,12 +262,22 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
                 event = json.loads(line)
             except ValueError:
                 continue
-            event_counts[str(event.get("type") or "unknown")] += 1
+            event_type = str(event.get("type") or "unknown")
+            event_counts[event_type] += 1
+            if event_type == "page_fetched":
+                endpoint = str(event.get("endpoint") or "unknown")
+                pages_by_endpoint[endpoint] += 1
+                try:
+                    items_by_endpoint[endpoint] += int(event.get("items") or 0)
+                except (TypeError, ValueError):
+                    pass
             recent_events.append(event)
     recent_events = recent_events[-100:]
 
     http_summary = _read_json(base / "logs" / "http_summary.json", {})
-    failure_ledger = http_summary.get("failure_ledger", {}) if isinstance(http_summary, dict) else {}
+    if not isinstance(http_summary, dict):
+        http_summary = {}
+    failure_ledger = http_summary.get("failure_ledger", {})
     report_summaries = []
     status_counts: Counter[str] = Counter()
     for report_file in (base / "reports").glob("*.json") if (base / "reports").exists() else ():
@@ -284,7 +299,7 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
             status_counts[str(report.get("status") or "unknown")] += 1
         report_summaries.append({"file": report_file.name, **report_summary})
 
-    by_status = http_summary.get("by_status_code", {}) if isinstance(http_summary, dict) else {}
+    by_status = http_summary.get("by_status_code", {})
     no_evidence = not report_summaries
     if int(by_status.get("401", 0) or 0) or int(by_status.get("403", 0) or 0):
         status = "auth_required"
@@ -302,6 +317,13 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
     return {
         "return_code": return_code,
         "event_counts": dict(event_counts),
+        "pages_by_endpoint": dict(pages_by_endpoint),
+        "items_by_endpoint": dict(items_by_endpoint),
+        # http_summary counts errors only (EventRecorder._increment_summary is
+        # called from emit_http_error), so these are the failed requests per
+        # endpoint/status -- pages_by_endpoint above is the successful ones.
+        "http_errors_by_endpoint": http_summary.get("by_endpoint", {}),
+        "http_errors_by_status": by_status,
         "recent_events": recent_events,
         "reports": report_summaries,
         "status_counts": dict(status_counts),

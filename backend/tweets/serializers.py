@@ -56,6 +56,7 @@ class TweetSerializer(serializers.ModelSerializer):
     quoted_tweet = serializers.SerializerMethodField()
     retweeted_tweet = serializers.SerializerMethodField()
     possibly_sensitive = serializers.SerializerMethodField()
+    searches = serializers.SerializerMethodField()
 
     class Meta:
         model = Tweet
@@ -64,6 +65,7 @@ class TweetSerializer(serializers.ModelSerializer):
             "author", "likes", "retweets", "replies", "quotes", "bookmarks", "views",
             "source_language", "entities", "media", "card", "reply_to",
             "quoted_tweet", "retweeted_tweet", "possibly_sensitive",
+            "source_endpoint", "source_subsystem", "conversation_id", "searches",
         ]
 
     def _extra(self, obj: Tweet, key: str, default=None):
@@ -90,6 +92,15 @@ class TweetSerializer(serializers.ModelSerializer):
 
     def get_possibly_sensitive(self, obj):
         return bool(self._extra(obj, "possibly_sensitive", False))
+
+    def get_searches(self, obj):
+        """Slugs of the saved searches that returned this tweet.
+
+        Reads the prefetched relation rather than querying, so a feed page does
+        not cost one extra query per row; views that do not prefetch simply pay
+        for the join they asked for.
+        """
+        return sorted({link.search.slug for link in obj.search_results.all()})
 
 
 class SearchSerializer(serializers.ModelSerializer):

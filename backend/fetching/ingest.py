@@ -43,6 +43,11 @@ _TWEET_UPDATE_FIELDS = [
     "payload",
 ]
 
+# Deliberately NOT in _TWEET_UPDATE_FIELDS: source_subsystem records which
+# pipeline *first* captured a tweet, and the live poll re-sees backfilled tweets
+# constantly. Including it would hand every historical tweet to "live" within a
+# cycle or two and make the collection-flow chart a lie.
+
 
 def dedup_key(item: dict) -> str:
     """Mirror StorageManager.merge_processed_items: author_id:tweet_id."""
@@ -96,7 +101,9 @@ def _author_defaults(item: dict, account: str) -> dict | None:
     return defaults
 
 
-def _tweet_row(item: dict, authors_by_handle: dict[str, TwitterUser]) -> Tweet | None:
+def _tweet_row(
+    item: dict, authors_by_handle: dict[str, TwitterUser], subsystem: str = ""
+) -> Tweet | None:
     key = dedup_key(item)
     if not key:
         return None
@@ -126,6 +133,7 @@ def _tweet_row(item: dict, authors_by_handle: dict[str, TwitterUser]) -> Tweet |
         views=item.get("views") or 0,
         source_language=item.get("source_language"),
         source_endpoint=item.get("source_endpoint") or "",
+        source_subsystem=subsystem,
         conversation_id=item.get("conversation_id"),
         entities=item.get("entities") or {},
         extras=_extras_from_item(item),
@@ -174,9 +182,9 @@ def _upsert_authors(items: Iterable[dict]) -> dict[str, TwitterUser]:
     }
 
 
-def upsert_tweet(item: dict) -> Tweet | None:
+def upsert_tweet(item: dict, subsystem: str = "") -> Tweet | None:
     authors = _upsert_authors([item])
-    row = _tweet_row(item, authors)
+    row = _tweet_row(item, authors, subsystem)
     if row is None:
         return None
     previous = {
@@ -196,7 +204,7 @@ def upsert_tweet(item: dict) -> Tweet | None:
     return saved
 
 
-def ingest_tweets(items) -> int:
+def ingest_tweets(items, subsystem: str = "") -> int:
     batch = [item for item in items if isinstance(item, dict)]
     if not batch:
         return 0
@@ -204,7 +212,7 @@ def ingest_tweets(items) -> int:
     rows: list[Tweet] = []
     seen: set[str] = set()
     for item in batch:
-        row = _tweet_row(item, authors)
+        row = _tweet_row(item, authors, subsystem)
         if row is None or row.dedup_key in seen:
             continue
         seen.add(row.dedup_key)
@@ -259,12 +267,12 @@ def _record_metrics(rows: list[Tweet], previous: dict[str, Tweet]) -> None:
         TweetMetric.objects.bulk_create(snapshots)
 
 
-def ingest_search_results(search: Search, items) -> int:
+def ingest_search_results(search: Search, items, subsystem: str = "search") -> int:
     """Upsert tweets and link them to a search, ranked by arrival order."""
     batch = list(items)
     if not batch:
         return 0
-    ingest_tweets(batch)
+    ingest_tweets(batch, subsystem)
     keys = []
     for item in batch:
         key = dedup_key(item)

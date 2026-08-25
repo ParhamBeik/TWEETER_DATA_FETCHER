@@ -4,8 +4,10 @@ from rest_framework.routers import DefaultRouter
 
 from .analytics import (
     AccountsAnalyticsView,
+    IngestionView,
     NarrativesView,
     OverviewView,
+    PipelineView,
     TopicsView,
     VelocityView,
 )
@@ -40,6 +42,8 @@ urlpatterns = [
     path("session/", XSessionView.as_view(), name="x-session"),
     path("accounts/<str:handle>/tweets/", AccountTimelineView.as_view(), name="account-timeline"),
     path("stats/overview/", OverviewView.as_view(), name="stats-overview"),
+    path("stats/pipeline/", PipelineView.as_view(), name="stats-pipeline"),
+    path("analytics/ingestion/", IngestionView.as_view(), name="analytics-ingestion"),
     path("analytics/velocity/", VelocityView.as_view(), name="analytics-velocity"),
     path("analytics/topics/", TopicsView.as_view(), name="analytics-topics"),
     path("analytics/accounts/", AccountsAnalyticsView.as_view(), name="analytics-accounts"),

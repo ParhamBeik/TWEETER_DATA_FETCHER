@@ -1,104 +1,254 @@
-function Media({ items = [] }) {
+import { useEffect, useState } from "react";
+import { Avatar } from "./filters";
+import { absoluteTime, compact, permalink, relativeTime, statusLink } from "./format";
+
+/** Aspect-ratio box so an image reserves its real shape instead of a fixed crop. */
+function aspect(item, count) {
+  // Multi-image grids are uniform tiles; a lone image keeps its own proportions
+  // so a tall screenshot is not cropped to a letterbox.
+  if (count > 1) return { aspectRatio: "16 / 10" };
+  const [w, h] = item.aspect_ratio || [];
+  if (w && h) return { aspectRatio: `${w} / ${h}` };
+  if (item.width && item.height) return { aspectRatio: `${item.width} / ${item.height}` };
+  return { aspectRatio: "16 / 10" };
+}
+
+/**
+ * An image that degrades to a caption instead of a broken-icon glyph.
+ *
+ * X serves media from pbs.twimg.com; when that is blocked, or the row is old
+ * enough that the asset is gone, the default rendering is a broken thumbnail on
+ * a black slab. Saying so is more useful than showing it.
+ */
+function MediaImage({ item, alt }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className="media-missing">
+        {item.alt_text || "Image unavailable — open on X"}
+      </span>
+    );
+  }
+  return <img src={item.url} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
+}
+
+function Media({ items = [], onOpen, permalinkUrl }) {
   if (!items.length) return null;
+  const shown = items.slice(0, 4);
   return (
-    <div className={`tweet-media media-${Math.min(items.length, 4)}`}>
-      {items.slice(0, 4).map((item, index) => {
-        const variants = (item.variants || [])
-          .filter((variant) => variant.content_type === "video/mp4")
-          .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    <div className={`tweet-media media-${Math.min(shown.length, 4)}`}>
+      {shown.map((item, index) => {
         const key = item.id || item.url || index;
-        if ((item.type === "video" || item.type === "animated_gif") && variants[0]) {
+        const isVideo = item.type === "video" || item.type === "animated_gif";
+        const label = item.alt_text || (isVideo ? "Video" : "Photo");
+        if (isVideo) {
+          // X's video CDN 403s hotlinked MP4s, so the poster frame is the
+          // reliable render and the play badge sends the reader to X to watch.
           return (
-            <video
+            <a
               key={key}
-              controls={item.type === "video"}
-              autoPlay={item.type === "animated_gif"}
-              loop={item.type === "animated_gif"}
-              muted={item.type === "animated_gif"}
-              playsInline
-              poster={item.url}
-              // X's video CDN 403s hotlinked MP4s. Without this the element keeps
-              // its layout box and leaves a tall blank hole in the feed; fall back
-              // to the poster frame, which serves fine.
-              onError={(e) => {
-                const el = e.currentTarget;
-                if (item.url) {
-                  const img = document.createElement("img");
-                  img.src = item.url;
-                  img.loading = "lazy";
-                  img.alt = item.alt_text || "Tweet media";
-                  el.replaceWith(img);
-                } else {
-                  el.style.display = "none";
-                }
-              }}
+              className="media-cell media-video"
+              style={aspect(item, shown.length)}
+              href={permalinkUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Watch on X: ${label}`}
             >
-              <source src={variants[0].url} type="video/mp4" />
-            </video>
+              {item.url && <MediaImage item={item} alt={label} />}
+              <span className="play-badge" aria-hidden="true">▶</span>
+              <span className="media-note">
+                {item.type === "animated_gif" ? "GIF" : "Watch on X"}
+              </span>
+            </a>
           );
         }
-        return <img key={key} src={item.url} alt={item.alt_text || "Tweet media"} loading="lazy" />;
+        return (
+          <button
+            key={key}
+            type="button"
+            className="media-cell"
+            style={aspect(item, shown.length)}
+            onClick={() => onOpen?.(item)}
+            aria-label={`Open image: ${label}`}
+          >
+            <MediaImage item={item} alt={item.alt_text || ""} />
+          </button>
+        );
       })}
+      {items.length > 4 && <span className="media-more">+{items.length - 4}</span>}
     </div>
   );
 }
 
-function EmbeddedTweet({ tweet }) {
+function Lightbox({ item, onClose }) {
+  useEffect(() => {
+    const escape = (event) => event.key === "Escape" && onClose();
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [onClose]);
+  if (!item) return null;
+  return (
+    <div className="lightbox" role="dialog" aria-modal="true" aria-label="Image viewer" onClick={onClose}>
+      <button type="button" className="lightbox-close" onClick={onClose} aria-label="Close image">
+        ✕
+      </button>
+      <img src={item.url} alt={item.alt_text || ""} onClick={(event) => event.stopPropagation()} />
+      {item.alt_text && <p className="lightbox-alt">{item.alt_text}</p>}
+    </div>
+  );
+}
+
+/** The quoted or reposted original, rendered as a real post rather than a stub. */
+function EmbeddedTweet({ tweet, onOpen }) {
   if (!tweet) return null;
   const author = tweet.author || {};
+  const url = statusLink(author.handle, tweet.id);
   return (
     <div className="embedded-tweet">
-      <strong>{author.display_name || author.handle || "Unknown author"}</strong>
-      {author.handle && <span> @{author.handle}</span>}
-      <p>{tweet.text}</p>
-      <Media items={tweet.media || []} />
+      <div className="embedded-head">
+        <Avatar account={author} size={20} />
+        <strong>{author.display_name || author.handle || "Unknown author"}</strong>
+        {author.handle && <span className="handle">@{author.handle}</span>}
+        {tweet.created_at && (
+          <time dateTime={tweet.created_at} title={absoluteTime(tweet.created_at)}>
+            · {relativeTime(tweet.created_at)}
+          </time>
+        )}
+      </div>
+      {tweet.text && <p>{tweet.text}</p>}
+      <Media items={tweet.media || []} onOpen={onOpen} permalinkUrl={url} />
+      {url && (
+        <a className="embedded-link" href={url} target="_blank" rel="noreferrer">
+          Open original on X ↗
+        </a>
+      )}
     </div>
+  );
+}
+
+function Metrics({ tweet }) {
+  return (
+    <footer aria-label="Post metrics">
+      <span title={`${tweet.replies || 0} replies`}>◯ {compact(tweet.replies)}</span>
+      <span title={`${tweet.retweets || 0} reposts`}>↻ {compact(tweet.retweets)}</span>
+      <span title={`${tweet.likes || 0} likes`}>♡ {compact(tweet.likes)}</span>
+      <span title={`${tweet.views || 0} views`}>▥ {compact(tweet.views)}</span>
+      <span title={`${tweet.bookmarks || 0} bookmarks`}>♧ {compact(tweet.bookmarks)}</span>
+      {tweet.velocity != null && (
+        <span className="velocity-chip" title="Engagement gained in this window">
+          ↗ {compact(tweet.velocity)}
+        </span>
+      )}
+    </footer>
   );
 }
 
 export default function TweetCard({ tweet }) {
-  const author = tweet.author || { handle: tweet.account };
-  const media = tweet.media || tweet.entities?.media || [];
-  const typeLabel = tweet.type === "Retweet" ? "reposted" : tweet.type === "Reply" ? "replied" : null;
+  const [lightbox, setLightbox] = useState(null);
+
+  const reposted = tweet.type === "Retweet" ? tweet.retweeted_tweet : null;
+  // A repost is the original author's post; the reposter belongs in the byline
+  // above it, not in the author slot. Rendering the reposter as the author was
+  // why boosted posts showed the wrong name over a raw "RT @…" string.
+  const source = reposted || tweet;
+  const author = source.author || tweet.author || { handle: tweet.account };
+  const media = source.media || tweet.media || tweet.entities?.media || [];
+  const metrics = reposted?.metrics
+    ? { ...tweet, ...reposted.metrics, velocity: tweet.velocity }
+    : tweet;
+  const text = reposted ? reposted.text : tweet.text;
+  const postedAt = reposted?.created_at || tweet.created_at;
+  const url = permalink(tweet);
+  const isSelfThread =
+    tweet.type === "Reply" &&
+    tweet.reply_to?.handle &&
+    tweet.reply_to.handle.toLowerCase() === String(tweet.account || "").toLowerCase();
+
   return (
-    <article className="tweet">
-      {typeLabel && <div className="tweet-context">↻ {author.display_name || `@${tweet.account}`} {typeLabel}</div>}
+    <article className={`tweet tweet-${(tweet.type || "tweet").toLowerCase()}`}>
+      {reposted && (
+        <div className="tweet-context">
+          ↻ {tweet.author?.display_name || `@${tweet.account}`} reposted
+        </div>
+      )}
+      {isSelfThread && <div className="tweet-context">🧵 Part of a thread</div>}
       <div className="tweet-layout">
-        {author.avatar_url ? (
-          <img className="avatar" src={author.avatar_url} alt="" loading="lazy" />
-        ) : <div className="avatar avatar-fallback" aria-hidden="true">@</div>}
+        <Avatar account={author} />
         <div className="tweet-body">
           <header>
-            <strong>{author.display_name || `@${tweet.account}`}</strong>
-            {author.verified && <span className="verified" title={author.verified_type || "Verified"} aria-label="Verified">✓</span>}
+            <strong>{author.display_name || `@${author.handle || tweet.account}`}</strong>
+            {author.verified && (
+              <span className="verified" title={author.verified_type || "Verified"} aria-label="Verified">
+                ✓
+              </span>
+            )}
             <span className="handle">@{author.handle || tweet.account}</span>
-            {tweet.created_at && <time dateTime={tweet.created_at}>· {new Date(tweet.created_at).toLocaleString()}</time>}
+            {postedAt && url && (
+              // The timestamp is the permalink: the most-wanted link on the card
+              // should be the biggest target on it, not a glyph in the footer.
+              <a href={url} target="_blank" rel="noreferrer" className="tweet-time">
+                <time dateTime={postedAt} title={absoluteTime(postedAt)}>
+                  · {relativeTime(postedAt)}
+                </time>
+              </a>
+            )}
+            <span className="tweet-badges">
+              {(tweet.searches || []).map((slug) => (
+                <span className="badge badge-search" key={slug} title="Found by a saved search">
+                  🔍 {slug}
+                </span>
+              ))}
+            </span>
           </header>
-          {tweet.reply_to?.handle && <div className="replying">Replying to @{tweet.reply_to.handle}</div>}
-          <p>{tweet.text}</p>
-          {(tweet.entities?.urls || []).map((url) => url.expanded && (
-            <a className="expanded-link" key={url.expanded} href={url.expanded} target="_blank" rel="noreferrer">{url.display || url.expanded}</a>
-          ))}
+          {!reposted && tweet.reply_to?.handle && !isSelfThread && (
+            <div className="replying">
+              Replying to{" "}
+              <a
+                href={statusLink(tweet.reply_to.handle, tweet.reply_to.tweet_id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                @{tweet.reply_to.handle}
+              </a>
+            </div>
+          )}
+          {text && <p>{text}</p>}
+          {(tweet.entities?.urls || []).map(
+            (link) =>
+              link.expanded && (
+                <a
+                  className="expanded-link"
+                  key={link.expanded}
+                  href={link.expanded}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {link.display || link.expanded}
+                </a>
+              ),
+          )}
           {tweet.possibly_sensitive && media.length ? (
-            <details className="sensitive"><summary>Show potentially sensitive media</summary><Media items={media} /></details>
-          ) : <Media items={media} />}
+            <details className="sensitive">
+              <summary>Show potentially sensitive media</summary>
+              <Media items={media} onOpen={setLightbox} permalinkUrl={url} />
+            </details>
+          ) : (
+            <Media items={media} onOpen={setLightbox} permalinkUrl={url} />
+          )}
           {tweet.card && (
-            <a className="link-card" href={tweet.card.url || tweet.url} target="_blank" rel="noreferrer">
+            <a className="link-card" href={tweet.card.url || url} target="_blank" rel="noreferrer">
               {tweet.card.image_url && <img src={tweet.card.image_url} alt="" loading="lazy" />}
-              <span><strong>{tweet.card.title}</strong><small>{tweet.card.description}</small></span>
+              <span>
+                <strong>{tweet.card.title}</strong>
+                <small>{tweet.card.description}</small>
+              </span>
             </a>
           )}
-          <EmbeddedTweet tweet={tweet.quoted_tweet || tweet.retweeted_tweet} />
-          <footer aria-label="Tweet metrics">
-            <span title="Replies">◯ {tweet.replies || 0}</span>
-            <span title="Reposts">↻ {tweet.retweets || 0}</span>
-            <span title="Likes">♡ {tweet.likes || 0}</span>
-            <span title="Views">▥ {tweet.views || 0}</span>
-            <span title="Bookmarks">♧ {tweet.bookmarks || 0}</span>
-            {tweet.url && <a href={tweet.url} target="_blank" rel="noreferrer" aria-label="Open on X">↗</a>}
-          </footer>
+          <EmbeddedTweet tweet={tweet.quoted_tweet} onOpen={setLightbox} />
+          <Metrics tweet={metrics} />
         </div>
       </div>
+      <Lightbox item={lightbox} onClose={() => setLightbox(null)} />
     </article>
   );
 }

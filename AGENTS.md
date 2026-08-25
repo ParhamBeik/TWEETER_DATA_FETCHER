@@ -19,6 +19,9 @@ For install and usage see `README.md`. This file is the working contract.
 | Scratch-disk layer | `backend/fetcher/storage.py` |
 | Console, file logs, NDJSON events | `backend/fetcher/observability.py` |
 | Paths, config resolution, account tiers | `backend/fetcher/config.py` |
+| Shared console filter bar, account picker, avatar | `frontend/src/filters.jsx` |
+| Chart tokens, status/subsystem colours, series pivot | `frontend/src/charts.js` |
+| Number, time and permalink formatting | `frontend/src/format.js` |
 
 ## Non-negotiables
 
@@ -51,6 +54,12 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 - Watermarks advance only after a successful endpoint completion; a partial or
   failed run must not advance one.
 - Overlap is expected and deduplicated by `author_id:tweet_id`.
+- `Tweet.source_subsystem` records which pipeline *first* captured a row and is
+  written on insert only — it is deliberately absent from
+  `ingest._TWEET_UPDATE_FIELDS`. Live re-sees backfilled tweets constantly, so
+  making it mutable would credit the whole archive to `live` within two cycles
+  and the console's collection-flow chart would be a lie. `source_endpoint`
+  cannot substitute: live and the archive walk both hit `UserTweets`.
 - `4_union` is the only processed output. Do not reintroduce the other six set
   folders, `UserTweetsAndReplies`, or set algebra.
 - Accounts quarantine after three consecutive user-ID resolution failures.

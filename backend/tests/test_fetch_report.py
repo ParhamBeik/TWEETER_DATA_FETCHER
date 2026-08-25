@@ -74,11 +74,15 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
         target="war:Latest",
         summary={"raw_pages": 4, "ingested_tweets": 80},
     )
+    # first_seen is attributed by source_subsystem, which ingest stamps on
+    # insert. It used to be guessed from how old the tweet was, because live and
+    # the archive walk both report source_endpoint="UserTweets".
     Tweet.objects.create(
         dedup_key="1:fresh",
         tweet_id="fresh",
         account="jack",
         source_endpoint="UserTweets",
+        source_subsystem="live",
         created_at=now - timedelta(hours=1),
     )
     Tweet.objects.create(
@@ -86,6 +90,7 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
         tweet_id="old",
         account="elon",
         source_endpoint="UserTweets",
+        source_subsystem="historical",
         created_at=now - timedelta(days=3),
     )
     Tweet.objects.create(
@@ -93,7 +98,17 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
         tweet_id="s1",
         account="random",
         source_endpoint="SearchTimeline",
+        source_subsystem="search",
         created_at=now - timedelta(hours=2),
+    )
+    # A row ingested before source_subsystem existed belongs to no bucket rather
+    # than being credited to whichever one the old heuristic happened to pick.
+    Tweet.objects.create(
+        dedup_key="1:legacy",
+        tweet_id="legacy",
+        account="jack",
+        source_endpoint="UserTweets",
+        created_at=now - timedelta(hours=3),
     )
     Search.objects.create(name="war", slug="war", raw_query="war", last_run_at=now)
 
@@ -111,7 +126,14 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
     assert report["search"]["first_seen"] == 1
     assert report["archive"]["complete"] == 1
     assert report["archive"]["walking"] == [
-        {"handle": "elon", "pages": 12, "outcome": "paused_for_quota"}
+        {
+            "handle": "elon",
+            "priority": 7,
+            "pages": 12,
+            "stalled_ticks": 0,
+            "outcome": "paused_for_quota",
+            "quarantined": False,
+        }
     ]
     text = render(report)
     assert "LIVE" in text

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import csv
 import json
+from datetime import timedelta
 from io import StringIO
 
 from django.db import connection
 from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -22,9 +24,12 @@ from .permissions import IsStaff, IsStaffOrReadOnly
 
 from config.pagination import (
     CreatedAtCursorPagination,
+    FeedOffsetPagination,
     FetchRunCursorPagination,
     StandardCursorPagination,
 )
+
+from .analytics import engagement_expression, normalize_handles
 
 from .models import FetchRun, Search, Tweet, TwitterUser, XSession
 from .serializers import (
@@ -52,6 +57,14 @@ def with_feed_ts(qs):
     return qs.annotate(feed_ts=Coalesce("created_at", "ingested_at"))
 
 
+# Tweet.type as the engine writes it (fetcher/processing.py), keyed by the
+# lowercase name the console uses in its filter chips.
+POST_TYPES = {"tweet": "Tweet", "reply": "Reply", "retweet": "Retweet", "quote": "Quote"}
+
+# Sugar over since/until so the console can offer one-click windows.
+FEED_WINDOWS = {"1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720}
+
+
 def feed_queryset(params):
     tracked = list(
         TwitterUser.objects.filter(tracking=True).values_list("handle", "priority")
@@ -61,9 +74,25 @@ def feed_queryset(params):
     qs = Tweet.objects.filter(account__in=list(handle_to_priority)) | Tweet.objects.filter(
         search_results__search_id__in=list(search_ids)
     )
-    account = _normalize_handle(params.get("account") or "")
-    if account:
-        qs = qs.filter(account=account)
+    # Repeatable ?account=, matching the analytics endpoints. params.get() would
+    # silently keep only the last value, so a two-account selection returned one
+    # account's posts.
+    accounts = normalize_handles(
+        params.getlist("account") if hasattr(params, "getlist") else [params.get("account")]
+    )
+    if accounts:
+        qs = qs.filter(account__in=accounts)
+    requested = [name.strip() for name in str(params.get("types") or "").lower().split(",")]
+    types = [POST_TYPES[name] for name in requested if name in POST_TYPES]
+    if types:
+        qs = qs.filter(type__in=types)
+    if str(params.get("has_media") or "") in {"1", "true", "yes"}:
+        # extras["media"] is the normalized media list; a tweet without media
+        # stores [] there, and rows predating extras store null.
+        qs = qs.exclude(extras__media=[]).exclude(extras__media=None)
+    window = str(params.get("window") or "").lower()
+    if window in FEED_WINDOWS:
+        qs = qs.filter(created_at__gte=timezone.now() - timedelta(hours=FEED_WINDOWS[window]))
     tier = params.get("tier")
     if tier:
         try:
@@ -95,9 +124,19 @@ def feed_queryset(params):
             qs = qs.annotate(_search=SearchVector("text")).filter(_search=query)
         else:
             qs = qs.filter(text__icontains=query)
-    return with_feed_ts(
-        qs.distinct().select_related("author").defer("payload")
-    ).order_by("-feed_ts", "-id")
+    qs = with_feed_ts(
+        qs.distinct()
+        .select_related("author")
+        .prefetch_related("search_results__search")
+        .defer("payload")
+    )
+    if str(params.get("sort") or "").lower() == "top":
+        # Secondary key is feed_ts, not id: ties on engagement should break by
+        # recency, and the offset paginator needs a fully deterministic order.
+        return qs.annotate(engagement=engagement_expression()).order_by(
+            "-engagement", "-feed_ts", "-id"
+        )
+    return qs.order_by("-feed_ts", "-id")
 
 
 class FeedView(ListAPIView):
@@ -107,6 +146,18 @@ class FeedView(ListAPIView):
 
     def get_queryset(self):
         return feed_queryset(self.request.query_params)
+
+    @property
+    def pagination_class(self):
+        """Cursor paging for `latest`, offset paging for `top`.
+
+        A cursor encodes the ordering field's value, so it needs a unique,
+        monotonic column. Engagement is neither -- thousands of tweets share a
+        score of 0. The time window on a `top` query bounds the result set, so
+        offset paging is safe here in a way it would not be on the whole archive.
+        """
+        sort = str(self.request.query_params.get("sort") or "").lower()
+        return FeedOffsetPagination if sort == "top" else StandardCursorPagination
 
 
 class AccountTimelineView(ListAPIView):
