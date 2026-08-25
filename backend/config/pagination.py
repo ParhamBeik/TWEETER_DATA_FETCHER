@@ -2,7 +2,7 @@
 
 Tweet feeds order by tweet time then id. FetchRun lists use started_at.
 """
-from rest_framework.pagination import CursorPagination
+from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 
 
 class StandardCursorPagination(CursorPagination):
@@ -12,6 +12,17 @@ class StandardCursorPagination(CursorPagination):
     # class must apply tweets.views.with_feed_ts().
     ordering = ("-feed_ts", "-id")
     page_size = 30
+
+
+class FeedOffsetPagination(LimitOffsetPagination):
+    """For feed orderings a cursor cannot express, i.e. sorting by engagement.
+
+    Offset paging is only sound because those requests are bounded by a time
+    window; it is never used for the unbounded reverse-chronological feed.
+    """
+
+    default_limit = 30
+    max_limit = 100
 
 
 class FetchRunCursorPagination(CursorPagination):

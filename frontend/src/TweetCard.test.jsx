@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import TweetCard from "./TweetCard";
 
@@ -7,8 +8,10 @@ import TweetCard from "./TweetCard";
 
 const baseTweet = {
   id: "1",
+  tweet_id: "1",
   account: "elonmusk",
   text: "Hello world",
+  type: "Tweet",
   created_at: "2026-01-02T03:04:05Z",
   replies: 1,
   retweets: 2,
@@ -53,94 +56,222 @@ describe("TweetCard identity", () => {
     renderCard({ created_at: null });
     expect(document.querySelector("time")).toBeNull();
   });
+
+  it("shows an initials avatar when the author has no picture", () => {
+    renderCard();
+    expect(screen.getByText("E")).toBeInTheDocument();
+  });
+
+  it("renders the author's avatar when there is one", () => {
+    renderCard({
+      author: { handle: "elonmusk", avatar_url: "https://pbs.twimg.com/a_normal.jpg" },
+    });
+    expect(document.querySelector("img.avatar")).toHaveAttribute(
+      "src",
+      "https://pbs.twimg.com/a_normal.jpg",
+    );
+  });
 });
 
-describe("TweetCard context labels", () => {
-  it("labels a retweet as reposted", () => {
-    renderCard({ type: "Retweet" });
-    expect(screen.getByText(/reposted/)).toBeInTheDocument();
+describe("TweetCard permalinks", () => {
+  it("makes the timestamp the link to the exact post on X", () => {
+    renderCard({ url: "https://x.com/elonmusk/status/1" });
+    const link = document.querySelector("a.tweet-time");
+    expect(link).toHaveAttribute("href", "https://x.com/elonmusk/status/1");
+    expect(link).toHaveAttribute("rel", "noreferrer");
   });
 
-  it("labels a reply as replied", () => {
-    renderCard({ type: "Reply" });
-    expect(screen.getByText(/replied/)).toBeInTheDocument();
+  // Regression: `Tweet.url` is blank when the engine could not build one, and the
+  // card used to render a dead link rather than reconstructing it.
+  it("rebuilds the permalink from the handle and id when the URL is blank", () => {
+    renderCard({ url: "" });
+    expect(document.querySelector("a.tweet-time")).toHaveAttribute(
+      "href",
+      "https://x.com/elonmusk/status/1",
+    );
   });
 
-  it("shows no context banner for an original tweet", () => {
-    renderCard({ type: "Tweet" });
-    expect(screen.queryByText(/reposted|replied/)).toBeNull();
+  it("links a reply's parent to that status on X", () => {
+    renderCard({ type: "Reply", reply_to: { handle: "jack", tweet_id: "99" } });
+    expect(screen.getByRole("link", { name: "@jack" })).toHaveAttribute(
+      "href",
+      "https://x.com/jack/status/99",
+    );
+  });
+});
+
+describe("TweetCard post shapes", () => {
+  const reposted = {
+    type: "Retweet",
+    text: "RT @jack: the original words",
+    author: { handle: "elonmusk", display_name: "Elon Musk" },
+    retweeted_tweet: {
+      id: "77",
+      text: "the original words",
+      author: { handle: "jack", display_name: "Jack Dorsey" },
+      created_at: "2026-01-01T00:00:00Z",
+      metrics: { likes: 900, retweets: 40, replies: 3, views: 5000, bookmarks: 1 },
+    },
+  };
+
+  // Regression: the reposter used to be rendered as the author, over the raw
+  // "RT @…" string, so a boosted post showed the wrong name and wrong text.
+  it("credits a repost to the original author, not the reposter", () => {
+    renderCard(reposted);
+    expect(screen.getByText("Jack Dorsey")).toBeInTheDocument();
+    expect(screen.getByText("the original words")).toBeInTheDocument();
+    expect(screen.queryByText(/^RT @jack:/)).toBeNull();
+  });
+
+  it("names the reposter in the context banner above the post", () => {
+    renderCard(reposted);
+    expect(screen.getByText(/Elon Musk reposted/)).toBeInTheDocument();
+  });
+
+  it("shows the original's engagement on a repost", () => {
+    renderCard(reposted);
+    const metrics = screen.getByLabelText("Post metrics");
+    expect(within(metrics).getByTitle("900 likes")).toHaveTextContent("900");
+  });
+
+  it("renders a quote as its own post plus the quoted original", () => {
+    renderCard({
+      type: "Quote",
+      text: "my take",
+      quoted_tweet: {
+        id: "88",
+        text: "Quoted body",
+        author: { handle: "jack", display_name: "Jack" },
+      },
+    });
+    expect(screen.getByText("my take")).toBeInTheDocument();
+    expect(screen.getByText("Quoted body")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open original on X/ })).toHaveAttribute(
+      "href",
+      "https://x.com/jack/status/88",
+    );
+  });
+
+  it("names an unattributed quoted tweet rather than rendering blank", () => {
+    renderCard({ quoted_tweet: { text: "Quoted body" } });
+    expect(screen.getByText("Unknown author")).toBeInTheDocument();
   });
 
   it("names the account being replied to", () => {
-    renderCard({ reply_to: { handle: "jack" } });
-    expect(screen.getByText("Replying to @jack")).toBeInTheDocument();
+    renderCard({ type: "Reply", reply_to: { handle: "jack", tweet_id: "9" } });
+    expect(screen.getByText(/Replying to/)).toBeInTheDocument();
+  });
+
+  it("marks a self-reply as a thread instead of 'replying to yourself'", () => {
+    renderCard({ type: "Reply", reply_to: { handle: "elonmusk", tweet_id: "9" } });
+    expect(screen.getByText(/Part of a thread/)).toBeInTheDocument();
+    expect(screen.queryByText(/Replying to/)).toBeNull();
+  });
+
+  it("shows no context banner for an original post", () => {
+    renderCard();
+    expect(screen.queryByText(/reposted|thread/)).toBeNull();
+  });
+
+  it("badges a post that a saved search found", () => {
+    renderCard({ searches: ["ai-policy"] });
+    expect(screen.getByText(/ai-policy/)).toBeInTheDocument();
   });
 });
 
 describe("TweetCard metrics", () => {
   it("renders every engagement counter", () => {
     renderCard();
-    const metrics = screen.getByLabelText("Tweet metrics");
-    expect(within(metrics).getByTitle("Replies")).toHaveTextContent("1");
-    expect(within(metrics).getByTitle("Reposts")).toHaveTextContent("2");
-    expect(within(metrics).getByTitle("Likes")).toHaveTextContent("3");
-    expect(within(metrics).getByTitle("Views")).toHaveTextContent("4");
-    expect(within(metrics).getByTitle("Bookmarks")).toHaveTextContent("5");
+    const metrics = screen.getByLabelText("Post metrics");
+    expect(within(metrics).getByTitle("1 replies")).toHaveTextContent("1");
+    expect(within(metrics).getByTitle("2 reposts")).toHaveTextContent("2");
+    expect(within(metrics).getByTitle("3 likes")).toHaveTextContent("3");
+    expect(within(metrics).getByTitle("4 views")).toHaveTextContent("4");
+    expect(within(metrics).getByTitle("5 bookmarks")).toHaveTextContent("5");
+  });
+
+  it("compacts large counters so the row keeps its width", () => {
+    renderCard({ likes: 1234, views: 3400000 });
+    const metrics = screen.getByLabelText("Post metrics");
+    expect(within(metrics).getByTitle("1234 likes")).toHaveTextContent("1.2K");
+    expect(within(metrics).getByTitle("3400000 views")).toHaveTextContent("3.4M");
   });
 
   it("renders zero rather than blank for absent counters", () => {
     render(<TweetCard tweet={{ id: "1", account: "a", text: "t" }} />);
-    const metrics = screen.getByLabelText("Tweet metrics");
-    expect(within(metrics).getByTitle("Likes")).toHaveTextContent("0");
+    const metrics = screen.getByLabelText("Post metrics");
+    expect(within(metrics).getByTitle("0 likes")).toHaveTextContent("0");
   });
 
-  it("links out to the tweet on X with an accessible name", () => {
-    renderCard({ url: "https://x.com/elonmusk/status/1" });
-    const link = screen.getByLabelText("Open on X");
-    expect(link).toHaveAttribute("href", "https://x.com/elonmusk/status/1");
-    expect(link).toHaveAttribute("rel", "noreferrer");
+  it("shows the velocity gained when the analytics view supplies it", () => {
+    renderCard({ velocity: 890 });
+    expect(screen.getByTitle("Engagement gained in this window")).toHaveTextContent("890");
   });
 });
 
 describe("TweetCard media", () => {
-  it("renders photos with alt text when provided", () => {
-    renderCard({ media: [{ id: "m1", type: "photo", url: "http://img/1.jpg", alt_text: "A chart" }] });
+  const photo = (over = {}) => ({ id: "m1", type: "photo", url: "http://img/1.jpg", ...over });
+
+  it("renders photos with their alt text", () => {
+    renderCard({ media: [photo({ alt_text: "A chart" })] });
     expect(screen.getByAltText("A chart")).toHaveAttribute("src", "http://img/1.jpg");
   });
 
-  it("falls back to a generic alt when the payload has none", () => {
-    renderCard({ media: [{ id: "m1", type: "photo", url: "http://img/1.jpg" }] });
-    expect(screen.getByAltText("Tweet media")).toBeInTheDocument();
+  it("leaves alt empty rather than inventing a description", () => {
+    renderCard({ media: [photo()] });
+    expect(screen.getByRole("button", { name: "Open image: Photo" })).toBeInTheDocument();
   });
 
-  it("caps the media grid at four items", () => {
-    renderCard({
-      media: Array.from({ length: 6 }, (_, i) => ({ id: `m${i}`, type: "photo", url: `http://img/${i}.jpg` })),
-    });
-    expect(screen.getAllByAltText("Tweet media")).toHaveLength(4);
+  it("reserves the image's real aspect ratio instead of a fixed crop", () => {
+    renderCard({ media: [photo({ width: 1200, height: 675 })] });
+    expect(document.querySelector(".media-cell")).toHaveStyle({ aspectRatio: "1200 / 675" });
   });
 
-  it("renders a video source for the highest available bitrate", () => {
+  it("opens a photo in a lightbox and closes it again", async () => {
+    const user = userEvent.setup();
+    renderCard({ media: [photo({ alt_text: "A chart" })] });
+
+    await user.click(screen.getByRole("button", { name: "Open image: A chart" }));
+    expect(screen.getByRole("dialog", { name: "Image viewer" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Close image" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // X 403s hotlinked MP4s, so the poster frame plus a link to X is the only
+  // rendering that reliably works.
+  it("renders video as a poster frame linking out to X", () => {
     renderCard({
-      media: [{
-        id: "m1",
-        type: "video",
-        url: "http://img/poster.jpg",
-        variants: [
-          { content_type: "video/mp4", bitrate: 320, url: "http://v/low.mp4" },
-          { content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" },
-          { content_type: "application/x-mpegURL", url: "http://v/stream.m3u8" },
-        ],
-      }],
+      url: "https://x.com/elonmusk/status/1",
+      media: [
+        {
+          id: "m1",
+          type: "video",
+          url: "http://img/poster.jpg",
+          variants: [{ content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" }],
+        },
+      ],
     });
-    expect(document.querySelector("source")).toHaveAttribute("src", "http://v/high.mp4");
+    const link = screen.getByRole("link", { name: /Watch on X/ });
+    expect(link).toHaveAttribute("href", "https://x.com/elonmusk/status/1");
+    expect(within(link).getByRole("img")).toHaveAttribute("src", "http://img/poster.jpg");
+  });
+
+  it("labels an animated GIF as such", () => {
+    renderCard({ media: [{ id: "m1", type: "animated_gif", url: "http://img/poster.jpg" }] });
+    expect(screen.getByText("GIF")).toBeInTheDocument();
+  });
+
+  it("caps the media grid at four and counts the remainder", () => {
+    renderCard({
+      media: Array.from({ length: 6 }, (_, i) => photo({ id: `m${i}`, url: `http://img/${i}.jpg` })),
+    });
+    expect(screen.getAllByRole("button", { name: /Open image/ })).toHaveLength(4);
+    expect(screen.getByText("+2")).toBeInTheDocument();
   });
 
   it("hides sensitive media behind a disclosure the user must open", () => {
-    renderCard({
-      possibly_sensitive: true,
-      media: [{ id: "m1", type: "photo", url: "http://img/1.jpg" }],
-    });
+    renderCard({ possibly_sensitive: true, media: [photo()] });
     const disclosure = screen.getByText("Show potentially sensitive media");
     expect(disclosure).toBeInTheDocument();
     expect(disclosure.closest("details")).not.toHaveAttribute("open");
@@ -152,18 +283,7 @@ describe("TweetCard media", () => {
   });
 });
 
-describe("TweetCard embedded content", () => {
-  it("renders a quoted tweet's author and text", () => {
-    renderCard({ quoted_tweet: { text: "Quoted body", author: { handle: "jack", display_name: "Jack" } } });
-    expect(screen.getByText("Quoted body")).toBeInTheDocument();
-    expect(screen.getByText("Jack")).toBeInTheDocument();
-  });
-
-  it("names an unattributed quoted tweet rather than rendering blank", () => {
-    renderCard({ quoted_tweet: { text: "Quoted body" } });
-    expect(screen.getByText("Unknown author")).toBeInTheDocument();
-  });
-
+describe("TweetCard links", () => {
   it("renders expanded entity URLs as outbound links", () => {
     renderCard({ entities: { urls: [{ expanded: "https://example.com/a", display: "example.com/a" }] } });
     expect(screen.getByText("example.com/a")).toHaveAttribute("href", "https://example.com/a");

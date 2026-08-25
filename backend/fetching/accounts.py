@@ -148,6 +148,50 @@ def clear_live_quarantine(handle: str) -> None:
     row.save(update_fields=["data", "updated_at"])
 
 
+def archive_state() -> dict[str, dict]:
+    """Per-account archive-walk state blob, keyed by lowercased handle.
+
+    The engine normalizes handles to lowercase when it writes sync state; the
+    TwitterUser table preserves the display casing. Joining in Python beats an
+    iexact subquery for a fleet this size and keeps one obvious mapping.
+    """
+    return {
+        str(row.account).lower(): (row.data if isinstance(row.data, dict) else {})
+        for row in EndpointState.objects.filter(endpoint="UserTweets")
+    }
+
+
+def archive_progress() -> dict:
+    """How far the finite backward walk has got, per tracked account.
+
+    One definition shared by the pipeline API and `manage.py fetch_report`, so
+    the console and the CLI cannot disagree about what "fully archived" means.
+    """
+    archive = archive_state()
+    complete: list[str] = []
+    walking: list[dict] = []
+    for user in TwitterUser.objects.filter(tracking=True).order_by("priority", "handle"):
+        state = archive.get(user.handle.lower(), {})
+        if state.get("backfill_complete"):
+            complete.append(user.handle)
+            continue
+        walking.append({
+            "handle": user.handle,
+            "priority": user.priority,
+            "pages": int(state.get("backfill_pages_done") or 0),
+            "stalled_ticks": int(state.get("backfill_stalled_ticks") or 0),
+            "outcome": state.get("backfill_last_outcome") or "not_started",
+            "quarantined": bool(user.quarantined),
+        })
+    # Most-advanced first, so the accounts closest to done lead the list.
+    walking.sort(key=lambda row: (-row["pages"], row["handle"].lower()))
+    return {
+        "complete": complete,
+        "walking": walking,
+        "tracked": len(complete) + len(walking),
+    }
+
+
 def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
     """Schedule + health fields derived from CLI policy and live_state."""
     policy = policy_for(user.priority)

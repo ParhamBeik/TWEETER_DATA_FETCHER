@@ -14,7 +14,9 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from tweets.models import EndpointState, FetchRun, Search, Tweet, TwitterUser
+from fetching.accounts import archive_progress
+
+from tweets.models import FetchRun, Search, Tweet, TwitterUser
 
 _UNITS = {"m": "minutes", "h": "hours", "d": "days"}
 
@@ -65,13 +67,16 @@ def build_report(*, since, now=None) -> dict[str, Any]:
     """Aggregate FetchRun / Tweet / EndpointState into one soak snapshot."""
     now = now or timezone.now()
     runs = list(FetchRun.objects.filter(started_at__gte=since).order_by("started_at"))
-    tracked = list(TwitterUser.objects.filter(tracking=True))
-    tracked_handles = {u.handle.lower() for u in tracked}
+    tracked = TwitterUser.objects.filter(tracking=True).count()
 
-    def bucket(subsystem: str, endpoint: str) -> dict[str, Any]:
+    def bucket(subsystem: str) -> dict[str, Any]:
         subset = [r for r in runs if r.subsystem == subsystem]
+        # Tweet.source_subsystem records which pipeline first captured a row, so
+        # live and historical no longer have to be told apart by guessing from
+        # how old the tweet is. Rows ingested before that column existed carry
+        # "" and are counted by neither bucket.
         first_seen = Tweet.objects.filter(
-            ingested_at__gte=since, source_endpoint=endpoint
+            ingested_at__gte=since, source_subsystem=subsystem
         ).count()
         upserted = sum(_upserted(r) for r in subset)
         polled: set[str] = set()
@@ -92,55 +97,11 @@ def build_report(*, since, now=None) -> dict[str, Any]:
             },
         }
 
-    archive: dict[str, dict] = {}
-    for row in EndpointState.objects.filter(endpoint="UserTweets"):
-        data = row.data if isinstance(row.data, dict) else {}
-        archive[str(row.account).lower()] = data
+    progress = archive_progress()
 
-    complete = [
-        handle for handle in tracked_handles if archive.get(handle, {}).get("backfill_complete")
-    ]
-    walking = []
-    for user in tracked:
-        handle = user.handle.lower()
-        state = archive.get(handle, {})
-        if state.get("backfill_complete"):
-            continue
-        walking.append(
-            {
-                "handle": user.handle,
-                "pages": int(state.get("backfill_pages_done") or 0),
-                "outcome": state.get("backfill_last_outcome") or "not_started",
-            }
-        )
-    walking.sort(key=lambda row: (-int(row["pages"]), row["handle"].lower()))
-
-    live = bucket("live", "UserTweets")
-    # Live and historical share UserTweets, so first_seen would double-count if
-    # both buckets read the same queryset. Attribute first-seen timeline rows to
-    # historical when the tweet is older than the live window (a few hours);
-    # everything newer is the fresh bucket.
-    live_horizon = now - timedelta(hours=6)
-    live["first_seen"] = Tweet.objects.filter(
-        ingested_at__gte=since,
-        source_endpoint="UserTweets",
-        created_at__gte=live_horizon,
-    ).count()
-    live["reupserted"] = max(0, live["upserted"] - live["first_seen"])
-
-    historical = bucket("historical", "UserTweets")
-    historical["first_seen"] = Tweet.objects.filter(
-        ingested_at__gte=since,
-        source_endpoint="UserTweets",
-        created_at__lt=live_horizon,
-    ).count() + Tweet.objects.filter(
-        ingested_at__gte=since,
-        source_endpoint="UserTweets",
-        created_at__isnull=True,
-    ).count()
-    historical["reupserted"] = max(0, historical["upserted"] - historical["first_seen"])
-
-    search = bucket("search", "SearchTimeline")
+    live = bucket("live")
+    historical = bucket("historical")
+    search = bucket("search")
     searches = [
         {
             "slug": s.slug,
@@ -154,14 +115,14 @@ def build_report(*, since, now=None) -> dict[str, Any]:
     return {
         "now": now.isoformat(),
         "since": since.isoformat(),
-        "tracked": len(tracked),
+        "tracked": tracked,
         "live": live,
         "historical": historical,
         "search": {**search, "queries": searches},
         "archive": {
-            "complete": len(complete),
-            "tracked": len(tracked),
-            "walking": walking,
+            "complete": len(progress["complete"]),
+            "tracked": progress["tracked"],
+            "walking": progress["walking"],
         },
     }
 

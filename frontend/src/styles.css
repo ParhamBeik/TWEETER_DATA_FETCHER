@@ -132,7 +132,9 @@ input:focus {
 
 .tab.active {
   background: var(--accent);
-  color: white;
+  /* White on the teal accent measures ~1.5:1. The dark ink the rest of the
+     accent-filled controls use clears AA. */
+  color: #08201d;
 }
 
 .search-form,
@@ -262,10 +264,13 @@ input:focus {
   grid-template-columns: 1fr 1fr;
 }
 
+/* The cell owns the sizing now (it carries the media's real aspect ratio), so
+   the image fills it. A max-height here instead left a 320px image floating in
+   a much taller box, which is where the black slabs in the feed came from. */
 .tweet-media img,
 .tweet-media video {
   width: 100%;
-  max-height: 320px;
+  height: 100%;
   object-fit: cover;
   display: block;
   background: #000;
@@ -771,15 +776,18 @@ input:focus {
   }
 }
 
-.feed-filters,
+.control-bar,
 .cycle-controls {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 12px 0 16px;
 }
 
-.feed-filters {
+/* The primary row sticks under the topbar so sort/window stay reachable while
+   scrolling a long feed; the secondary row scrolls away with the content. */
+.control-bar {
   position: sticky;
   top: 58px;
   z-index: 5;
@@ -788,8 +796,17 @@ input:focus {
   backdrop-filter: blur(12px);
 }
 
-.feed-filters input,
-.feed-filters select,
+.control-bar-secondary {
+  position: static;
+  backdrop-filter: none;
+  background: none;
+  margin-top: 0;
+}
+
+.control-spacer { flex: 1 1 auto; }
+
+.control-bar input,
+.control-bar select,
 .cycle-controls select,
 .account-table select {
   background: var(--panel);
@@ -1030,7 +1047,6 @@ input:focus {
 .stat-hint { display: block; margin-top: 0.5rem; color: var(--muted); }
 
 .panel-tall { min-height: 20rem; }
-.panel-chart { height: 420px; }
 .chart-box { height: 15rem; }
 
 .topic-list { list-style: none; margin: 0; padding: 0; }
@@ -1044,11 +1060,431 @@ input:focus {
   padding-bottom: 0.75rem;
 }
 
-.delta-up { color: var(--accent); }
-.delta-flat { color: var(--muted); }
 
 .inline-cta {
   font-size: 0.875rem;
   font-weight: 600;
+  color: var(--accent);
+}
+
+/* Console redesign ------------------------------------------------------- */
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Segmented control: one row of mutually exclusive options. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  padding: 2px;
+}
+
+.segment {
+  background: none;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.segment.active {
+  background: var(--accent);
+  color: #08201d;
+}
+
+.segment:focus-visible,
+.chip:focus-visible,
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Independent on/off chips. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.chip.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Account picker ---------------------------------------------------------- */
+.account-picker { position: relative; }
+
+.picker-trigger {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.picker-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 18rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
+}
+
+.picker-menu input { width: 100%; margin-bottom: 6px; }
+.picker-menu ul { list-style: none; margin: 6px 0 0; padding: 0; }
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 500;
+}
+
+.picker-row:hover { background: rgba(255, 255, 255, 0.05); }
+.picker-row.active { background: rgba(110, 231, 210, 0.12); }
+.picker-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-handle { color: var(--muted); font-size: 0.75rem; }
+.picker-empty { padding: 8px; }
+
+/* Stat tiles -------------------------------------------------------------- */
+.stat-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-hint.warn { color: #fab219; }
+
+.delta {
+  font-weight: 700;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta.up { color: #0ca30c; }
+.delta.down { color: #d03b3b; }
+.delta.flat { color: var(--muted); }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+.chart-empty {
+  display: grid;
+  place-items: center;
+  min-height: 8rem;
+}
+
+.inline-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* Pipeline / quota / backfill --------------------------------------------- */
+.pipeline-list,
+.quota-list,
+.walk-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.pipeline-list > li { border-top: 1px solid var(--border); padding: 10px 0; }
+.pipeline-list > li:first-child { border-top: none; }
+
+.pipeline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pipeline-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 0.8125rem;
+}
+
+.quota-list > li + li { margin-top: 10px; }
+
+.quota-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  margin-bottom: 4px;
+}
+
+.quota-bar,
+.progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.quota-bar > span,
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #3987e5;
+}
+
+.progress-bar { height: 12px; margin: 12px 0 8px; }
+.progress-caption { margin: 0 0 12px; color: var(--muted); font-size: 0.875rem; }
+
+.walk-list > li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+
+.walk-handle { flex: 1; font-weight: 600; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.badge-ok { color: #0ca30c; border-color: rgba(12, 163, 12, 0.5); }
+.badge-warn { color: #fab219; border-color: rgba(250, 178, 25, 0.5); }
+.badge-running { color: #3987e5; border-color: rgba(57, 135, 229, 0.6); }
+.badge-search { color: var(--accent); border-color: rgba(110, 231, 210, 0.4); }
+
+/* Feed -------------------------------------------------------------------- */
+.new-posts-pill {
+  display: block;
+  margin: 0 auto 12px;
+  background: var(--accent);
+  color: #08201d;
+  font-weight: 700;
+}
+
+.search-field { flex: 1 1 12rem; display: flex; }
+.search-field input { width: 100%; }
+
+.tweet-time { color: inherit; text-decoration: none; }
+.tweet-time:hover time { color: var(--accent); }
+
+.tweet-badges { display: inline-flex; gap: 6px; margin-left: auto; }
+
+.velocity-chip { color: var(--accent); font-weight: 700; }
+
+.avatar-fallback { font-size: 0.75em; }
+
+/* Media ------------------------------------------------------------------- */
+.media-cell {
+  position: relative;
+  display: block;
+  width: 100%;
+  /* The aspect box keeps an image's real shape, but on a wide viewport a 16:9
+     photo would otherwise be ~700px tall and push the next post off screen. */
+  max-height: 420px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: #000;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.media-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-video { cursor: pointer; }
+
+.play-badge {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 2.5rem;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.media-note {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.media-more {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
+.tweet-media { position: relative; }
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(4, 7, 15, 0.94);
+}
+
+.lightbox img {
+  max-width: min(1100px, 92vw);
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 12px;
+  cursor: default;
+}
+
+.lightbox-alt { color: var(--muted); max-width: 60ch; text-align: center; margin: 0; }
+
+.lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.embedded-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  margin-bottom: 4px;
+}
+
+.embedded-head .handle,
+.embedded-head time { color: var(--muted); }
+
+.embedded-link { display: inline-block; margin-top: 6px; color: var(--accent); font-size: 0.75rem; }
+
+/* Analyze ----------------------------------------------------------------- */
+.topic-name {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 0;
+  font-weight: 600;
+}
+
+.topic-name:hover { color: var(--accent); }
+.topic-row .delta { margin-left: 8px; }
+.narrative a { color: var(--text); }
+.narrative a:hover { color: var(--accent); }
+
+@media (max-width: 720px) {
+  .control-bar { position: static; backdrop-filter: none; }
+  .picker-menu { width: min(18rem, 90vw); }
+}
+
+/* The feed is prose, not a dashboard: cap the measure so a post is not one
+   1200px line of text on a wide screen. The control bar spans the full width so
+   the filters stay where the eye expects them. */
+.feed-column {
+  max-width: 760px;
+}
+
+.feed-column .tweet:first-of-type {
+  border-top: 1px solid var(--border);
+}
+
+.media-missing {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Links inside a post's chrome (reply target, embedded author) inherit the
+   browser's default blue otherwise, which is unreadable on this surface. */
+.replying a,
+.narrative a,
+.embedded-head a {
   color: var(--accent);
 }
