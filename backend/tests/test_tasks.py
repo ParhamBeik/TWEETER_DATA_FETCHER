@@ -13,9 +13,10 @@ from fetching.tasks import (
     poll_live_all,
     purge_expired_search_tweets,
     purge_old_fetch_runs,
+    purge_old_raw_pages,
     repoll_searches,
 )
-from tweets.models import EndpointState, FetchRun, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import EndpointState, FetchRun, RawPage, Search, SearchResult, Tweet, TwitterUser
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +98,25 @@ def test_purge_old_fetch_runs(settings):
     assert not FetchRun.objects.filter(run_id="running").exists()
     assert FetchRun.objects.filter(run_id="new").exists()
     assert FetchRun.objects.filter(run_id="fresh-running").exists()
+
+
+@pytest.mark.django_db
+def test_purge_old_raw_pages_deletes_only_expired_rows(settings):
+    """Unit on the age cutoff: this is the retention clock, not the run FK."""
+    settings.RAW_PAGE_RETENTION_DAYS = 30
+    old = RawPage.objects.create(
+        endpoint="UserTweets", account="jack", batch="b", page_number=1, payload={}
+    )
+    RawPage.objects.filter(pk=old.pk).update(
+        created_at=timezone.now() - timedelta(days=31)
+    )
+    RawPage.objects.create(
+        endpoint="UserTweets", account="jack", batch="b", page_number=2, payload={}
+    )
+
+    assert purge_old_raw_pages() == 1
+    assert not RawPage.objects.filter(page_number=1).exists()
+    assert RawPage.objects.filter(page_number=2).exists()
 
 
 @pytest.mark.django_db

@@ -234,6 +234,24 @@ class KeyValueState(models.Model):
         unique_together = [("namespace", "name")]
 
 
+class MediaAsset(models.Model):
+    """A photo we copied off X onto the media volume.
+
+    Postgres still owns identity (which remote URL we have); the bytes live on
+    a compose volume because the fetcher scratch tree is deleted after every
+    run. Unique on the remote URL so a tweet that is re-ingested does not
+    download the same file twice.
+    """
+
+    remote_url = models.URLField(max_length=1000, unique=True)
+    relative_path = models.CharField(max_length=400)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_ok_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return self.relative_path
+
+
 class XSession(models.Model):
     """Single shared operator X session (cookies/bearer). One active row."""
 

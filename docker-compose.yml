@@ -82,6 +82,8 @@ services:
              python manage.py migrate --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
     ports: ["8002:8000"]
+    volumes:
+      - media_data:/app/media
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/admin/login/ > /dev/null || exit 1"]
       interval: 10s
@@ -119,13 +121,15 @@ services:
   # folding "control" into worker_historical would have left dispatch_due_searches
   # queued behind archive walks that are bounded only by the 1800s cycle timeout
   # -- the same starvation this split exists to end, just with a smaller ceiling.
-  # It only ever runs sub-second bookkeeping (which searches are due) and the
-  # retention jobs, hence the small allowance.
+  # It only ever runs sub-second bookkeeping (which searches are due), the
+  # retention jobs, and chunked photo downloads, hence the small allowance.
   worker_control:
     <<: *app
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q control -n control@%h
     healthcheck: *worker-healthcheck
     mem_limit: 256m
+    volumes:
+      - media_data:/app/media
 
   worker_search:
     <<: *app
@@ -159,6 +163,9 @@ services:
     depends_on: [web]
     restart: unless-stopped
     mem_limit: 64m
+    volumes:
+      - media_data:/usr/share/nginx/media:ro
 
 volumes:
   pgdata:
+  media_data:

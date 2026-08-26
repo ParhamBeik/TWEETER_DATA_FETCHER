@@ -40,6 +40,7 @@ app.conf.task_routes = {
     "fetching.tasks.purge_old_fetch_runs": {"queue": "control"},
     "fetching.tasks.purge_old_raw_pages": {"queue": "control"},
     "fetching.tasks.recompute_poll_intervals": {"queue": "control"},
+    "fetching.tasks.archive_media": {"queue": "control"},
 }
 
 
@@ -56,6 +57,13 @@ def setup_periodic_tasks(sender, **_kwargs):
         schedule(settings.FETCH_HISTORICAL_INTERVAL_SECONDS),
         app.signature("fetching.tasks.backfill_historical_all"),
         name="historical-backfill-all-accounts",
+    )
+    # Chunked photo downloads. 25 images, then yield the worker so dispatch
+    # never waits on the ~2 GB backlog.
+    sender.add_periodic_task(
+        schedule(settings.MEDIA_ARCHIVE_INTERVAL_SECONDS),
+        app.signature("fetching.tasks.archive_media"),
+        name="archive-media",
     )
     # Cheap dispatcher rather than the fetch itself: it only checks which
     # searches are due and queues one task each, so per-search cadence lives in

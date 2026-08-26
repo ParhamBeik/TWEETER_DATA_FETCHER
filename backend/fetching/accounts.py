@@ -12,6 +12,10 @@ from fetcher.config import DEFAULT_PRIORITY_POLICIES
 
 from tweets.models import EndpointState, KeyValueState, Tweet, TwitterUser
 
+# Mirrors fetcher.historical.DEPTH_PROVIDER_LIMIT without importing the pipeline.
+PROVIDER_DEPTH_LIMIT = "provider_depth_limit"
+_EXHAUSTED = "success_timeline_exhausted"
+
 
 def clamp_priority(value: Any) -> int:
     try:
@@ -178,7 +182,7 @@ def archive_progress() -> dict:
     for user in TwitterUser.objects.filter(tracking=True).order_by("priority", "handle"):
         state = archive.get(user.handle.lower(), {})
         if state.get("backfill_complete"):
-            if state.get("backfill_depth_reason") == "provider_depth_limit":
+            if _is_provider_depth(state):
                 depth_limited.append(user.handle)
             else:
                 complete.append(user.handle)
@@ -199,6 +203,21 @@ def archive_progress() -> dict:
         "walking": walking,
         "tracked": len(complete) + len(depth_limited) + len(walking),
     }
+
+
+def _is_provider_depth(state: dict) -> bool:
+    """X stopped serving, not 'we have the first tweet'.
+
+    Rows written before backfill_depth_reason existed stored
+    success_timeline_exhausted as complete with no reason -- treating those as
+    fully archived is the original lie.
+    """
+    if state.get("backfill_depth_reason") == PROVIDER_DEPTH_LIMIT:
+        return True
+    return (
+        not state.get("backfill_depth_reason")
+        and state.get("backfill_last_outcome") == _EXHAUSTED
+    )
 
 
 def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
