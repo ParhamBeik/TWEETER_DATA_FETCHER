@@ -114,6 +114,19 @@ services:
     # UserTweets pagination never invokes Chromium here -- HTTP only.
     mem_limit: 384m
 
+  # The scheduler gets its own process, not just its own queue name. A solo
+  # worker runs one task at a time no matter how many queues it drains, so
+  # folding "control" into worker_historical would have left dispatch_due_searches
+  # queued behind archive walks that are bounded only by the 1800s cycle timeout
+  # -- the same starvation this split exists to end, just with a smaller ceiling.
+  # It only ever runs sub-second bookkeeping (which searches are due) and the
+  # retention jobs, hence the small allowance.
+  worker_control:
+    <<: *app
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q control -n control@%h
+    healthcheck: *worker-healthcheck
+    mem_limit: 256m
+
   worker_search:
     <<: *app
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q search -n search@%h

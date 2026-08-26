@@ -96,3 +96,57 @@ def test_source_subsystem_credits_whoever_saw_the_tweet_first():
     tweet = Tweet.objects.get()
     assert tweet.source_subsystem == "historical"
     assert tweet.likes == 99  # everything else still refreshes
+
+
+# --- Repost engagement ------------------------------------------------------
+# Unit level: metrics_for is a pure function over one normalized dict, which is
+# where the whole decision lives.
+
+
+def _repost(**over):
+    """A repost as X returns it: the wrapper carries shares but no views."""
+    item = _item(
+        type="Retweet",
+        likes=0,
+        retweets=1200,
+        views=0,
+        retweeted_tweet={
+            "id": "222",
+            "metrics": {"likes": 8400, "retweets": 1200, "replies": 90, "views": 910000},
+        },
+    )
+    item.update(over)
+    return item
+
+
+def test_a_repost_takes_the_views_the_original_actually_got():
+    """3,218 production rows showed thousands of reposts against zero views."""
+    from fetching.ingest import metrics_for
+
+    assert metrics_for(_repost())["views"] == 910000
+
+
+def test_a_repost_keeps_any_figure_the_wrapper_did_carry():
+    """Per-field fallback can only fill a gap, never overwrite a real number."""
+    from fetching.ingest import metrics_for
+
+    assert metrics_for(_repost(retweets=7))["retweets"] == 7
+
+
+def test_a_repost_without_a_stored_original_is_left_alone():
+    from fetching.ingest import metrics_for
+
+    assert metrics_for(_repost(retweeted_tweet=None))["views"] == 0
+
+
+def test_an_ordinary_tweet_never_borrows_metrics():
+    from fetching.ingest import metrics_for
+
+    borrowed = _repost(type="Tweet")
+    assert metrics_for(borrowed)["views"] == 0
+
+
+@pytest.mark.django_db
+def test_the_repaired_count_reaches_the_stored_row():
+    upsert_tweet(_repost())
+    assert Tweet.objects.get().views == 910000

@@ -1356,7 +1356,23 @@ input:focus {
   display: block;
 }
 
-.media-video { cursor: pointer; }
+/* Only the link-out fallback is clickable-as-a-whole; a real player owns its
+   own controls and must not advertise a pointer over the scrub bar. */
+a.media-video { cursor: pointer; }
+
+/* `cover` is right for a thumbnail and wrong for a player: it crops the frame
+   and can hide the subtitles or the scoreboard. Letterbox the real thing.
+   The explicit box is load-bearing, not tidiness: <video> does not inherit the
+   sizing `.media-cell img` gets, so without it the player renders at 300x150
+   until metadata arrives and then jumps to the native resolution, overflowing
+   the card -- and object-fit does nothing at all without a box to fit into. */
+.media-video video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #000;
+}
 
 .play-badge {
   position: absolute;

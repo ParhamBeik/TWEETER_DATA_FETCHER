@@ -268,4 +268,26 @@ describe("Pulse backfill panel", () => {
       await screen.findByText("Every tracked account is fully archived."),
     ).toBeInTheDocument();
   });
+
+  it("does not call a provider-depth stop a finished archive", async () => {
+    // Component test: Pulse is a view over one API snapshot, so a fixture with
+    // walking empty and depth_limited set is the exact lie this panel used to tell.
+    mockEndpoints({
+      state: pipeline({
+        archive: {
+          complete: 19,
+          depth_limited: 45,
+          tracked: 64,
+          stalled: 0,
+          walking: [],
+        },
+        quarantined: [],
+      }),
+    });
+    renderPulse();
+    expect(await screen.findByText(/45 stopped at X's serving depth/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Every tracked account is fully archived."),
+    ).not.toBeInTheDocument();
+  });
 });

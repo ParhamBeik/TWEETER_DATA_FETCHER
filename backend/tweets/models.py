@@ -189,6 +189,12 @@ class RawPage(models.Model):
     batch = models.CharField(max_length=200, db_index=True)
     page_number = models.IntegerField()
     payload = models.JSONField(default=dict)
+    # Stays SET_NULL. Raw pages outlive their run by design -- FetchRun has its
+    # own 90-day clock and a page can be reaped out from under one -- so their
+    # retention is age-based (fetching.tasks.purge_old_raw_pages), not FK-based.
+    # CASCADE here would add a second, *unchunked* delete path over the same
+    # millions of JSONB rows that purge task deliberately chunks to keep one
+    # transaction from bloating WAL on a 1 GB container.
     fetch_run = models.ForeignKey(
         FetchRun, on_delete=models.SET_NULL, null=True, blank=True, related_name="raw_pages"
     )

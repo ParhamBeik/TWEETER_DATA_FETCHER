@@ -169,11 +169,19 @@ def archive_progress() -> dict:
     """
     archive = archive_state()
     complete: list[str] = []
+    # Split out of `complete` on purpose: these accounts are done being walked,
+    # but only because X stopped serving, not because we reached their first
+    # tweet. Counting them as complete is what made "every tracked account is
+    # fully archived" true on paper while @elonmusk held three months of history.
+    depth_limited: list[str] = []
     walking: list[dict] = []
     for user in TwitterUser.objects.filter(tracking=True).order_by("priority", "handle"):
         state = archive.get(user.handle.lower(), {})
         if state.get("backfill_complete"):
-            complete.append(user.handle)
+            if state.get("backfill_depth_reason") == "provider_depth_limit":
+                depth_limited.append(user.handle)
+            else:
+                complete.append(user.handle)
             continue
         walking.append({
             "handle": user.handle,
@@ -187,8 +195,9 @@ def archive_progress() -> dict:
     walking.sort(key=lambda row: (-row["pages"], row["handle"].lower()))
     return {
         "complete": complete,
+        "depth_limited": depth_limited,
         "walking": walking,
-        "tracked": len(complete) + len(walking),
+        "tracked": len(complete) + len(depth_limited) + len(walking),
     }
 
 

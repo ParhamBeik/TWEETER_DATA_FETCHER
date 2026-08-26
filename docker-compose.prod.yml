@@ -68,6 +68,10 @@ services:
     <<: *prod-app
     mem_limit: 3g
 
+  worker_control:
+    <<: *prod-app
+    mem_limit: 256m
+
   beat:
     <<: *prod-app
     command: celery -A config beat -l info -s /tmp/celerybeat/celerybeat-schedule

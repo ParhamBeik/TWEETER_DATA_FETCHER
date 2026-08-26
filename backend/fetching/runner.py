@@ -538,6 +538,7 @@ def run_fetcher(
         # knob a single .env entry instead of two independent defaults.
         env["TDF_HISTORICAL_PAGES_PER_TICK"] = str(settings.FETCH_HISTORICAL_PAGES_PER_TICK)
         env["TDF_HISTORICAL_QUOTA_FLOOR"] = str(settings.FETCH_HISTORICAL_QUOTA_FLOOR)
+        env["TDF_ARCHIVE_EARLIEST_DATE"] = settings.FETCH_ARCHIVE_EARLIEST_DATE
         # cwd is the scratch root, so point the subprocess at this project for
         # the engine package (it ships here as `fetcher/`).
         env["PYTHONPATH"] = str(settings.BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")

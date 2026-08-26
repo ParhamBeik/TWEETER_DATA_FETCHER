@@ -121,6 +121,10 @@ def build_report(*, since, now=None) -> dict[str, Any]:
         "search": {**search, "queries": searches},
         "archive": {
             "complete": len(progress["complete"]),
+            # Reported separately or these accounts vanish: they are in neither
+            # `complete` nor `walking`, so the counts would silently stop summing
+            # to `tracked` and the depth gap would be invisible again.
+            "depth_limited": len(progress["depth_limited"]),
             "tracked": progress["tracked"],
             "walking": progress["walking"],
         },
@@ -155,12 +159,18 @@ def render(report: dict[str, Any]) -> str:
     archive = report["archive"]
     lines.append(
         f"ARCHIVE  complete={archive['complete']}/{archive['tracked']}"
+        f"  depth_limited={archive['depth_limited']}"
     )
+    if archive["depth_limited"]:
+        lines.append(
+            f"  {archive['depth_limited']} account(s) stopped at X's serving depth"
+            f" -- as deep as the API goes, not their first tweet"
+        )
     if archive["walking"]:
         lines.append("  still walking:")
         for row in archive["walking"]:
             lines.append(f"    @{row['handle']}  {row['pages']}p  {row['outcome']}")
-    else:
+    elif not archive["depth_limited"]:
         lines.append("  every tracked account is fully archived")
     return "\n".join(lines)
 
