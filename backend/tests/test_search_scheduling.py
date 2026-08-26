@@ -105,6 +105,116 @@ def test_a_partial_run_still_waits_its_interval_before_retrying():
 
 
 @pytest.mark.django_db
+def test_a_burst_of_dispatcher_ticks_queues_each_search_once():
+    """The production freeze, in one test.
+
+    The dispatcher shared a queue with the fetches it scheduled, so its ticks
+    backed up behind them and then drained ~100-deep in a row. Each tick read
+    the same due rows and queued them again: 201 stacked dispatcher messages
+    and 77 duplicate fetches for two searches, while the other four -- which
+    only the dispatcher could re-queue -- went 16 hours without running.
+    """
+    for slug in ("iran", "war", "brent"):
+        _search(slug, last_run_at=None)
+
+    with patch("fetching.tasks.run_search.delay") as delay:
+        assert dispatch_due_searches() == 3
+        for _ in range(100):
+            assert dispatch_due_searches() == 0
+
+    assert delay.call_count == 3
+    assert sorted(call.args[0] for call in delay.call_args_list) == sorted(
+        Search.objects.values_list("id", flat=True)
+    )
+
+
+@pytest.mark.django_db
+def test_the_dispatcher_does_not_re_queue_a_search_that_is_mid_run():
+    """The production timing, which a fast stubbed run hides.
+
+    Fetches take 5-15 minutes and the dispatcher ticks every 5. If the claim
+    only covered the queue wait, every tick during a run would find the search
+    still 'due' (last_run_at is stamped when the run ends) and queue a second
+    copy of the same browser-driven search -- doubling the X budget the claim
+    exists to bound.
+    """
+    search = _search("iran", interval_seconds=1800, last_run_at=None)
+    ticks = []
+
+    def slow_cycle(*_args, **_kwargs):
+        # Three dispatcher ticks land while this run is still in flight.
+        with patch("fetching.tasks.run_search.delay") as delay:
+            for _ in range(3):
+                dispatch_due_searches()
+            ticks.append(delay.call_count)
+        return 5
+
+    with patch("fetching.tasks.run_search.delay"):
+        assert dispatch_due_searches() == 1
+
+    with patch("fetching.tasks._run_cycle", side_effect=slow_cycle):
+        assert run_search(search.id) == 5
+
+    assert ticks == [0]
+
+
+@pytest.mark.django_db
+def test_a_task_lost_in_flight_costs_one_interval_not_a_permanent_freeze():
+    """Claiming by stamping means the worst case is a late run, never a stuck
+    one -- no TTL to size against an unbounded queue wait."""
+    search = _search("iran", interval_seconds=1800, last_run_at=None)
+
+    with patch("fetching.tasks.run_search.delay"):
+        assert dispatch_due_searches() == 1  # queued, then the worker dies
+
+    search.refresh_from_db()
+    search.last_run_at = timezone.now() - timedelta(seconds=1801)
+    search.save(update_fields=["last_run_at"])
+
+    with patch("fetching.tasks.run_search.delay") as delay:
+        assert dispatch_due_searches() == 1
+    delay.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_two_simultaneous_ticks_cannot_both_queue_the_same_search():
+    """The claim is a compare-and-swap, so it holds under concurrency, not just
+    when ticks happen to be sequential."""
+    search = _search("iran", interval_seconds=1800, last_run_at=None)
+    stale = Search.objects.get(id=search.id)  # a second tick's snapshot
+
+    from fetching.tasks import _claim_search
+
+    now = timezone.now()
+    assert _claim_search(search, now) is True
+    assert _claim_search(stale, now) is False
+
+
+def test_the_scheduler_does_not_share_the_queue_it_schedules_onto():
+    """A scheduler starved by its own work cannot recover on its own."""
+    from config.celery import app
+
+    routes = app.conf.task_routes
+    assert routes["fetching.tasks.dispatch_due_searches"]["queue"] != "search"
+    assert routes["fetching.tasks.run_search"]["queue"] == "search"
+
+
+def test_the_scheduler_queue_has_a_worker_that_is_not_running_fetches():
+    """Routing alone is not separation: these workers are -P solo, so one runs a
+    single task at a time regardless of how many queues it drains. Sharing a
+    process with archive walks (bounded only by the 1800s cycle timeout) would
+    reproduce the starvation with a smaller ceiling."""
+    import re
+    from pathlib import Path
+
+    compose = Path(__file__).resolve().parents[2] / "docker-compose.yml"
+    commands = re.findall(r"-Q (\S+)", compose.read_text())
+    owners = [queues for queues in commands if "control" in queues.split(",")]
+
+    assert owners == ["control"], f"control must have a dedicated worker, got {owners}"
+
+
+@pytest.mark.django_db
 def test_run_search_collapses_an_overlapping_trigger():
     """Two browser bootstraps against the one shared X session must not overlap."""
     search = _search("iran")

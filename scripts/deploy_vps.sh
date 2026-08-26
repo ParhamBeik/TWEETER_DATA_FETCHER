@@ -25,7 +25,16 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-docker compose build
+# Every compose call must carry the production overlay. Bare `docker compose`
+# silently used the base file alone, so docker-compose.prod.yml was dead config
+# for the whole life of the deployment: Postgres (:5434), Redis (:6380) and
+# gunicorn (:8002) were published on the public interface that the overlay's
+# `ports: !reset []` exists to close, signup stayed open, and Postgres ran on
+# the base 512m instead of 1g. An overlay that is only applied when someone
+# remembers the flag is not applied.
+COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
+
+"${COMPOSE[@]}" build
 
 # Prove the app actually came back before reporting success. A build that
 # succeeds and a container that boot-loops look identical to a bare `up -d`,
@@ -33,10 +42,10 @@ docker compose build
 # worse than a red one. `--wait` blocks on the healthchecks already declared in
 # docker-compose.yml (gunicorn, all four celery containers, postgres, redis)
 # rather than reimplementing them here.
-if ! docker compose up -d --remove-orphans --wait --wait-timeout 240; then
+if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
   echo "FATAL: services did not become healthy" >&2
-  docker compose ps
-  docker compose logs --tail 50 web >&2
+  "${COMPOSE[@]}" ps
+  "${COMPOSE[@]}" logs --tail 50 web >&2
   exit 1
 fi
 
@@ -46,14 +55,14 @@ fi
 # nobody could reach the app. Ask the thing users actually hit.
 echo "waiting for the frontend to serve..."
 for attempt in $(seq 1 20); do
-  if docker compose exec -T frontend wget -q -O /dev/null http://127.0.0.1/ 2>/dev/null; then
+  if "${COMPOSE[@]}" exec -T frontend wget -q -O /dev/null http://127.0.0.1/ 2>/dev/null; then
     echo "frontend healthy after ${attempt} attempt(s)"
     break
   fi
   if [ "$attempt" -eq 20 ]; then
     echo "FATAL: frontend did not serve after 20 attempts" >&2
-    docker compose ps
-    docker compose logs --tail 50 frontend >&2
+    "${COMPOSE[@]}" ps
+    "${COMPOSE[@]}" logs --tail 50 frontend >&2
     exit 1
   fi
   sleep 3

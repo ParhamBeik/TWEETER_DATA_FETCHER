@@ -12,10 +12,11 @@ from django.core.cache import cache
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import FetchRun, RawPage, Search, SearchResult, Tweet, TwitterUser
 
 from . import runner
 from .accounts import (
+    archive_progress,
     archive_state,
     interval_for,
     median_gap_seconds,
@@ -49,6 +50,35 @@ def _cycle_lock(name: str):
     finally:
         if acquired:
             cache.delete(key)
+
+
+def _claim_search(search: Search, now) -> bool:
+    """Win the right to queue this search, atomically, or leave it to the winner.
+
+    A compare-and-swap on the row the dispatcher already reads: the UPDATE only
+    matches while last_run_at still holds the value this tick saw, so exactly one
+    of N concurrent or back-to-back ticks can queue a given search. Stamping at
+    dispatch (rather than only when the task runs) is what makes it a claim --
+    the search stops being "due" the moment it is queued, not 5-15 minutes later
+    when the fetch finishes.
+
+    This is what the dispatcher amplification needed. It is cheap and used to
+    share a serialized queue with the fetches it schedules, so its ticks backed
+    up behind them; when ~100 drained in a row, each read the same due rows and
+    queued them again -- 201 stacked dispatcher messages and 77 duplicate
+    fetches for two searches, while the other four went 16 hours without running.
+
+    Deliberately a database CAS rather than a Redis marker: there is no TTL to
+    size (a queue wait has no bounded duration to guess at), no second source of
+    truth to drift, and it survives a worker crash, a redeploy and a cache flush.
+    A task lost in flight simply waits one interval -- already this codebase's
+    chosen semantic for a run that did not finish.
+    """
+    return bool(
+        Search.objects.filter(id=search.id, last_run_at=search.last_run_at).update(
+            last_run_at=now
+        )
+    )
 
 
 def _run_and_ingest(module: str, args: list[str], subsystem: str, target: str) -> int:
@@ -199,7 +229,17 @@ def backfill_historical_all() -> int:
 
         handles = _backfill_queue(settings.FETCH_HISTORICAL_CHUNK_SIZE)
         if not handles:
-            logger.info("backfill_historical_all: every tracked account is fully archived")
+            # Say what is actually true. The queue also skips quarantined
+            # accounts, and an account can be done because X refused to page
+            # deeper rather than because we reached its first tweet -- reporting
+            # either as "fully archived" is how the gap stayed invisible.
+            progress = archive_progress()
+            blocked = TwitterUser.objects.filter(tracking=True, quarantined=True).count()
+            logger.info(
+                "backfill_historical_all: nothing to walk -- %d fully archived, "
+                "%d stopped at X's serving depth, %d quarantined",
+                len(progress["complete"]), len(progress["depth_limited"]), blocked,
+            )
             return 0
 
         def _mark_chunk(_run: FetchRun) -> None:
@@ -261,12 +301,25 @@ def dispatch_due_searches() -> int:
     through and the last query in the list was SIGKILLed on every single cycle
     -- it never once completed. One task per search means each gets the full
     budget, and cadence lives in the DB instead of the beat schedule.
+
+    Being due is necessary but not sufficient: a search that already has a task
+    waiting is skipped, so a burst of dispatcher ticks queues each search at
+    most once (see _claim_search). This also bounds the queue when the fleet is
+    oversubscribed -- six searches on a 30-minute cadence against runs that take
+    5-15 minutes each cannot all keep their nominal interval, and the honest
+    degradation is "each runs a little late", not "the queue grows forever".
     """
     now = timezone.now()
     queued = 0
     for search in Search.objects.filter(enabled=True):
         due_at = search.last_run_at + timedelta(seconds=search.interval_seconds) if search.last_run_at else None
         if due_at is not None and due_at > now:
+            continue
+        if not _claim_search(search, now):
+            logger.info(
+                "dispatch_due_searches: %s is due but already queued, not re-queuing",
+                search.slug,
+            )
             continue
         run_search.delay(search.id)
         queued += 1
@@ -358,3 +411,36 @@ def purge_old_fetch_runs() -> int:
     cutoff = timezone.now() - timedelta(days=settings.FETCH_RUN_RETENTION_DAYS)
     deleted, _ = FetchRun.objects.filter(started_at__lt=cutoff).delete()
     return deleted
+
+
+@shared_task(name="fetching.tasks.purge_old_raw_pages")
+def purge_old_raw_pages() -> int:
+    """Expire raw GraphQL pages on their own, shorter clock.
+
+    They are 91% of the database and grow ~750 MB/day, so they cannot wait for
+    the 90-day run retention -- that is ~65 GB of an 80 GB margin. Their value
+    also decays much faster than a run record's: a raw page is for re-processing
+    or debugging a recent fetch, while the run row stays cheap and useful.
+
+    Deleted by age rather than via the run FK because a page can outlive its
+    run: FetchRun rows are purged on their own schedule, and pages written by a
+    run that was already reaped would otherwise have no clock at all.
+    """
+    cutoff = timezone.now() - timedelta(days=settings.RAW_PAGE_RETENTION_DAYS)
+    total = 0
+    # Chunked: a single unbounded DELETE over millions of JSONB rows holds one
+    # long transaction and bloats WAL on a 1 GB container. Also capped per run,
+    # because the first pass after deploy has a multi-GB backlog to clear and
+    # this shares a worker -- an unbounded loop would hold it for however long
+    # that takes. Whatever is left simply expires on tomorrow's run.
+    while total < settings.RAW_PAGE_PURGE_MAX_ROWS:
+        ids = list(
+            RawPage.objects.filter(created_at__lt=cutoff).values_list("pk", flat=True)[:5000]
+        )
+        if not ids:
+            break
+        deleted, _ = RawPage.objects.filter(pk__in=ids).delete()
+        total += deleted
+    if total:
+        logger.info("purge_old_raw_pages: deleted %d raw page(s)", total)
+    return total

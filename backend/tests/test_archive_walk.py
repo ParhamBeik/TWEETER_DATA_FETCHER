@@ -231,7 +231,7 @@ class ArchiveCompletionTests(unittest.TestCase):
     wrong is silent: the account simply never gets collected again.
     """
 
-    def _record(self, outcome, *, status="completed", pages=5, previous=None):
+    def _record(self, outcome, *, status="completed", pages=5, previous=None, cutoff=None):
         from fetcher.historical import _record_backfill_progress
 
         saved = {}
@@ -240,30 +240,43 @@ class ArchiveCompletionTests(unittest.TestCase):
         _record_backfill_progress(
             storage, "business", "UserTweets", previous or {},
             {"status": status, "outcome": outcome, "pages_fetched": pages, "last_cursor": "c9"},
+            cutoff=cutoff,
         )
         return saved
 
-    def test_covering_the_rolling_window_does_not_end_the_archive_walk(self):
-        """The regression: this reports status=completed but a cursor remains.
+    def test_crossing_the_archive_date_floor_ends_the_walk(self):
+        """The archive walk passes the floor as its only cutoff.
 
-        Treating it as the end marked active accounts permanently archived after
-        a few pages, and left the resumable cursor unused.
+        Coverage can therefore only come from that floor -- timeline.py takes
+        the cutoff branch and never looks at window_days -- so here this outcome
+        unambiguously means "reached the date we chose to stop at", not "covered
+        a tier's rolling few days". With no floor configured, no cutoff and no
+        window_days means coverage is None and this outcome cannot fire at all.
         """
         saved = self._record("success_window_complete")
 
-        self.assertNotIn("backfill_complete", saved)
-        self.assertEqual(saved["backfill_cursor"], "c9")
+        self.assertIs(saved["backfill_complete"], True)
+        self.assertEqual(saved["backfill_depth_reason"], "reached_date_floor")
+        self.assertIsNone(saved["backfill_cursor"])
 
-    def test_running_out_of_tweets_ends_the_walk(self):
+    def test_running_out_of_tweets_is_recorded_as_the_providers_limit(self):
+        """X offering a cursor but no tweets is its serving depth, not the
+        account's first tweet. It fires after two empty pages, and calling it
+        completeness is what put 45 of 64 accounts at exactly 45 pages and let
+        @elonmusk be reported fully archived holding three months of history.
+        The walk still stops -- retrying cannot beat a provider limit -- but the
+        reason has to survive, or the gap is invisible."""
         saved = self._record("success_timeline_exhausted")
 
         self.assertIs(saved["backfill_complete"], True)
+        self.assertEqual(saved["backfill_depth_reason"], "provider_depth_limit")
         self.assertIsNone(saved["backfill_cursor"])
 
     def test_reaching_the_true_end_of_pagination_ends_the_walk(self):
         saved = self._record("success_true_end")
 
         self.assertIs(saved["backfill_complete"], True)
+        self.assertEqual(saved["backfill_depth_reason"], "reached_first_tweet")
 
     def test_pausing_for_quota_is_not_a_stall(self):
         """It is the design working. Counting it demotes healthy accounts that
@@ -274,6 +287,37 @@ class ArchiveCompletionTests(unittest.TestCase):
 
         self.assertEqual(saved["backfill_stalled_ticks"], 2)
         self.assertNotIn("backfill_complete", saved)
+
+    def test_a_non_terminal_tick_never_un_completes_a_finished_archive(self):
+        """The over-correction to guard against.
+
+        fetch_account_historical is reachable from the API and does not check
+        completeness, so one failed manual refetch of an account that reached
+        its first tweet must not flip it back to incomplete -- that drops it
+        into the backfill queue for a full re-walk it will never need. A single
+        tick carries no evidence about completeness either way, so it may set
+        the flag but never clear it.
+        """
+        saved = self._record(
+            "paused_for_quota", status="partial", pages=0,
+            previous={"backfill_complete": True, "backfill_depth_reason": "reached_first_tweet"},
+        )
+
+        self.assertNotIn("backfill_complete", saved)
+        self.assertNotIn("backfill_depth_reason", saved)
+
+    def test_a_completed_walk_records_the_floor_it_was_judged_against(self):
+        """Lowering the floor invalidates every reached_date_floor verdict;
+        without this there is no way to find them again."""
+        from datetime import datetime as _dt
+
+        from fetcher.processing import TZ
+
+        saved = self._record(
+            "success_window_complete", cutoff=_dt(2024, 1, 1, tzinfo=TZ)
+        )
+
+        self.assertEqual(saved["backfill_floor_date"], "2024-01-01")
 
     def test_a_tick_that_fetched_nothing_for_any_other_reason_is_a_stall(self):
         saved = self._record(
@@ -289,3 +333,58 @@ class ArchiveCompletionTests(unittest.TestCase):
         )
 
         self.assertEqual(saved["backfill_stalled_ticks"], 0)
+
+
+class ArchiveFloorTests(unittest.TestCase):
+    """The date floor, exercised against a real tweet timestamp.
+
+    Integration level on purpose, over the two units that have to agree: the
+    floor is parsed in historical.py and compared in processing.py, and the
+    only bug that matters here lives in the seam between them. Testing the
+    parser alone is what let a naive datetime ship -- it looked correct in
+    isolation and raised TypeError the moment it met a real tweet.
+    """
+
+    def _cutoff(self, value):
+        import os
+        from unittest.mock import patch as _patch
+
+        from fetcher.historical import _archive_cutoff
+
+        with _patch.dict(os.environ, {"TDF_ARCHIVE_EARLIEST_DATE": value}):
+            return _archive_cutoff()
+
+    def _coverage(self, cutoff, raw_timestamp):
+        from fetcher.processing import RollingWindowEvaluator
+
+        return RollingWindowEvaluator().evaluate_tweets_cutoff(
+            [{"raw_timestamp": raw_timestamp}], cutoff=cutoff
+        )
+
+    def test_the_floor_can_actually_be_compared_to_a_tweet(self):
+        """Regression: a naive floor raised inside the per-page coverage check,
+        killing the walk before any cursor was stored -- so every tick restarted
+        from page 1 and re-spent the shared request budget."""
+        coverage = self._coverage(self._cutoff("2024-01-01"), "Wed Oct 10 20:19:24 +0000 2018")
+
+        self.assertTrue(coverage.complete)
+        self.assertEqual(coverage.reason, "cutoff_crossed")
+
+    def test_a_tweet_newer_than_the_floor_does_not_end_the_walk(self):
+        coverage = self._coverage(self._cutoff("2024-01-01"), "Wed Oct 10 20:19:24 +0000 2025")
+
+        self.assertFalse(coverage.complete)
+        self.assertEqual(coverage.reason, "cutoff_not_crossed")
+
+    def test_a_malformed_floor_falls_back_to_the_default_not_to_no_floor(self):
+        """No floor is the one outcome the setting exists to prevent."""
+        from fetcher.historical import DEFAULT_ARCHIVE_EARLIEST_DATE
+
+        cutoff = self._cutoff("01-01-2024")
+
+        self.assertIsNotNone(cutoff)
+        self.assertEqual(cutoff.strftime("%Y-%m-%d"), DEFAULT_ARCHIVE_EARLIEST_DATE)
+        self.assertIsNotNone(cutoff.tzinfo)
+
+    def test_an_unset_floor_means_no_floor(self):
+        self.assertIsNone(self._cutoff(""))

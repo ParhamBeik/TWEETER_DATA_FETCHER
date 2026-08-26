@@ -410,6 +410,9 @@ export default function Pulse() {
             <strong>{archive.complete ?? 0}</strong> of {archive.tracked ?? 0} accounts fully
             archived
             {archive.stalled ? ` · ${archive.stalled} stalled` : ""}
+            {archive.depth_limited
+              ? ` · ${archive.depth_limited} stopped at X's serving depth`
+              : ""}
           </p>
           <ul className="walk-list">
             {(archive.walking || []).map((row) => (
@@ -421,7 +424,11 @@ export default function Pulse() {
               </li>
             ))}
             {!(archive.walking || []).length && (
-              <li className="muted">Every tracked account is fully archived.</li>
+              <li className="muted">
+                {archive.depth_limited
+                  ? `${archive.depth_limited} account(s) stopped at X's serving depth — as deep as the API goes, not their first tweet`
+                  : "Every tracked account is fully archived."}
+              </li>
             )}
           </ul>
           {(pipeline?.quarantined || []).length > 0 && (

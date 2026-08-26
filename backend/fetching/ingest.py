@@ -8,6 +8,8 @@ from typing import Iterable
 
 from tweets.models import Search, SearchResult, Tweet, TweetMetric, TwitterUser
 
+from . import metric_gates
+
 logger = logging.getLogger(__name__)
 
 _EXTRAS_KEYS = (
@@ -79,6 +81,51 @@ def _extras_from_item(item: dict) -> dict:
     return {key: item.get(key) for key in _EXTRAS_KEYS}
 
 
+METRIC_FIELDS = ("likes", "retweets", "replies", "quotes", "bookmarks", "views")
+
+
+def metrics_for(item: dict) -> dict[str, int]:
+    """Engagement to store on the row, resolved to the post readers actually see.
+
+    A repost is not its own post: X returns the wrapper with the *original's*
+    like and repost counts but no view count of its own, because nobody views
+    the wrapper. Storing the wrapper verbatim gave 3,218 rows with thousands of
+    reposts and zero views -- impossible on its face, and it silently corrupted
+    every view-based ranking, since those tweets are exactly the widely-shared
+    ones. The real number was already being captured one level down in
+    extras.retweeted_tweet.metrics; it just was not the thing written to the
+    columns analytics read.
+
+    Per-field fallback rather than wholesale substitution: a wrapper that does
+    carry a figure keeps it, so this can only ever fill a gap.
+    """
+    resolved = {field: _count(item.get(field)) for field in METRIC_FIELDS}
+    if item.get("type") != "Retweet":
+        return resolved
+    original = item.get("retweeted_tweet") or {}
+    source = original.get("metrics") if isinstance(original, dict) else None
+    if not isinstance(source, dict):
+        return resolved
+    for field in METRIC_FIELDS:
+        if not resolved[field]:
+            resolved[field] = _count(source.get(field))
+    return resolved
+
+
+def _count(raw) -> int:
+    """One engagement figure as an int, never raising.
+
+    A bare int() would turn a single upstream format change ("1,200", "12K")
+    into a ValueError inside _tweet_row, aborting the whole ingest batch so
+    nothing from that fetch lands at all. Losing one number is a data-quality
+    event that metric_gates is built to report; losing the batch is an outage.
+    """
+    try:
+        return int(raw or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _author_defaults(item: dict, account: str) -> dict | None:
     if not account or account == "unknown":
         return None
@@ -125,12 +172,7 @@ def _tweet_row(
         type=item.get("type") or "Tweet",
         created_at=created_at,
         raw_created_at=str(item.get("created_at") or ""),
-        likes=item.get("likes") or 0,
-        retweets=item.get("retweets") or 0,
-        replies=item.get("replies") or 0,
-        quotes=item.get("quotes") or 0,
-        bookmarks=item.get("bookmarks") or 0,
-        views=item.get("views") or 0,
+        **metrics_for(item),
         source_language=item.get("source_language"),
         source_endpoint=item.get("source_endpoint") or "",
         source_subsystem=subsystem,
@@ -236,7 +278,30 @@ def ingest_tweets(items, subsystem: str = "") -> int:
         "ingested %d tweet(s): %d unique row(s) upserted, %d duplicate(s) collapsed",
         len(batch), len(rows), len(batch) - len(rows),
     )
+    _log_metric_violations(rows)
     return len(batch)
+
+
+def _log_metric_violations(rows: list[Tweet]) -> None:
+    """Surface impossible engagement counts at the moment they are written.
+
+    A parse regression here is invisible in a green run -- the rows land, the
+    counts are just wrong -- so it has to announce itself or it gets found
+    months later in a chart nobody trusts.
+    """
+    violations = metric_gates.summarize(rows)
+    if violations:
+        # Offending rows, not violation count: one row can trip three
+        # invariants at once, which is how "1500/1000 row(s) failed" happens.
+        offenders = sum(1 for row in rows if metric_gates.check_metrics(
+            created_at=row.created_at, likes=row.likes, retweets=row.retweets,
+            replies=row.replies, views=row.views,
+        ))
+        logger.warning(
+            "ingest: %d/%d row(s) failed an engagement sanity check: %s",
+            offenders, len(rows),
+            ", ".join(f"{name}={count}" for name, count in sorted(violations.items())),
+        )
 
 
 def _record_metrics(rows: list[Tweet], previous: dict[str, Tweet]) -> None:

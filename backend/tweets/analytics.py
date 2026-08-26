@@ -392,6 +392,10 @@ class PipelineView(APIView):
             ),
             "archive": {
                 "complete": len(progress["complete"]),
+                # Done being walked, but only because X refused to page deeper.
+                # Kept out of `complete` so the console cannot claim an archive
+                # is whole when it stops three months back.
+                "depth_limited": len(progress["depth_limited"]),
                 "tracked": progress["tracked"],
                 "stalled": len(stalled),
                 "walking": progress["walking"][:12],

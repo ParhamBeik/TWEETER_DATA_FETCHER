@@ -32,6 +32,74 @@ function MediaImage({ item, alt }) {
   return <img src={item.url} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
 }
 
+/** Best playable MP4 for a video item: highest bitrate X offers, or none. */
+function bestVariant(item) {
+  const mp4s = (item.variants || []).filter(
+    (variant) => variant.url && variant.content_type === "video/mp4",
+  );
+  if (!mp4s.length) return null;
+  // Bitrate is absent on the stream manifest and on some GIF variants; treating
+  // that as 0 keeps those as the last resort rather than accidentally the pick.
+  return mp4s.reduce((best, v) => ((v.bitrate || 0) > (best.bitrate || 0) ? v : best));
+}
+
+/**
+ * A video that plays in place, falling back to a link out.
+ *
+ * The poster frame comes from pbs.twimg.com and the stream from
+ * video.twimg.com; both hotlink fine (verified: the MP4 answers a range request
+ * with 206). If either is blocked or gone, the reader still gets a real link
+ * rather than a dead black slab.
+ */
+function MediaVideo({ item, label, permalinkUrl, style }) {
+  const [failed, setFailed] = useState(false);
+  const variant = bestVariant(item);
+  const isGif = item.type === "animated_gif";
+
+  if (failed || !variant) {
+    return (
+      <a
+        className="media-cell media-video"
+        style={style}
+        href={permalinkUrl}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Watch on X: ${label}`}
+      >
+        {item.url && <MediaImage item={item} alt={label} />}
+        <span className="play-badge" aria-hidden="true">▶</span>
+        <span className="media-note">{isGif ? "GIF" : "Watch on X"}</span>
+      </a>
+    );
+  }
+
+  return (
+    <div className="media-cell media-video" style={style}>
+      <video
+        // An X "GIF" is really a silent looping MP4, so it gets GIF semantics
+        // rather than a scrub bar. Muted is not cosmetic: browsers refuse to
+        // autoplay anything with audio, so without it the loop never starts.
+        controls={!isGif}
+        loop={isGif}
+        muted={isGif}
+        autoPlay={isGif}
+        preload="metadata"
+        playsInline
+        poster={item.url || undefined}
+        aria-label={label}
+        // src on the element, not a <source> child: a failing <source> fires
+        // `error` at itself and does not bubble, and once candidates run out the
+        // media element enters NETWORK_NO_SOURCE *without* firing error at all.
+        // With a child element this handler never runs, so a 403 or a deleted
+        // asset would leave a stuck player and no way out to X.
+        src={variant.url}
+        onError={() => setFailed(true)}
+      />
+      {isGif && <span className="media-note">GIF</span>}
+    </div>
+  );
+}
+
 function Media({ items = [], onOpen, permalinkUrl }) {
   if (!items.length) return null;
   const shown = items.slice(0, 4);
@@ -42,24 +110,14 @@ function Media({ items = [], onOpen, permalinkUrl }) {
         const isVideo = item.type === "video" || item.type === "animated_gif";
         const label = item.alt_text || (isVideo ? "Video" : "Photo");
         if (isVideo) {
-          // X's video CDN 403s hotlinked MP4s, so the poster frame is the
-          // reliable render and the play badge sends the reader to X to watch.
           return (
-            <a
+            <MediaVideo
               key={key}
-              className="media-cell media-video"
+              item={item}
+              label={label}
+              permalinkUrl={permalinkUrl}
               style={aspect(item, shown.length)}
-              href={permalinkUrl}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Watch on X: ${label}`}
-            >
-              {item.url && <MediaImage item={item} alt={label} />}
-              <span className="play-badge" aria-hidden="true">▶</span>
-              <span className="media-note">
-                {item.type === "animated_gif" ? "GIF" : "Watch on X"}
-              </span>
-            </a>
+            />
           );
         }
         return (

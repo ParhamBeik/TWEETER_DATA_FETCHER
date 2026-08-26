@@ -24,13 +24,22 @@ app.conf.task_routes = {
     "fetching.tasks.fetch_account_historical": {"queue": "historical"},
     "fetching.tasks.repoll_searches": {"queue": "search"},
     "fetching.tasks.run_search": {"queue": "search"},
-    "fetching.tasks.dispatch_due_searches": {"queue": "search"},
-    # Cheap daily maintenance, no dedicated worker needed -- piggyback on
-    # historical's queue. Without an explicit route these would sit
-    # unconsumed forever now that no worker listens to the old default queue.
-    "fetching.tasks.purge_expired_search_tweets": {"queue": "historical"},
-    "fetching.tasks.purge_old_fetch_runs": {"queue": "historical"},
-    "fetching.tasks.recompute_poll_intervals": {"queue": "historical"},
+    # The scheduler must NOT share the queue it schedules onto. It used to sit
+    # on "search", behind the 5-15 minute fetches it had itself queued, so once
+    # the backlog grew past the dispatch interval it stopped running entirely --
+    # and it is the only thing that can re-queue a search, so every query not
+    # already in the backlog froze for over a day. A scheduler starved by its
+    # own work cannot recover on its own; giving it an uncontended queue is what
+    # makes the cadence real rather than best-effort.
+    "fetching.tasks.dispatch_due_searches": {"queue": "control"},
+    # Cheap maintenance, no dedicated worker needed -- these share the control
+    # queue for the same reason: they must not queue behind a long fetch.
+    # Without an explicit route they would sit unconsumed forever, since no
+    # worker listens to the old default queue.
+    "fetching.tasks.purge_expired_search_tweets": {"queue": "control"},
+    "fetching.tasks.purge_old_fetch_runs": {"queue": "control"},
+    "fetching.tasks.purge_old_raw_pages": {"queue": "control"},
+    "fetching.tasks.recompute_poll_intervals": {"queue": "control"},
 }
 
 
@@ -66,6 +75,13 @@ def setup_periodic_tasks(sender, **_kwargs):
         schedule(86400.0),
         app.signature("fetching.tasks.purge_old_fetch_runs"),
         name="purge-old-fetch-runs",
+    )
+    # Separate from the run purge: raw pages are 91% of the database and need a
+    # much shorter clock than the run rows that reference them.
+    sender.add_periodic_task(
+        schedule(86400.0),
+        app.signature("fetching.tasks.purge_old_raw_pages"),
+        name="purge-old-raw-pages",
     )
     # Daily re-tiering: polling cadence follows each account's measured posting
     # rate, so it has to be recomputed as that rate drifts.

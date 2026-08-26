@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import TweetCard from "./TweetCard";
@@ -238,9 +238,9 @@ describe("TweetCard media", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  // X 403s hotlinked MP4s, so the poster frame plus a link to X is the only
-  // rendering that reliably works.
-  it("renders video as a poster frame linking out to X", () => {
+  // video.twimg.com serves hotlinked MP4s (a range request answers 206), so the
+  // stored variant plays in place instead of bouncing the reader out to X.
+  it("plays video in place using the highest-bitrate MP4 X offers", () => {
     renderCard({
       url: "https://x.com/elonmusk/status/1",
       media: [
@@ -248,16 +248,81 @@ describe("TweetCard media", () => {
           id: "m1",
           type: "video",
           url: "http://img/poster.jpg",
-          variants: [{ content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" }],
+          variants: [
+            { content_type: "application/x-mpegURL", url: "http://v/stream.m3u8" },
+            { content_type: "video/mp4", bitrate: 632, url: "http://v/low.mp4" },
+            { content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" },
+          ],
+        },
+      ],
+    });
+    const video = document.querySelector("video");
+    expect(video).toHaveAttribute("poster", "http://img/poster.jpg");
+    expect(video).toHaveAttribute("src", "http://v/high.mp4");
+    expect(video).toHaveAttribute("controls");
+  });
+
+  it("falls back to the X link when the video itself fails to load", () => {
+    // The src must live on <video>, not a <source> child: a failing <source>
+    // fires error at itself without bubbling, so the handler would never run
+    // and the reader would be stuck with a dead player.
+    renderCard({
+      url: "https://x.com/elonmusk/status/1",
+      media: [
+        {
+          id: "m1",
+          type: "video",
+          url: "http://img/poster.jpg",
+          variants: [{ content_type: "video/mp4", bitrate: 2176, url: "http://v/gone.mp4" }],
+        },
+      ],
+    });
+
+    fireEvent.error(document.querySelector("video"));
+
+    expect(screen.getByRole("link", { name: /Watch on X/ })).toHaveAttribute(
+      "href",
+      "https://x.com/elonmusk/status/1",
+    );
+    expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("links out to X when a video has no playable MP4", () => {
+    renderCard({
+      url: "https://x.com/elonmusk/status/1",
+      media: [
+        {
+          id: "m1",
+          type: "video",
+          url: "http://img/poster.jpg",
+          variants: [{ content_type: "application/x-mpegURL", url: "http://v/stream.m3u8" }],
         },
       ],
     });
     const link = screen.getByRole("link", { name: /Watch on X/ });
     expect(link).toHaveAttribute("href", "https://x.com/elonmusk/status/1");
     expect(within(link).getByRole("img")).toHaveAttribute("src", "http://img/poster.jpg");
+    expect(document.querySelector("video")).toBeNull();
   });
 
-  it("labels an animated GIF as such", () => {
+  it("loops an animated GIF silently instead of giving it a scrub bar", () => {
+    renderCard({
+      media: [
+        {
+          id: "m1",
+          type: "animated_gif",
+          url: "http://img/poster.jpg",
+          variants: [{ content_type: "video/mp4", bitrate: 0, url: "http://v/gif.mp4" }],
+        },
+      ],
+    });
+    const video = document.querySelector("video");
+    expect(video).toHaveAttribute("loop");
+    expect(video).not.toHaveAttribute("controls");
+    expect(screen.getByText("GIF")).toBeInTheDocument();
+  });
+
+  it("labels an animated GIF as such when it has no playable variant", () => {
     renderCard({ media: [{ id: "m1", type: "animated_gif", url: "http://img/poster.jpg" }] });
     expect(screen.getByText("GIF")).toBeInTheDocument();
   });

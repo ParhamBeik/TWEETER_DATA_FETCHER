@@ -27,8 +27,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from fetcher.config import PROJECT_ROOT
 
 from fetcher.config import get_priority_policy, ordered_accounts
-from fetcher.timeline import TIMELINE_END_OUTCOMES, FetcherEngine
-from fetcher.processing import RollingWindowEvaluator, TweetSetProcessor
+from fetcher.timeline import FetcherEngine
+from fetcher.processing import TZ, RollingWindowEvaluator, TweetSetProcessor
 from fetcher.storage import StorageManager
 from fetcher.observability import attach_run_id
 from fetcher.observability import PipelineConsole
@@ -47,6 +47,46 @@ PAGES_PER_TICK = max(1, int(os.environ.get("TDF_HISTORICAL_PAGES_PER_TICK", "25"
 # live poller, which reserves 5 more on top of this for itself. Without a floor
 # the deep walk drained the bucket every tick and live deferred every account.
 QUOTA_FLOOR = max(0, int(os.environ.get("TDF_HISTORICAL_QUOTA_FLOOR", "20")))
+
+
+DEFAULT_ARCHIVE_EARLIEST_DATE = "2024-01-01"
+
+
+def _archive_cutoff() -> Optional[datetime]:
+    """The date the archive walk deliberately stops at, or None for no floor.
+
+    Tehran-aware, because that is what it gets compared against: tweet times
+    come back from processing.tweet_datetime already in TZ, and Python refuses
+    to order an aware datetime against a naive one. A naive value here does not
+    degrade -- it raises TypeError inside the per-page coverage check, outside
+    any handler, so the walk dies on page 1 of every account before
+    _record_backfill_progress can store a cursor, and the next tick restarts
+    from the top and burns the shared request budget again.
+
+    A malformed value falls back to the shipped default rather than to None: no
+    floor at all is the one outcome this setting exists to prevent, and a
+    one-character typo in .env should not silently uncap the archive.
+    """
+    raw = (os.environ.get("TDF_ARCHIVE_EARLIEST_DATE") or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        CONSOLE.warning(
+            f"TDF_ARCHIVE_EARLIEST_DATE={raw!r} is not YYYY-MM-DD; "
+            f"falling back to {DEFAULT_ARCHIVE_EARLIEST_DATE}"
+        )
+        parsed = datetime.strptime(DEFAULT_ARCHIVE_EARLIEST_DATE, "%Y-%m-%d")
+    return parsed.replace(tzinfo=TZ)
+
+
+# Why a walk stopped, kept apart from *whether* it stopped. Only the first of
+# these means "this account's history is collected"; the second means X refused
+# to page any deeper, which is a fact about the provider, not about the account.
+DEPTH_REACHED_FLOOR = "reached_date_floor"
+DEPTH_PROVIDER_LIMIT = "provider_depth_limit"
+DEPTH_TRUE_END = "reached_first_tweet"
 
 
 # Raw page loading and verification -----------------------------------------
@@ -269,27 +309,42 @@ def _fetch_or_skip_endpoint(
     backfill_cursor = state.get("backfill_cursor")
     if backfill_cursor:
         CONSOLE.info(f"@{username} {endpoint} resuming archive walk at page {int(state.get('backfill_pages_done', 0)) + 1}")
+    elif state.get("backfill_complete"):
+        # A previously-finished account is being walked again from the top --
+        # only fetch_account_historical can get here, since the scheduler skips
+        # complete accounts. Retire the old verdict now, at the one moment a new
+        # walk actually begins, so a completion flag can never sit beside a live
+        # cursor into unfetched history. Doing this per tick instead would let a
+        # single failed manual refetch un-complete a genuinely finished archive
+        # and drop it back into the queue for a full re-walk.
+        CONSOLE.info(f"@{username} {endpoint} re-walking a completed archive from the top")
+        state = {**state, "backfill_complete": False, "backfill_depth_reason": None}
+        storage.update_endpoint_state(username, endpoint, meta={
+            "backfill_complete": False,
+            "backfill_depth_reason": None,
+            "backfill_completed_at": None,
+            "backfill_pages_done": 0,
+        })
 
-    # No rolling-window cutoff, on any tick. The archive walk is a single
-    # backward pass that should run until the timeline runs out; bounding it by
-    # the tier's 2-7 day window would stop it a few pages in with
-    # `success_window_complete`, which is how the previous revision managed to
-    # mark an active account fully archived after covering one week of it.
-    # Keeping the recent window fresh is live polling's job, not this one.
-    # Depth here is bounded by the page budget, the quota floor, and the end of
-    # the timeline -- nothing else.
+    # The only cutoff here is the absolute archive floor -- never the tier's
+    # rolling 2-7 day window, which would stop the walk a few pages in and is
+    # how a previous revision marked an active account fully archived after
+    # covering one week of it. Keeping the recent window fresh is live polling's
+    # job. Depth is bounded by the page budget, the quota floor, this floor, and
+    # the end of the timeline -- nothing else.
+    cutoff = _archive_cutoff()
     result = engine._fetch_endpoint_result(
         account=username,
         user_id=user_id,
         endpoint=endpoint,
         max_pages=PAGES_PER_TICK,
         window_days=None,
-        cutoff=None,
+        cutoff=cutoff,
         force_refetch=not backfill_cursor,
         min_remaining=QUOTA_FLOOR,
         resume_cursor=backfill_cursor,
     )
-    _record_backfill_progress(storage, username, endpoint, state, result)
+    _record_backfill_progress(storage, username, endpoint, state, result, cutoff=cutoff)
     return result, window_coverage
 
 
@@ -299,6 +354,7 @@ def _record_backfill_progress(
     endpoint: str,
     previous: Dict[str, Any],
     result: Dict[str, Any],
+    cutoff: Optional[datetime] = None,
 ) -> None:
     """Save where this tick's archive walk stopped so the next one resumes there.
 
@@ -314,7 +370,26 @@ def _record_backfill_progress(
     # merely satisfied a rolling window also reports status="completed" while
     # still holding a live cursor, and treating that as the end is how an active
     # account got marked permanently archived after a few pages.
-    finished = outcome in TIMELINE_END_OUTCOMES
+    #
+    # Three different things end a walk and they are NOT interchangeable:
+    #
+    #  - success_window_complete: crossed the archive date floor. The walk only
+    #    ever passes that floor as its cutoff, so here this is a real, intended
+    #    completion.
+    #  - success_true_end: X ran out of cursor. The account's first tweet.
+    #  - success_timeline_exhausted: X kept offering a cursor but stopped
+    #    returning tweets. This is X's serving depth, not the account's first
+    #    tweet -- it fires after two empty pages, and treating it as "we have
+    #    everything" is what put 45 of 64 accounts at exactly 45 pages and let
+    #    @elonmusk be reported fully archived with three months of history.
+    #    It still ends the walk (retrying cannot get past a provider limit) but
+    #    it is recorded as a provider limit, not as completeness.
+    depth_reason = {
+        "success_window_complete": DEPTH_REACHED_FLOOR,
+        "success_true_end": DEPTH_TRUE_END,
+        "success_timeline_exhausted": DEPTH_PROVIDER_LIMIT,
+    }.get(outcome)
+    finished = depth_reason is not None
     cursor = result.get("last_cursor")
     # A tick that fetched nothing made no progress. The queue sorts on this so an
     # account that cannot advance (dead session, permanent 404) sinks to the back
@@ -330,12 +405,32 @@ def _record_backfill_progress(
         "backfill_stalled_ticks": (
             stalled if outcome == "paused_for_quota" else (0 if fetched else stalled + 1)
         ),
+        # Which floor this verdict was reached against. Without it, lowering
+        # FETCH_ARCHIVE_EARLIEST_DATE silently invalidates every account marked
+        # reached_date_floor with no way to find them again.
+        "backfill_floor_date": (cutoff.strftime("%Y-%m-%d") if cutoff else None),
     }
+    # Only ever *set* completion here, never clear it: this function sees one
+    # tick, and a non-terminal tick carries no evidence that the account is
+    # incomplete. Clearing belongs at the one place a new walk starts (see
+    # _fetch_or_skip_endpoint), which is what keeps the flag from contradicting
+    # the cursor beside it without un-completing finished archives.
     if finished:
         meta["backfill_complete"] = True
+        meta["backfill_depth_reason"] = depth_reason
         meta["backfill_cursor"] = None
         meta["backfill_completed_at"] = datetime.utcnow().isoformat() + "Z"
-        CONSOLE.success(f"@{username} {endpoint} archive walk complete after {pages_done} page(s)")
+        if depth_reason == DEPTH_PROVIDER_LIMIT:
+            CONSOLE.warning(
+                f"@{username} {endpoint} stopped at X's serving depth after "
+                f"{pages_done} page(s) -- this is as deep as the API goes, "
+                f"not the account's first tweet"
+            )
+        else:
+            CONSOLE.success(
+                f"@{username} {endpoint} archive walk complete after "
+                f"{pages_done} page(s) ({depth_reason})"
+            )
     elif cursor and str(cursor) not in {"__START__", "__END__"}:
         meta["backfill_cursor"] = str(cursor)
     # Any other outcome (a hard failure before the first page) leaves the stored

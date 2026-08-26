@@ -127,7 +127,7 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 30,
 }
 
-from datetime import timedelta  # noqa: E402  (kept next to the settings it configures)
+from datetime import datetime, timedelta  # noqa: E402  (kept next to the settings it configures)
 
 SIMPLE_JWT = {
     # Short access token, long refresh: a stolen access token expires on its
@@ -224,6 +224,26 @@ FETCH_HISTORICAL_PAGES_PER_TICK = int(os.environ.get("FETCH_HISTORICAL_PAGES_PER
 # live poller (which reserves 5 more for itself). With no floor the backfill
 # drained the bucket every tick and live deferred 100% of its accounts.
 FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "20"))
+# How far back the archive walk is willing to go, as an ISO date. This is a
+# deliberate storage ceiling, not a technical limit: an unbounded walk over 64
+# accounts collects millions of tweets nobody asked for. Reaching it is a real
+# completion -- the only other honest one is X refusing to page further, which
+# is a *provider* limit and must not be recorded as "we have everything".
+#
+# Lowering this invalidates every account already marked `reached_date_floor`:
+# they stopped at the old floor and will not resume on their own. Reopen them
+# with `manage.py reopen_shallow_archives` after changing it. Each completion
+# records the floor it was judged against (`backfill_floor_date`) so the
+# affected accounts can be found.
+FETCH_ARCHIVE_EARLIEST_DATE = os.environ.get("FETCH_ARCHIVE_EARLIEST_DATE", "2024-01-01")
+# Validated at import so a typo fails the container's boot loudly, rather than
+# reaching the fetcher subprocess where the only signal is a line in a log.
+try:
+    datetime.strptime(FETCH_ARCHIVE_EARLIEST_DATE, "%Y-%m-%d")
+except ValueError as exc:
+    raise ImproperlyConfigured(
+        f"FETCH_ARCHIVE_EARLIEST_DATE={FETCH_ARCHIVE_EARLIEST_DATE!r} is not YYYY-MM-DD"
+    ) from exc
 # Fallback cadence for a Search created without one. Per-search cadence now
 # lives on the row itself (Search.interval_seconds).
 FETCH_SEARCH_INTERVAL_SECONDS = int(os.environ.get("FETCH_SEARCH_INTERVAL_SECONDS", "1800"))
@@ -239,6 +259,12 @@ FETCH_MAX_ACCOUNTS_PER_RUN = int(os.environ.get("FETCH_MAX_ACCOUNTS_PER_RUN", "1
 FETCH_INTERVAL_SAMPLE_DAYS = int(os.environ.get("FETCH_INTERVAL_SAMPLE_DAYS", "30"))
 SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
+# Raw pages get a shorter clock than the runs that produced them: they are the
+# bulk of the database (~750 MB/day) and their usefulness decays much faster.
+RAW_PAGE_RETENTION_DAYS = int(os.environ.get("RAW_PAGE_RETENTION_DAYS", "30"))
+# Ceiling per purge run. The first pass after deploy has a multi-GB backlog and
+# shares a worker with the search dispatcher; the remainder expires tomorrow.
+RAW_PAGE_PURGE_MAX_ROWS = int(os.environ.get("RAW_PAGE_PURGE_MAX_ROWS", "200000"))
 # Signup is open by default. New accounts are read-only (see
 # tweets.permissions.IsStaffOrReadOnly); operating the fetcher and replacing the
 # shared X session require staff, granted from the Django admin.
