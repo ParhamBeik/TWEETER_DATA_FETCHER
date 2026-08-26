@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from fetching.accounts import account_ops, live_state_map
+from fetching.media import lookup_local_urls, photo_urls_from_extras, rewrite_media_blob
 
 from .models import FetchRun, Search, Tweet, TwitterUser
 
@@ -69,11 +70,24 @@ class TweetSerializer(serializers.ModelSerializer):
         ]
 
     def _extra(self, obj: Tweet, key: str, default=None):
-        extras = obj.extras if isinstance(obj.extras, dict) else {}
+        extras = self._rewritten_extras(obj)
         if key in extras:
             return extras.get(key, default)
         payload = obj.payload if isinstance(getattr(obj, "payload", None), dict) else {}
         return payload.get(key, default)
+
+    def _rewritten_extras(self, obj: Tweet) -> dict:
+        """Prefer locally archived photo URLs; fall back to the X URL."""
+        cache = getattr(self, "_rewritten_extras_cache", None)
+        if cache is None:
+            self._rewritten_extras_cache = cache = {}
+        key = obj.pk
+        if key in cache:
+            return cache[key]
+        extras = obj.extras if isinstance(obj.extras, dict) else {}
+        assets = lookup_local_urls(photo_urls_from_extras(extras))
+        cache[key] = rewrite_media_blob(extras, assets) if assets else extras
+        return cache[key]
 
     def get_media(self, obj):
         return self._extra(obj, "media", []) or []

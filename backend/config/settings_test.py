@@ -36,3 +36,8 @@ CACHES = {
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 ALLOW_REGISTRATION = True
+
+import tempfile  # noqa: E402
+
+MEDIA_ROOT = Path(tempfile.mkdtemp(prefix="twitter-saas-media-"))
+MEDIA_URL = "/media/"

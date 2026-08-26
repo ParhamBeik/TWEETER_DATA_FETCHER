@@ -444,3 +444,16 @@ def purge_old_raw_pages() -> int:
     if total:
         logger.info("purge_old_raw_pages: deleted %d raw page(s)", total)
     return total
+
+
+@shared_task(name="fetching.tasks.archive_media")
+def archive_media() -> int:
+    """Copy a small batch of tweet photos onto the media volume.
+
+    Chunked on purpose: this shares the solo control worker with the search
+    dispatcher. One giant download of the backlog would starve dispatch the
+    same way a shared search queue once did.
+    """
+    from fetching.media import archive_batch
+
+    return archive_batch(settings.MEDIA_ARCHIVE_BATCH)

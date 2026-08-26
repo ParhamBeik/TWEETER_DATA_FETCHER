@@ -165,7 +165,11 @@ export default function Pulse() {
         <Stat
           label="Accounts archived"
           value={archive.tracked ? `${archive.complete}/${archive.tracked}` : "—"}
-          hint={`${archivePercent}% of the backfill is finished`}
+          hint={
+            archive.depth_limited
+              ? `${archive.depth_limited} stopped at X's serving depth`
+              : `${archivePercent}% of the backfill is finished`
+          }
         />
         <Stat
           label="Run success rate"

@@ -110,6 +110,14 @@ STATIC_URL = "static/"
 # collectstatic target. Required for /admin/ static assets when served behind
 # gunicorn (DEBUG=0); harmless under DEBUG=1.
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# Archived photos. A compose volume in production; never the fetcher scratch
+# tree, which is deleted after every run.
+MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", str(BASE_DIR / "media")))
+MEDIA_URL = "/media/"
+# Photos per archive_media tick. The control worker is solo; a giant job would
+# starve the search dispatcher the same way a shared queue once did.
+MEDIA_ARCHIVE_BATCH = int(os.environ.get("MEDIA_ARCHIVE_BATCH", "25"))
+MEDIA_ARCHIVE_INTERVAL_SECONDS = int(os.environ.get("MEDIA_ARCHIVE_INTERVAL_SECONDS", "120"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {

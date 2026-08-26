@@ -151,3 +151,62 @@ def test_call_command_prints_the_report():
         summary={"raw_pages": 1, "ingested_tweets": 0},
     )
     call_command("fetch_report", "--since", "24h")
+
+
+@pytest.mark.django_db
+def test_exhausted_without_a_reason_is_depth_limited_not_complete():
+    """Rows written before backfill_depth_reason existed still lie as complete."""
+    from fetching.accounts import archive_progress
+
+    TwitterUser.objects.create(handle="elonmusk", tracking=True)
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    EndpointState.objects.create(
+        account="elonmusk",
+        endpoint="UserTweets",
+        data={
+            "backfill_complete": True,
+            "backfill_last_outcome": "success_timeline_exhausted",
+            "backfill_pages_done": 45,
+        },
+    )
+    EndpointState.objects.create(
+        account="jack",
+        endpoint="UserTweets",
+        data={
+            "backfill_complete": True,
+            "backfill_depth_reason": "reached_first_tweet",
+            "backfill_last_outcome": "success_true_end",
+        },
+    )
+    progress = archive_progress()
+    assert progress["complete"] == ["jack"]
+    assert progress["depth_limited"] == ["elonmusk"]
+    assert progress["walking"] == []
+
+
+@pytest.mark.django_db
+def test_reopen_stamps_exhausted_rows_instead_of_re_walking_them():
+    TwitterUser.objects.create(handle="elonmusk", tracking=True)
+    TwitterUser.objects.create(handle="stuck", tracking=True)
+    EndpointState.objects.create(
+        account="elonmusk",
+        endpoint="UserTweets",
+        data={
+            "backfill_complete": True,
+            "backfill_last_outcome": "success_timeline_exhausted",
+        },
+    )
+    EndpointState.objects.create(
+        account="stuck",
+        endpoint="UserTweets",
+        data={
+            "backfill_complete": True,
+            "backfill_last_outcome": "paused_for_quota",
+        },
+    )
+    call_command("reopen_shallow_archives")
+    exhausted = EndpointState.objects.get(account="elonmusk").data
+    stuck = EndpointState.objects.get(account="stuck").data
+    assert exhausted["backfill_complete"] is True
+    assert exhausted["backfill_depth_reason"] == "provider_depth_limit"
+    assert stuck["backfill_complete"] is False

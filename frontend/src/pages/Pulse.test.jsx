@@ -173,6 +173,18 @@ describe("Pulse stat tiles", () => {
     expect(screen.getByText(/30% of the backfill is finished/)).toBeInTheDocument();
   });
 
+  it("names provider-depth stops on the archive tile instead of calling them finished", async () => {
+    mockEndpoints({
+      state: pipeline({
+        archive: { complete: 19, depth_limited: 45, tracked: 64, stalled: 0, walking: [] },
+      }),
+    });
+    renderPulse();
+    expect(await screen.findByText("19/64")).toBeInTheDocument();
+    expect(screen.getAllByText(/45 stopped at X's serving depth/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/of the backfill is finished/)).not.toBeInTheDocument();
+  });
+
   it("derives the run success rate from the window's run outcomes", async () => {
     renderPulse();
     // 8 completed of 10 runs.
@@ -285,7 +297,7 @@ describe("Pulse backfill panel", () => {
       }),
     });
     renderPulse();
-    expect(await screen.findByText(/45 stopped at X's serving depth/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/45 stopped at X's serving depth/)).length).toBeGreaterThan(0);
     expect(
       screen.queryByText("Every tracked account is fully archived."),
     ).not.toBeInTheDocument();
