@@ -1,4 +1,4 @@
-"""Integration tests: feed merge/order and search create enqueue, through DRF."""
+"""Integration tests: feed scope/order and the search lifecycle, through DRF."""
 import json
 from datetime import timedelta
 from unittest.mock import patch
@@ -8,8 +8,16 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from rest_framework.test import APIClient
 
-from fetching.ingest import upsert_tweet
-from tweets.models import FetchRun, Search, SearchResult, Tweet, TwitterUser, XSession
+from fetching.ingest import ingest_search_hits, upsert_tweet
+from tweets.models import (
+    FetchRun,
+    Search,
+    SearchHit,
+    SearchTweet,
+    Tweet,
+    TwitterUser,
+    XSession,
+)
 
 
 @pytest.fixture
@@ -48,33 +56,52 @@ def _tweet(account, rest_id, created):
 
 
 @pytest.mark.django_db
-def test_feed_merges_follows_and_searches_ordered_desc(client_user):
+def test_feed_serves_tracked_accounts_newest_first(client_user):
     client, user = client_user
     TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
 
     _tweet("jack", "1", "Wed Oct 10 20:19:24 +0000 2018")
     _tweet("jack", "2", "Wed Oct 10 21:19:24 +0000 2018")
-
-    search = Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True)
-    via_search = _tweet("someoneelse", "3", "Wed Oct 10 22:19:24 +0000 2018")
-    SearchResult.objects.create(search=search, tweet=via_search, rank=0)
+    _tweet("someoneelse", "3", "Wed Oct 10 22:19:24 +0000 2018")
 
     resp = client.get("/api/feed/")
     assert resp.status_code == 200
-    ids = [t["tweet_id"] for t in resp.data["results"]]
-    assert ids == ["3", "2", "1"]  # newest first, merged, no dupes
+    # Untracked "3" is absent: the feed is the UserTweets collector's output.
+    assert [t["tweet_id"] for t in resp.data["results"]] == ["2", "1"]
 
 
 @pytest.mark.django_db
-def test_feed_dedupes_tweet_in_both_follow_and_search(client_user):
-    client, user = client_user
-    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
-    t = _tweet("jack", "9", "Wed Oct 10 20:19:24 +0000 2018")
-    search = Search.objects.create(name="s", slug="s", raw_query="s", enabled=True)
-    SearchResult.objects.create(search=search, tweet=t, rank=0)
+def test_feed_excludes_search_results(client_user):
+    """The feed is one collector, not a blend of two.
 
-    resp = client.get("/api/feed/")
-    assert [x["tweet_id"] for x in resp.data["results"]] == ["9"]  # once, not twice
+    Saved searches used to be unioned into the feed, so merely saving a query
+    rewrote what every user saw, and a search hit inherited the archive's
+    retention. Hits now live in their own table, reachable only through the
+    search that found them.
+    """
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+    _tweet("jack", "9", "Wed Oct 10 20:19:24 +0000 2018")
+    search = Search.objects.create(name="s", slug="s", raw_query="s", enabled=True)
+    ingest_search_hits(
+        search,
+        [{
+            "rest_id": "77",
+            "author_id": "5",
+            "account": "stranger",
+            "text": "found by search",
+            "created_at": "Wed Oct 10 23:19:24 +0000 2018",
+        }],
+    )
+
+    feed_ids = [x["tweet_id"] for x in client.get("/api/feed/").data["results"]]
+    result_ids = [
+        x["tweet_id"]
+        for x in client.get(f"/api/searches/{search.id}/results/").data["results"]
+    ]
+
+    assert feed_ids == ["9"]
+    assert result_ids == ["77"]
 
 
 @pytest.mark.django_db
@@ -571,16 +598,19 @@ def test_feed_window_bounds_by_posted_time(client_user):
 
 
 @pytest.mark.django_db
-def test_feed_names_the_search_that_found_a_tweet(client_user):
+def test_search_results_are_labelled_as_search_captures(client_user):
+    """A hit reports which collector found it, so the console can colour it."""
     client, _ = client_user
     search = Search.objects.create(name="ai", slug="ai", raw_query="ai", enabled=True)
-    tweet = _post("stranger", "found")
-    SearchResult.objects.create(search=search, tweet=tweet, rank=0)
+    ingest_search_hits(
+        search,
+        [{"rest_id": "found", "author_id": "3", "account": "stranger", "text": "hit"}],
+    )
 
-    row = client.get("/api/feed/").data["results"][0]
+    row = client.get(f"/api/searches/{search.id}/results/").data["results"][0]
 
-    assert row["searches"] == ["ai"]
-    assert row["source_endpoint"] == "UserTweets"
+    assert row["source_subsystem"] == "search"
+    assert row["source_endpoint"] == "SearchTimeline"
 
 
 @pytest.mark.django_db

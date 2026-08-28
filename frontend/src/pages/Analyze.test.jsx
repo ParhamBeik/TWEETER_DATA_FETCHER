@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +24,14 @@ vi.mock("recharts", async () => {
   };
 });
 
+// The topics panel offers a staff-only "hide this term" control, so the page
+// reads identity. Stubbed rather than wrapped in a real AuthProvider: that would
+// put a token refresh and a /auth/me round trip into every test in this file.
+vi.mock("../auth", async () => {
+  const actual = await vi.importActual("../auth");
+  return { ...actual, useAuth: () => ({ isStaff: true, authed: true }) };
+});
+
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -31,10 +39,33 @@ vi.mock("react-router-dom", async () => {
 });
 
 const topics = {
-  dimension: "hashtags",
+  dimension: "both",
+  rank: "surging",
+  total_docs: 1000,
+  previous_total_docs: 1000,
   results: [
-    { topic: "starship", kind: "hashtag", current_count: 40, previous_count: 10, delta: 30 },
-    { topic: "interest rates", kind: "phrase", current_count: 12, previous_count: 20, delta: -8 },
+    {
+      topic: "starship",
+      kind: "hashtag",
+      docs: 40,
+      authors: 12,
+      previous_docs: 10,
+      delta: 30,
+      share: 0.04,
+      baseline_share: 0.01,
+      score: 6.1,
+    },
+    {
+      topic: "interest rates",
+      kind: "phrase",
+      docs: 12,
+      authors: 5,
+      previous_docs: 20,
+      delta: -8,
+      share: 0.012,
+      baseline_share: 0.02,
+      score: -1.9,
+    },
   ],
 };
 
@@ -115,7 +146,7 @@ describe("Analyze filters", () => {
     renderAnalyze();
     await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
 
-    await user.click(screen.getByRole("button", { name: "Velocity" }));
+    await user.click(screen.getByRole("tab", { name: "Velocity" }));
 
     await waitFor(() => expect(analyticsPaths().at(-1)).toContain("/analytics/velocity/"));
   });
@@ -123,12 +154,12 @@ describe("Analyze filters", () => {
   it("carries the topic dimension only on the topics tab", async () => {
     const user = userEvent.setup();
     renderAnalyze();
-    await waitFor(() => expect(analyticsPaths().at(-1)).toContain("dimension=hashtags"));
-
-    await user.click(screen.getByRole("button", { name: "Phrases" }));
     await waitFor(() => expect(analyticsPaths().at(-1)).toContain("dimension=phrases"));
 
-    await user.click(screen.getByRole("button", { name: "Velocity" }));
+    await user.click(screen.getByRole("button", { name: "Hashtags" }));
+    await waitFor(() => expect(analyticsPaths().at(-1)).toContain("dimension=hashtags"));
+
+    await user.click(screen.getByRole("tab", { name: "Velocity" }));
     await waitFor(() => {
       const path = analyticsPaths().at(-1);
       expect(path).toContain("/analytics/velocity/");
@@ -159,25 +190,44 @@ describe("Analyze filters", () => {
 });
 
 describe("Analyze topics", () => {
-  it("renders hashtags and mined phrases with their period delta", async () => {
+  it("shows the post and account counts behind each term", async () => {
     renderAnalyze();
     expect(await screen.findByText("#starship")).toBeInTheDocument();
     expect(screen.getByText("interest rates")).toBeInTheDocument();
-    expect(screen.getByText("+30")).toBeInTheDocument();
-    expect(screen.getByText("-8")).toBeInTheDocument();
+    // Documents and distinct authors, not raw occurrence counts -- these are
+    // the numbers that let a reader judge whether a term earned its place.
+    const row = screen.getByRole("button", { name: "#starship" }).closest("tr");
+    expect(within(row).getByText("40")).toBeInTheDocument();
+    expect(within(row).getByText("12")).toBeInTheDocument();
+  });
+
+  it("states each term's rate against its own baseline", async () => {
+    renderAnalyze();
+    expect(await screen.findByText("4.0× its usual rate")).toBeInTheDocument();
+    expect(screen.getByText("1.7× below its usual rate")).toBeInTheDocument();
+  });
+
+  it("can rank by volume instead of by what surged", async () => {
+    const user = userEvent.setup();
+    renderAnalyze();
+    await waitFor(() => expect(analyticsPaths().at(-1)).toContain("rank=surging"));
+
+    await user.click(screen.getByRole("button", { name: "Most posts" }));
+
+    await waitFor(() => expect(analyticsPaths().at(-1)).toContain("rank=volume"));
   });
 
   it("deep-links a topic into the feed", async () => {
     const user = userEvent.setup();
     renderAnalyze();
-    await user.click(await screen.findByRole("button", { name: /#starship/ }));
+    await user.click(await screen.findByRole("button", { name: "#starship" }));
     expect(mockNavigate).toHaveBeenCalledWith("/feed?q=starship&window=");
   });
 
   it("shows an empty state rather than a bare axis", async () => {
     mockAnalytics({ topics: { results: [], dimension: "hashtags" } });
     renderAnalyze();
-    expect(await screen.findByText("No topics in this window yet.")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing stands out in this window")).toBeInTheDocument();
   });
 });
 
@@ -186,7 +236,7 @@ describe("Analyze velocity", () => {
     const user = userEvent.setup();
     renderAnalyze();
     await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
-    await user.click(screen.getByRole("button", { name: "Velocity" }));
+    await user.click(screen.getByRole("tab", { name: "Velocity" }));
 
     expect(await screen.findByText("climbing")).toBeInTheDocument();
     expect(screen.getByText("Engagement gained over time")).toBeInTheDocument();
@@ -197,9 +247,9 @@ describe("Analyze velocity", () => {
     mockAnalytics({ velocity: { results: [], series: [] } });
     renderAnalyze();
     await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
-    await user.click(screen.getByRole("button", { name: "Velocity" }));
+    await user.click(screen.getByRole("tab", { name: "Velocity" }));
 
-    expect(await screen.findByText(/needs at least two snapshots/)).toBeInTheDocument();
+    expect(await screen.findByText(/at least two snapshots/)).toBeInTheDocument();
   });
 });
 
@@ -211,7 +261,7 @@ describe("Analyze narratives", () => {
     renderAnalyze();
     await screen.findByText("#starship");
 
-    await user.click(screen.getByRole("button", { name: "Narratives" }));
+    await user.click(screen.getByRole("tab", { name: "Narratives" }));
 
     expect(await screen.findByText(/82% similar/)).toBeInTheDocument();
     expect(screen.queryByText("#starship")).toBeNull();
@@ -221,7 +271,7 @@ describe("Analyze narratives", () => {
     const user = userEvent.setup();
     renderAnalyze();
     await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
-    await user.click(screen.getByRole("button", { name: "Narratives" }));
+    await user.click(screen.getByRole("tab", { name: "Narratives" }));
 
     const link = await screen.findByRole("link", { name: "@alice" });
     expect(link).toHaveAttribute("href", "https://x.com/alice/status/1");

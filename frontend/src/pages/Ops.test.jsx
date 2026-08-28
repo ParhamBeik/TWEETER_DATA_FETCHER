@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import Cycles from "./Cycles";
+import Ops from "./Ops";
 import { api } from "../api";
 
 // Component tests: the ops page is the operator's control surface for triggering
@@ -47,20 +47,20 @@ beforeEach(() => api.mockReset());
 describe("session health panel", () => {
   it("reports a configured session", async () => {
     routeApi();
-    render(<Cycles />);
-    expect(await screen.findByText("● Configured")).toBeInTheDocument();
+    render(<Ops />);
+    expect(await screen.findByText("Configured")).toBeInTheDocument();
   });
 
   it("warns loudly when no X session is loaded", async () => {
     routeApi({ health: session({ configured: false, cookie_names: [], header_names: [] }) });
-    render(<Cycles />);
-    expect(await screen.findByText("● No active X session")).toBeInTheDocument();
+    render(<Ops />);
+    expect(await screen.findByText("No active session")).toBeInTheDocument();
   });
 
   it("shows which credential-critical cookies are present", async () => {
     routeApi({ health: session({ cookie_names: ["auth_token"] }) });
-    render(<Cycles />);
-    await screen.findByText("● Configured");
+    render(<Ops />);
+    await screen.findByText("Configured");
     // auth_token present, ct0 missing, bearer present.
     expect(screen.getAllByText("present")).toHaveLength(2);
     expect(screen.getAllByText("missing")).toHaveLength(1);
@@ -68,20 +68,20 @@ describe("session health panel", () => {
 
   it("summarises the transaction-id pools", async () => {
     routeApi();
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("UserTweets:3")).toBeInTheDocument();
   });
 
   it("says 'none' when no tx-id pools exist", async () => {
     routeApi({ health: session({ transaction_id_pools: {} }) });
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("none")).toBeInTheDocument();
   });
 
   it("keeps the update button disabled until JSON is entered", async () => {
     const user = userEvent.setup();
     routeApi();
-    render(<Cycles />);
+    render(<Ops />);
     const button = await screen.findByRole("button", { name: "Update session" });
     expect(button).toBeDisabled();
     await user.type(screen.getByLabelText("X session JSON"), "{{}");
@@ -91,7 +91,7 @@ describe("session health panel", () => {
   it("posts a parsed session payload", async () => {
     const user = userEvent.setup();
     routeApi();
-    render(<Cycles />);
+    render(<Ops />);
     await screen.findByRole("button", { name: "Update session" });
     // paste, not type: user-event treats `{` as a special key sequence.
     await user.click(screen.getByLabelText("X session JSON"));
@@ -106,7 +106,7 @@ describe("session health panel", () => {
   it("rejects malformed JSON with a readable message and no request", async () => {
     const user = userEvent.setup();
     routeApi();
-    render(<Cycles />);
+    render(<Ops />);
     await screen.findByRole("button", { name: "Update session" });
     await user.type(screen.getByLabelText("X session JSON"), "not json");
     await user.click(screen.getByRole("button", { name: "Update session" }));
@@ -116,12 +116,12 @@ describe("session health panel", () => {
 });
 
 describe("cycle controls", () => {
-  it.each([["Run live", "live"], ["Run historical", "historical"], ["Run search", "search"]])(
+  it.each([["Run live poll", "live"], ["Run archive walk", "historical"], ["Run searches", "search"]])(
     "%s queues the %s subsystem",
     async (label, subsystem) => {
       const user = userEvent.setup();
       routeApi();
-      render(<Cycles />);
+      render(<Ops />);
       await user.click(await screen.findByRole("button", { name: label }));
       await waitFor(() => expect(api).toHaveBeenCalledWith("/cycles/", {
         method: "POST",
@@ -133,15 +133,15 @@ describe("cycle controls", () => {
   it("confirms the queued cycle", async () => {
     const user = userEvent.setup();
     routeApi();
-    render(<Cycles />);
-    await user.click(await screen.findByRole("button", { name: "Run live" }));
+    render(<Ops />);
+    await user.click(await screen.findByRole("button", { name: "Run live poll" }));
     expect(await screen.findByText("Queued live cycle.")).toBeInTheDocument();
   });
 
   it("filters the run list by subsystem", async () => {
     const user = userEvent.setup();
     routeApi();
-    render(<Cycles />);
+    render(<Ops />);
     await waitFor(() => expect(api).toHaveBeenCalledWith("/runs/"));
     await user.selectOptions(screen.getByLabelText("Filter by subsystem"), "search");
     await waitFor(() => expect(api).toHaveBeenCalledWith("/runs/?subsystem=search"));
@@ -151,32 +151,32 @@ describe("cycle controls", () => {
 describe("run list and detail", () => {
   it("shows an empty state when nothing has run", async () => {
     routeApi({ runs: [] });
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("No fetch runs yet.")).toBeInTheDocument();
   });
 
   it("renders a run's status, subsystem and ingest count", async () => {
     routeApi({ runs: [run()] });
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("completed")).toBeInTheDocument();
     expect(screen.getByText("+7")).toBeInTheDocument();
   });
 
   it("renders an em dash when a run ingested nothing", async () => {
     routeApi({ runs: [run({ summary: { ingested_tweets: 0 } })] });
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("—")).toBeInTheDocument();
   });
 
   it("humanises the auth_required status", async () => {
     routeApi({ runs: [run({ status: "auth_required" })] });
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("auth required")).toBeInTheDocument();
   });
 
   it("offers retry only for failed or partial runs", async () => {
     routeApi({ runs: [run({ run_id: "ok" }), run({ run_id: "bad", status: "failed" })] });
-    render(<Cycles />);
+    render(<Ops />);
     await screen.findByText("failed");
     expect(screen.getAllByRole("button", { name: "retry" })).toHaveLength(1);
   });
@@ -184,7 +184,7 @@ describe("run list and detail", () => {
   it("re-queues the subsystem from a failed run's retry action", async () => {
     const user = userEvent.setup();
     routeApi({ runs: [run({ status: "failed", subsystem: "search" })] });
-    render(<Cycles />);
+    render(<Ops />);
     await user.click(await screen.findByRole("button", { name: "retry" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/cycles/", {
       method: "POST",
@@ -194,8 +194,8 @@ describe("run list and detail", () => {
 
   it("prompts the operator to pick a run before any is selected", async () => {
     routeApi({ runs: [run()] });
-    render(<Cycles />);
-    expect(await screen.findByText("Select a run to inspect logs and failures.")).toBeInTheDocument();
+    render(<Ops />);
+    expect(await screen.findByText("Pick a run")).toBeInTheDocument();
   });
 
   it("shows the log excerpt when a run is inspected", async () => {
@@ -204,7 +204,7 @@ describe("run list and detail", () => {
       runs: [run()],
       detail: run({ log_excerpt: "fetched 7 tweets", failure_ledger: {} }),
     });
-    render(<Cycles />);
+    render(<Ops />);
     await user.click(await screen.findByRole("button", { name: /completed/ }));
     expect(await screen.findByText("fetched 7 tweets")).toBeInTheDocument();
   });
@@ -215,7 +215,7 @@ describe("run list and detail", () => {
       runs: [run({ status: "failed" })],
       detail: run({ status: "failed", failure_ledger: { http_404: 3 } }),
     });
-    render(<Cycles />);
+    render(<Ops />);
     await user.click(await screen.findByRole("button", { name: /failed/ }));
     expect(await screen.findByText(/http_404/)).toBeInTheDocument();
   });
@@ -238,7 +238,7 @@ describe("polling resilience", () => {
       if (path === "/session/") return session();
       return { results: [] };
     });
-    render(<Cycles />);
+    render(<Ops />);
     expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
 
     await act(() => vi.advanceTimersByTimeAsync(10000));
@@ -247,7 +247,7 @@ describe("polling resilience", () => {
 
   it("stops polling once unmounted", async () => {
     routeApi();
-    const { unmount } = render(<Cycles />);
+    const { unmount } = render(<Ops />);
     await waitFor(() => expect(api).toHaveBeenCalled());
     unmount();
     const callsAfterUnmount = api.mock.calls.length;

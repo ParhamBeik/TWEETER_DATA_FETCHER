@@ -173,10 +173,9 @@ describe("TweetCard post shapes", () => {
     expect(screen.queryByText(/reposted|thread/)).toBeNull();
   });
 
-  it("badges a post that a saved search found", () => {
-    renderCard({ searches: ["ai-policy"] });
-    expect(screen.getByText(/ai-policy/)).toBeInTheDocument();
-  });
+  // The "found by search" badge is gone with the collector split: search hits
+  // live in their own table and are only ever rendered on the search page, so a
+  // card in the feed can no longer have been found by a saved query.
 });
 
 describe("TweetCard metrics", () => {

@@ -26,7 +26,7 @@ export default function Login() {
         retry: false,
       });
       signIn(tokens);
-      navigate("/", { replace: true });
+      navigate("/feed", { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -42,14 +42,15 @@ export default function Login() {
       error={error}
       footer={
         <>
-          New to Signal Archive? <Link to="/signup">Create an account</Link>
+          New to Signal Archive? <Link className="text-accent hover:underline" to="/signup">Create an account</Link>
         </>
       }
     >
-      <form className="auth-form" onSubmit={submit} noValidate>
-        <label className="auth-field">
-          <span>Username</span>
+      <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+        <label className="flex flex-col gap-1">
+          <span className="eyebrow">Username</span>
           <input
+            className="w-full rounded-sm border border-line bg-ink-850 px-2.5 py-2 text-sm text-fg placeholder:text-fg-dim hover:border-line-strong focus:border-accent focus:outline-none"
             aria-label="Username"
             name="username"
             autoComplete="username"
@@ -71,7 +72,7 @@ export default function Login() {
         />
 
         <button
-          className="auth-submit"
+          className="mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-sm bg-accent px-4 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent/85 disabled:opacity-40"
           type="submit"
           disabled={busy || !username.trim() || !password}
         >

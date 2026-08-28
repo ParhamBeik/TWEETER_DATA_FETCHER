@@ -8,6 +8,7 @@ from .analytics import (
     NarrativesView,
     OverviewView,
     PipelineView,
+    TopicBlocklistView,
     TopicsView,
     VelocityView,
 )
@@ -46,6 +47,7 @@ urlpatterns = [
     path("analytics/ingestion/", IngestionView.as_view(), name="analytics-ingestion"),
     path("analytics/velocity/", VelocityView.as_view(), name="analytics-velocity"),
     path("analytics/topics/", TopicsView.as_view(), name="analytics-topics"),
+    path("analytics/topics/hidden/", TopicBlocklistView.as_view(), name="analytics-topics-hidden"),
     path("analytics/accounts/", AccountsAnalyticsView.as_view(), name="analytics-accounts"),
     path("analytics/narratives/", NarrativesView.as_view(), name="analytics-narratives"),
 ]

@@ -22,7 +22,8 @@ backend/
   fetching/    Celery tasks + the runner that drives the engine
   fetcher/     the X engine (HTTP, pagination, auth, parsing, storage)
   tests/       one suite covering both the engine and the API
-frontend/      React + Vite SPA
+frontend/      React + Vite SPA (Tailwind tokens in src/index.css,
+               primitives in src/ui/)
 scripts/       deploy and backup
 ```
 
@@ -85,7 +86,7 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 | POST | `/api/auth/refresh/` | rotates the pair; the spent refresh token is blacklisted |
 | POST | `/api/auth/logout/` | blacklists the refresh token |
 | GET | `/api/auth/me/` | current identity, including `is_staff` |
-| GET | `/api/feed/` | tracked accounts + enabled searches. Filters: `account`, `tier`, `since`, `until`, `window`, `run_id`, `q`, `types` (`tweet,reply,retweet,quote`), `has_media`. `sort=latest\|top` — `top` ranks by engagement and pages by offset, `latest` pages by cursor |
+| GET | `/api/feed/` | tracked accounts only (`UserTweets`); saved searches are served separately. Filters: `account`, `tier`, `since`, `until`, `window`, `run_id`, `q`, `types` (`tweet,reply,retweet,quote`), `has_media`. `sort=latest\|top` — `top` ranks by engagement and pages by offset, `latest` pages by cursor |
 | GET | `/api/export/?format=jsonl\|csv` | stream the current feed |
 | GET/POST/PATCH | `/api/accounts/` | read for all; write is *staff* (track, set tier, clear quarantine) |
 | POST | `/api/accounts/{handle}/fetch/` | *staff* — on-demand live + historical for one handle |
@@ -93,7 +94,11 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 | GET | `/api/runs/` \| `/api/runs/{run_id}/` | cycle history and detail |
 | POST | `/api/cycles/` | *staff* — queue one global cycle (`live`, `historical`, `search`) |
 | GET/POST | `/api/searches/` | read for all; create is *staff* (and enqueues a fetch) |
-| GET | `/api/searches/{id}/results/` | ranked results |
+| PATCH/DELETE | `/api/searches/{id}/` | *staff* — edit, or tear the whole job down (schedule, queued run, results, history, cursors, raw pages) |
+| GET | `/api/searches/{id}/results/` | ranked results, from the search tables |
+| GET | `/api/searches/{id}/runs/` | that query's fetch history |
+| GET | `/api/searches/{id}/schedule/` | state, interval, next due — cheap enough to poll |
+| POST | `/api/searches/{id}/refresh/` \| `/pause/` | *staff* — run now, or stop/resume the schedule |
 | GET | `/api/stats/overview/`, `/api/analytics/{velocity,topics,accounts,narratives}/` | dashboard data |
 | GET | `/api/analytics/ingestion/` | bucketed capture split by subsystem, archive coverage, run outcomes and request spend |
 | GET | `/api/stats/pipeline/` | point-in-time collector state: quota per endpoint, endpoint health, cadence, backfill progress |
@@ -101,8 +106,12 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 Every analytics endpoint takes the same window: `range=1h|24h|7d|30d|90d` (or
 `since`/`until`), `bucket=auto|hour|day|week` (auto is hourly under 48h, daily
 above), and a repeatable `account=`. The window is clamped to 90 days.
-`/api/analytics/topics/` also takes `dimension=hashtags|phrases|both`, where
-`phrases` mines words and bigrams out of the tweet text itself.
+`/api/analytics/topics/` also takes `dimension=hashtags|phrases|both` and
+`rank=surging|volume`. It counts *posts*, not word occurrences, excludes
+retweets, and drops terms carried by a single account or common enough to be
+filler in any language. `surging` (the default) ranks by how unusual a term's
+rate is against the previous window; `volume` ranks by post count. Staff can hide
+a term for good via `POST /api/analytics/topics/hidden/`.
 
 ## Scheduling
 
@@ -131,7 +140,16 @@ so the split between them is explicit:
   no query can be starved by the ones ahead of it. Deep pages come from browser
   scrolling, and a repoll stops once it reaches tweets the last run stored.
 
-Search-only tweets are purged after 30 days, run records after 90.
+Search hits are purged after 30 days, run records after 90.
+
+### Two collectors, two tables
+
+`UserTweets` (the live poll and the archive walk) writes `Tweet`; that is the
+tracked-account archive the feed and the engagement analytics read, and it is
+kept indefinitely. `SearchTimeline` writes `SearchTweet`/`SearchHit`, which are a
+rolling 30-day view of the wider firehose reachable only through the search that
+found them. Each saved query is its own recurring job: its own cadence, its own
+run history, its own cursors — and deleting it removes all of that.
 
 ## Tests
 
@@ -139,6 +157,11 @@ Search-only tweets are purged after 30 days, run records after 90.
 cd backend  && python -m pytest -q    # engine + API, SQLite, no services needed
 cd frontend && npm test               # component suite
 ```
+
+The analytics views that need Postgres (topics, velocity, narratives) are skipped
+on SQLite, so re-run them against a real database before trusting a change there.
+The topic *ranking* is deliberately pure and does run in the suite
+(`tests/test_topics_scoring.py`); only the grouping SQL is skipped.
 
 ## Deploying
 

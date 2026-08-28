@@ -6,7 +6,8 @@ from .models import (
     KeyValueState,
     RawPage,
     Search,
-    SearchResult,
+    SearchHit,
+    SearchTweet,
     Tweet,
     TwitterUser,
     XSession,
@@ -43,9 +44,17 @@ class SearchAdmin(admin.ModelAdmin):
     search_fields = ("slug", "name", "raw_query")
 
 
-@admin.register(SearchResult)
-class SearchResultAdmin(admin.ModelAdmin):
-    list_display = ("search", "tweet", "rank")
+@admin.register(SearchTweet)
+class SearchTweetAdmin(admin.ModelAdmin):
+    list_display = ("tweet_id", "account", "type", "created_at", "likes", "retweets")
+    list_filter = ("type",)
+    search_fields = ("tweet_id", "account", "text")
+    date_hierarchy = "created_at"
+
+
+@admin.register(SearchHit)
+class SearchHitAdmin(admin.ModelAdmin):
+    list_display = ("search", "search_tweet", "rank", "last_seen_at")
 
 
 @admin.register(XSession)

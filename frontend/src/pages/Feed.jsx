@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ArrowUp, Download, Image } from "lucide-react";
 import { api, authorizedFetch } from "../api";
-import {
-  AccountPicker,
-  Segmented,
-  ToggleChips,
-  useAccounts,
-} from "../filters";
+import { AccountPicker, Segmented, ToggleChips, useAccounts } from "../filters";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
+import { Button } from "@/ui/button";
+import { Chip, Empty, ErrorNote } from "@/ui/controls";
+import { Input, Select } from "@/ui/field";
+import { PageHead } from "@/ui/panel";
 
 const SORTS = [
   { value: "latest", label: "Latest" },
@@ -189,98 +189,139 @@ export default function Feed() {
   }
 
   return (
-    <section>
-      <header className="page-head">
-        <div>
-          <p className="eyebrow">Feed</p>
-          <h2 className="page-title">The captured stream</h2>
+    <section className="flex flex-col gap-5">
+      <PageHead
+        label="Feed"
+        title="Tracked accounts"
+        // Naming the collector is the point: this page and the Search page look
+        // alike and hold different things, and the difference used to be
+        // invisible because both streams were merged into this one.
+        lede="Everything the account collector has captured from the timelines you track. Saved searches are on their own page."
+        actions={
+          <>
+            <Button size="sm" onClick={() => downloadExport("jsonl")}>
+              <Download className="size-3.5" aria-hidden="true" />
+              Export JSONL
+            </Button>
+            <Button size="sm" onClick={() => downloadExport("csv")}>
+              <Download className="size-3.5" aria-hidden="true" />
+              Export CSV
+            </Button>
+          </>
+        }
+      />
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
+        <div className="order-2 min-w-0 lg:order-1">
+          {error && <ErrorNote className="mb-3">{error}</ErrorNote>}
+
+          <div className="mx-auto max-w-2xl">
+            {pending.length > 0 && (
+              <Button
+                variant="primary"
+                className="mb-3 w-full"
+                onClick={showPending}
+              >
+                <ArrowUp className="size-4" aria-hidden="true" />
+                {pending.length} new post{pending.length === 1 ? "" : "s"}
+              </Button>
+            )}
+
+            {!loading && !tweets.length && !error ? (
+              <Empty title="No posts match these filters">
+                Widen the time window, or clear the account and type filters.
+              </Empty>
+            ) : (
+              <div className="rounded-sm bg-paper">
+                {tweets.map((t) => (
+                  <TweetCard key={t.id} tweet={t} />
+                ))}
+                <InfiniteSentinel next={next} loading={loading} onLoad={load} />
+              </div>
+            )}
+          </div>
         </div>
-      </header>
 
-      <div className="control-bar">
-        <Segmented
-          label="Sort"
-          options={SORTS}
-          value={filters.sort}
-          onChange={(sort) => update({ sort })}
-        />
-        <Segmented
-          label="Time window"
-          options={WINDOWS}
-          value={filters.window}
-          onChange={(window) => update({ window })}
-        />
-        <AccountPicker
-          accounts={accounts}
-          selected={filters.accounts}
-          onChange={(next) => update({ accounts: next })}
-        />
-        <select
-          aria-label="Tier"
-          value={filters.tier}
-          onChange={(e) => update({ tier: e.target.value })}
-        >
-          <option value="">all tiers</option>
-          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-            <option key={n} value={n}>
-              P{n}
-            </option>
-          ))}
-        </select>
-        <form
-          className="search-field"
-          onSubmit={(e) => {
-            e.preventDefault();
-            update({ q: draftQuery });
-          }}
-        >
-          <input
-            aria-label="Search archive"
-            placeholder="search archive"
-            value={draftQuery}
-            onChange={(e) => setDraftQuery(e.target.value)}
-          />
-        </form>
-      </div>
+        {/* Sticky rail rather than a bar across the top: the filters stay
+            reachable through a long scroll, and the reading column keeps a
+            measure that does not stretch to the window. */}
+        <aside className="order-1 flex flex-col gap-4 lg:sticky lg:top-4 lg:order-2 lg:h-max">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              update({ q: draftQuery });
+            }}
+          >
+            <Input
+              aria-label="Search archive"
+              placeholder="Search the archive"
+              value={draftQuery}
+              onChange={(e) => setDraftQuery(e.target.value)}
+            />
+          </form>
 
-      <div className="control-bar control-bar-secondary">
-        <ToggleChips
-          label="Post types"
-          options={POST_TYPES}
-          values={filters.types}
-          onChange={(types) => update({ types })}
-        />
-        <button
-          type="button"
-          aria-pressed={filters.has_media}
-          className={filters.has_media ? "chip active" : "chip"}
-          onClick={() => update({ has_media: !filters.has_media })}
-        >
-          🖼 Media only
-        </button>
-        <span className="control-spacer" />
-        <button type="button" className="link" onClick={() => downloadExport("jsonl")}>
-          Export JSONL
-        </button>
-        <button type="button" className="link" onClick={() => downloadExport("csv")}>
-          Export CSV
-        </button>
-      </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Sort</span>
+            <Segmented
+              label="Sort"
+              options={SORTS}
+              value={filters.sort}
+              onChange={(sort) => update({ sort })}
+              className="self-start"
+            />
+          </div>
 
-      {error && <p className="error">{error}</p>}
-      <div className="feed-column">
-        {pending.length > 0 && (
-          <button type="button" className="new-posts-pill" onClick={showPending}>
-            ↑ {pending.length} new post{pending.length === 1 ? "" : "s"}
-          </button>
-        )}
-        {tweets.map((t) => (
-          <TweetCard key={t.id} tweet={t} />
-        ))}
-        <InfiniteSentinel next={next} loading={loading} onLoad={load} />
-        {!loading && !tweets.length && !error && (
-          <p className="muted">No posts match these filters.</p>
-        )}
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Time window</span>
+            <Segmented
+              label="Time window"
+              options={WINDOWS}
+              value={filters.window}
+              onChange={(window) => update({ window })}
+              className="self-start"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Post types</span>
+            <ToggleChips
+              label="Post types"
+              options={POST_TYPES}
+              values={filters.types}
+              onChange={(types) => update({ types })}
+            />
+            <Chip
+              pressed={filters.has_media}
+              className="mt-1 self-start"
+              onClick={() => update({ has_media: !filters.has_media })}
+            >
+              <Image className="mr-1 inline size-3" aria-hidden="true" />
+              Media only
+            </Chip>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow">Accounts</span>
+            <AccountPicker
+              accounts={accounts}
+              selected={filters.accounts}
+              onChange={(next) => update({ accounts: next })}
+            />
+            <Select
+              aria-label="Tier"
+              className="mt-1"
+              value={filters.tier}
+              onChange={(e) => update({ tier: e.target.value })}
+            >
+              <option value="">All tiers</option>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <option key={n} value={n}>
+                  Priority {n}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </aside>
       </div>
     </section>
   );

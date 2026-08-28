@@ -1,24 +1,24 @@
 // Chart tokens, kept in one place so every chart reads as one system.
 //
-// These are the reference dark-mode categorical steps, validated against this
-// app's chart surface (#121a2d) with the dataviz validator: lightness band,
-// chroma floor, CVD separation, normal-vision floor and contrast all pass
-// (worst adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 19.3).
-// The teal UI accent (--accent) is deliberately NOT used for data marks -- at
-// OKLCH L 0.85 it sits far outside the dark-mode band. It stays UI chrome.
+// These are the reference dark-mode categorical steps, validated with the
+// dataviz validator against a dark chart surface: lightness band, chroma floor,
+// CVD separation, normal-vision floor and contrast all pass (worst adjacent CVD
+// ΔE 8.4, worst adjacent normal-vision ΔE 19.3).
+// The periwinkle UI accent is deliberately NOT used for data marks, and nothing
+// here is purple, so chrome can never be mistaken for a series.
 //
 // Slots are assigned in fixed order and never cycled. A chart that would need a
 // sixth series folds the tail into "other" instead of inventing a hue.
 export const SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
 
 // Status is a reserved palette: it never doubles as "series 4", and it always
-// ships with a label, never colour alone. Contrast on #121a2d: 5.17 / 9.45 /
-// 6.57 / 3.61, all clear of 3:1.
+// ships with a label, never colour alone. Mirrors --color-ok / warn / serious /
+// danger in index.css so a run that is amber in a list is amber in a chart.
 export const STATUS = {
-  good: "#0ca30c",
-  warning: "#fab219",
-  serious: "#ec835a",
-  critical: "#d03b3b",
+  good: "#3fae6d",
+  warning: "#d6a127",
+  serious: "#e08a55",
+  critical: "#e06a6a",
 };
 
 // FetchRun.status -> status role. `partial` is a warning rather than a failure:
@@ -47,9 +47,14 @@ export const SUBSYSTEM_LABEL = {
   unknown: "Before tracking",
 };
 
-export const AXIS = "#91a1bd";
-export const SURFACE = "#121a2d";
-export const LINE = "#26334d";
+// Chart chrome tracks the panel it is drawn on. Recharts wants real colour
+// values rather than CSS variables (it measures and interpolates them), so these
+// mirror --color-ink-800 / --color-line / --color-fg-muted from index.css. They
+// are the one place in the app that duplicates a token, and they have to move
+// with it -- a grid line left on the previous surface colour is visible.
+export const AXIS = "#93a09e";
+export const SURFACE = "#101414";
+export const LINE = "#232b2b";
 
 // 4px rounded data-ends anchored to the baseline (vertical vs horizontal bars).
 export const BAR_RADIUS_Y = [4, 4, 0, 0];
@@ -59,7 +64,7 @@ export const TOOLTIP_STYLE = {
   background: SURFACE,
   border: `1px solid ${LINE}`,
   borderRadius: 8,
-  color: "#e5edf9",
+  color: "#e4eae8",
 };
 
 export const AXIS_PROPS = {

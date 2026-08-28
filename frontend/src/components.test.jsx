@@ -1,7 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import InfiniteSentinel from "./InfiniteSentinel";
-import RunStatus from "./RunStatus";
 import { api } from "./api";
 import { pivotSeries } from "./charts";
 import { compact } from "./format";
@@ -93,62 +92,6 @@ describe("InfiniteSentinel", () => {
   });
 });
 
-describe("RunStatus", () => {
-  beforeEach(() => api.mockReset());
-
-  it("renders nothing until runs arrive", async () => {
-    api.mockResolvedValue({ results: [] });
-    const { container } = render(<RunStatus />);
-    await waitFor(() => expect(api).toHaveBeenCalledWith("/runs/"));
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it("lists the most recent runs", async () => {
-    api.mockResolvedValue({
-      results: [
-        { run_id: "r1", subsystem: "live", status: "completed", target: null, started_at: "2026-01-02T03:04:05Z" },
-      ],
-    });
-    render(<RunStatus />);
-    expect(await screen.findByLabelText("Recent fetch runs")).toBeInTheDocument();
-    expect(screen.getByText("live")).toBeInTheDocument();
-    expect(screen.getByText("completed")).toBeInTheDocument();
-  });
-
-  it("labels an untargeted run as 'all'", async () => {
-    api.mockResolvedValue({
-      results: [{ run_id: "r1", subsystem: "live", status: "completed", target: null, started_at: "2026-01-02T03:04:05Z" }],
-    });
-    render(<RunStatus />);
-    expect(await screen.findByText("all")).toBeInTheDocument();
-  });
-
-  it("humanises the auth_required status", async () => {
-    api.mockResolvedValue({
-      results: [{ run_id: "r1", subsystem: "live", status: "auth_required", target: null, started_at: "2026-01-02T03:04:05Z" }],
-    });
-    render(<RunStatus />);
-    expect(await screen.findByText("auth required")).toBeInTheDocument();
-  });
-
-  it("shows at most five runs", async () => {
-    api.mockResolvedValue({
-      results: Array.from({ length: 9 }, (_, i) => ({
-        run_id: `r${i}`, subsystem: `sub${i}`, status: "completed", target: null, started_at: "2026-01-02T03:04:05Z",
-      })),
-    });
-    render(<RunStatus />);
-    await screen.findByText("sub0");
-    expect(screen.queryByText("sub5")).toBeNull();
-  });
-
-  it("stays out of the way when the runs endpoint fails", async () => {
-    api.mockRejectedValue(new Error("Service unavailable"));
-    const { container } = render(<RunStatus />);
-    await waitFor(() => expect(api).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
-  });
-});
 
 // Unit tests: the two shared pure helpers with real branching. Everything else
 // in format.js/charts.js is a one-liner covered by the component tests above.

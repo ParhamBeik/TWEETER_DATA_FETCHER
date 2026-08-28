@@ -150,3 +150,89 @@ def test_an_ordinary_tweet_never_borrows_metrics():
 def test_the_repaired_count_reaches_the_stored_row():
     upsert_tweet(_repost())
     assert Tweet.objects.get().views == 910000
+
+
+# --- search hits land in their own tables -----------------------------------
+
+
+def _hit(rest_id="1", account="stranger", **over):
+    return {
+        "rest_id": rest_id,
+        "author_id": "42",
+        "account": account,
+        "text": f"post {rest_id}",
+        "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        **over,
+    }
+
+
+@pytest.mark.django_db
+def test_search_hits_never_touch_the_tracked_archive():
+    """The split, asserted at the write path rather than at the API.
+
+    A saved search matching a tracked account's post must not write that post
+    into the archive table -- the account collector owns what goes in there, and
+    a search hit arriving that way would inherit the archive's retention and
+    appear in the feed as though we had been polling for it.
+    """
+    from fetching.ingest import ingest_search_hits
+    from tweets.models import Search, SearchHit, SearchTweet
+
+    search = Search.objects.create(name="gold", slug="gold", raw_query="gold")
+
+    assert ingest_search_hits(search, [_hit("1"), _hit("2")]) == 2
+    assert SearchTweet.objects.count() == 2
+    assert SearchHit.objects.filter(search=search).count() == 2
+    assert Tweet.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_a_hit_is_stamped_with_the_endpoint_that_found_it():
+    from fetching.ingest import ingest_search_hits
+    from tweets.models import Search, SearchTweet
+
+    search = Search.objects.create(name="gold", slug="gold", raw_query="gold")
+    ingest_search_hits(search, [_hit("1")])
+
+    assert SearchTweet.objects.get().source_endpoint == "SearchTimeline"
+
+
+@pytest.mark.django_db
+def test_repolling_a_search_updates_rank_instead_of_duplicating():
+    from fetching.ingest import ingest_search_hits
+    from tweets.models import Search, SearchHit, SearchTweet
+
+    search = Search.objects.create(name="gold", slug="gold", raw_query="gold")
+    ingest_search_hits(search, [_hit("1"), _hit("2")])
+    # Second run, order reversed: X reranked, we did not find two new posts.
+    ingest_search_hits(search, [_hit("2"), _hit("1")])
+
+    assert SearchTweet.objects.count() == 2
+    assert SearchHit.objects.count() == 2
+    assert SearchHit.objects.get(search_tweet__tweet_id="2").rank == 0
+
+
+@pytest.mark.django_db
+def test_one_post_matched_by_two_searches_is_stored_once():
+    from fetching.ingest import ingest_search_hits
+    from tweets.models import Search, SearchHit, SearchTweet
+
+    gold = Search.objects.create(name="gold", slug="gold", raw_query="gold")
+    oil = Search.objects.create(name="oil", slug="oil", raw_query="oil")
+    ingest_search_hits(gold, [_hit("1")])
+    ingest_search_hits(oil, [_hit("1")])
+
+    assert SearchTweet.objects.count() == 1
+    assert SearchHit.objects.count() == 2
+
+
+@pytest.mark.django_db
+def test_a_page_repeating_a_post_keeps_its_first_position():
+    from fetching.ingest import ingest_search_hits
+    from tweets.models import Search, SearchHit
+
+    search = Search.objects.create(name="gold", slug="gold", raw_query="gold")
+    ingest_search_hits(search, [_hit("1"), _hit("2"), _hit("1")])
+
+    assert SearchHit.objects.count() == 2
+    assert SearchHit.objects.get(search_tweet__tweet_id="1").rank == 0

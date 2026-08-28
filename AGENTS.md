@@ -9,8 +9,10 @@ For install and usage see `README.md`. This file is the working contract.
 | Celery tasks, scheduling, locks | `backend/fetching/tasks.py` |
 | Subprocess runner + Postgres state round-trip | `backend/fetching/runner.py` |
 | Tweet upsert / dedup / metric snapshots | `backend/fetching/ingest.py` |
+| Saved-search schedule state and teardown | `backend/fetching/searches.py` |
 | Models (sole durable store) | `backend/tweets/models.py` |
 | API | `backend/tweets/views.py`, `analytics.py`, `auth_views.py`, `urls.py` |
+| Topic ranking (pure, no DB) | `backend/tweets/topics.py` |
 | Auth (JWT) + the staff gate | `backend/tweets/auth_views.py`, `permissions.py` |
 | HTTP transport, tx/query-id health | `backend/fetcher/client.py` |
 | Pagination engine | `backend/fetcher/timeline.py` |
@@ -19,6 +21,9 @@ For install and usage see `README.md`. This file is the working contract.
 | Scratch-disk layer | `backend/fetcher/storage.py` |
 | Console, file logs, NDJSON events | `backend/fetcher/observability.py` |
 | Paths, config resolution, account tiers | `backend/fetcher/config.py` |
+| Design tokens (colour, type, spacing) | `frontend/src/index.css` |
+| UI primitives (button, panel, status, dialog, tabs) | `frontend/src/ui/` |
+| Shared X budget rail, on every page | `frontend/src/BudgetRail.jsx` |
 | Shared console filter bar, account picker, avatar | `frontend/src/filters.jsx` |
 | Chart tokens, status/subsystem colours, series pivot | `frontend/src/charts.js` |
 | Number, time and permalink formatting | `frontend/src/format.js` |
@@ -76,7 +81,21 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
   or touches the shared session needs `IsStaff`/`IsStaffOrReadOnly`; the
   project-wide default is only `IsAuthenticated`.
 - Search stays isolated under `data/search/` and never creates historical/live
-  set folders.
+  set folders, and in Postgres it stays isolated in `SearchTweet`/`SearchHit`.
+  `Tweet` is the tracked-account (`UserTweets`) archive and nothing else: the
+  feed reads it, the engagement analytics read it, and it has no TTL. Search hits
+  have their own 30-day clock. Never write a search result into `Tweet`.
+- A search's scratch state is keyed two different ways and both spellings must be
+  exact: `EndpointState.account` is `<slug>::<product>` (double colon, from
+  `fetcher.search._state_key`) and `RawPage.account` is `<slug>:<product>` (single
+  colon, from the raw path join). `fetching/searches.py` holds both; teardown that
+  guesses one deletes nothing and leaves a live cursor behind.
+- Deleting a `Search` goes through `fetching.searches.teardown_search`, never a
+  bare `.delete()`. Anything less strands raw pages, cursors and run history.
+- Topic ranking lives in `tweets/topics.py` and is pure. The SQL in `analytics.py`
+  only groups -- it counts documents and distinct authors, never occurrences, and
+  it excludes retweets. Ranking logic must not migrate back into the query: the
+  raw-SQL analytics paths are skipped entirely on the SQLite test database.
 
 ## HTTP and GraphQL
 

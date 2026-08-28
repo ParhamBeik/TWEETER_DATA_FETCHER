@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
+import { BadgeCheck, Bookmark, Eye, Heart, MessageCircle, Repeat2, TrendingUp } from "lucide-react";
 import { Avatar } from "./filters";
+import { cn } from "@/lib/cn";
 import { absoluteTime, compact, permalink, relativeTime, statusLink } from "./format";
+
+// The reading surface. Everywhere else in this console is a cold instrument
+// panel; a post is the thing the instrument caught, so it sits on warm paper
+// with a wider measure and the neutral body face. The semantic class names below
+// (.tweet-media, .media-cell, .tweet-time, .avatar) are kept as behavioural
+// hooks -- they name real parts of a post and the suite queries them.
 
 /** Aspect-ratio box so an image reserves its real shape instead of a fixed crop. */
 function aspect(item, count) {
@@ -24,12 +32,20 @@ function MediaImage({ item, alt }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
     return (
-      <span className="media-missing">
+      <span className="flex h-full items-center justify-center p-3 text-center text-xs text-fg-dim">
         {item.alt_text || "Image unavailable — open on X"}
       </span>
     );
   }
-  return <img src={item.url} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
+  return (
+    <img
+      className="size-full object-cover"
+      src={item.url}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 /** Best playable MP4 for a video item: highest bitrate X offers, or none. */
@@ -42,6 +58,10 @@ function bestVariant(item) {
   // that as 0 keeps those as the last resort rather than accidentally the pick.
   return mp4s.reduce((best, v) => ((v.bitrate || 0) > (best.bitrate || 0) ? v : best));
 }
+
+const CELL = "media-cell relative overflow-hidden rounded-sm border border-paper-line bg-ink-900";
+const NOTE =
+  "absolute bottom-1.5 left-1.5 rounded-xs bg-ink-900/85 px-1.5 py-0.5 font-mono text-2xs text-fg-muted";
 
 /**
  * A video that plays in place, falling back to a link out.
@@ -59,7 +79,7 @@ function MediaVideo({ item, label, permalinkUrl, style }) {
   if (failed || !variant) {
     return (
       <a
-        className="media-cell media-video"
+        className={cn(CELL, "media-video block")}
         style={style}
         href={permalinkUrl}
         target="_blank"
@@ -67,15 +87,21 @@ function MediaVideo({ item, label, permalinkUrl, style }) {
         aria-label={`Watch on X: ${label}`}
       >
         {item.url && <MediaImage item={item} alt={label} />}
-        <span className="play-badge" aria-hidden="true">▶</span>
-        <span className="media-note">{isGif ? "GIF" : "Watch on X"}</span>
+        <span
+          className="absolute inset-0 grid place-items-center text-2xl text-fg/90"
+          aria-hidden="true"
+        >
+          ▶
+        </span>
+        <span className={NOTE}>{isGif ? "GIF" : "Watch on X"}</span>
       </a>
     );
   }
 
   return (
-    <div className="media-cell media-video" style={style}>
+    <div className={cn(CELL, "media-video")} style={style}>
       <video
+        className="size-full object-cover"
         // An X "GIF" is really a silent looping MP4, so it gets GIF semantics
         // rather than a scrub bar. Muted is not cosmetic: browsers refuse to
         // autoplay anything with audio, so without it the loop never starts.
@@ -95,7 +121,7 @@ function MediaVideo({ item, label, permalinkUrl, style }) {
         src={variant.url}
         onError={() => setFailed(true)}
       />
-      {isGif && <span className="media-note">GIF</span>}
+      {isGif && <span className={NOTE}>GIF</span>}
     </div>
   );
 }
@@ -104,7 +130,13 @@ function Media({ items = [], onOpen, permalinkUrl }) {
   if (!items.length) return null;
   const shown = items.slice(0, 4);
   return (
-    <div className={`tweet-media media-${Math.min(shown.length, 4)}`}>
+    <div
+      className={cn(
+        "tweet-media relative mt-2.5 grid gap-1",
+        shown.length > 1 && "grid-cols-2",
+        `media-${Math.min(shown.length, 4)}`,
+      )}
+    >
       {shown.map((item, index) => {
         const key = item.id || item.url || index;
         const isVideo = item.type === "video" || item.type === "animated_gif";
@@ -124,7 +156,7 @@ function Media({ items = [], onOpen, permalinkUrl }) {
           <button
             key={key}
             type="button"
-            className="media-cell"
+            className={cn(CELL, "block p-0")}
             style={aspect(item, shown.length)}
             onClick={() => onOpen?.(item)}
             aria-label={`Open image: ${label}`}
@@ -133,7 +165,11 @@ function Media({ items = [], onOpen, permalinkUrl }) {
           </button>
         );
       })}
-      {items.length > 4 && <span className="media-more">+{items.length - 4}</span>}
+      {items.length > 4 && (
+        <span className="absolute bottom-1.5 right-1.5 rounded-xs bg-ink-900/85 px-1.5 py-0.5 font-mono text-2xs">
+          +{items.length - 4}
+        </span>
+      )}
     </div>
   );
 }
@@ -146,12 +182,28 @@ function Lightbox({ item, onClose }) {
   }, [onClose]);
   if (!item) return null;
   return (
-    <div className="lightbox" role="dialog" aria-modal="true" aria-label="Image viewer" onClick={onClose}>
-      <button type="button" className="lightbox-close" onClick={onClose} aria-label="Close image">
+    <div
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-ink-900/95 p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image viewer"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        className="absolute right-4 top-4 text-fg-muted hover:text-fg"
+        onClick={onClose}
+        aria-label="Close image"
+      >
         ✕
       </button>
-      <img src={item.url} alt={item.alt_text || ""} onClick={(event) => event.stopPropagation()} />
-      {item.alt_text && <p className="lightbox-alt">{item.alt_text}</p>}
+      <img
+        className="max-h-[85vh] max-w-full object-contain"
+        src={item.url}
+        alt={item.alt_text || ""}
+        onClick={(event) => event.stopPropagation()}
+      />
+      {item.alt_text && <p className="max-w-prose text-xs text-fg-muted">{item.alt_text}</p>}
     </div>
   );
 }
@@ -162,21 +214,32 @@ function EmbeddedTweet({ tweet, onOpen }) {
   const author = tweet.author || {};
   const url = statusLink(author.handle, tweet.id);
   return (
-    <div className="embedded-tweet">
-      <div className="embedded-head">
+    <div className="embedded-tweet mt-2.5 rounded-sm border border-paper-line p-2.5">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <Avatar account={author} size={20} />
-        <strong>{author.display_name || author.handle || "Unknown author"}</strong>
-        {author.handle && <span className="handle">@{author.handle}</span>}
+        <strong className="font-medium">
+          {author.display_name || author.handle || "Unknown author"}
+        </strong>
+        {author.handle && <span className="font-mono text-fg-dim">@{author.handle}</span>}
         {tweet.created_at && (
-          <time dateTime={tweet.created_at} title={absoluteTime(tweet.created_at)}>
+          <time
+            className="text-fg-dim"
+            dateTime={tweet.created_at}
+            title={absoluteTime(tweet.created_at)}
+          >
             · {relativeTime(tweet.created_at)}
           </time>
         )}
       </div>
-      {tweet.text && <p>{tweet.text}</p>}
+      {tweet.text && <p className="mt-1.5 font-sans text-sm text-fg-muted">{tweet.text}</p>}
       <Media items={tweet.media || []} onOpen={onOpen} permalinkUrl={url} />
       {url && (
-        <a className="embedded-link" href={url} target="_blank" rel="noreferrer">
+        <a
+          className="mt-2 inline-block text-xs text-accent hover:underline"
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+        >
           Open original on X ↗
         </a>
       )}
@@ -184,17 +247,37 @@ function EmbeddedTweet({ tweet, onOpen }) {
   );
 }
 
+const METRICS = [
+  ["replies", MessageCircle, "replies"],
+  ["retweets", Repeat2, "reposts"],
+  ["likes", Heart, "likes"],
+  ["views", Eye, "views"],
+  ["bookmarks", Bookmark, "bookmarks"],
+];
+
 function Metrics({ tweet }) {
   return (
-    <footer aria-label="Post metrics">
-      <span title={`${tweet.replies || 0} replies`}>◯ {compact(tweet.replies)}</span>
-      <span title={`${tweet.retweets || 0} reposts`}>↻ {compact(tweet.retweets)}</span>
-      <span title={`${tweet.likes || 0} likes`}>♡ {compact(tweet.likes)}</span>
-      <span title={`${tweet.views || 0} views`}>▥ {compact(tweet.views)}</span>
-      <span title={`${tweet.bookmarks || 0} bookmarks`}>♧ {compact(tweet.bookmarks)}</span>
+    <footer
+      aria-label="Post metrics"
+      className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs tabular text-fg-dim"
+    >
+      {METRICS.map(([key, Icon, noun]) => (
+        <span
+          key={key}
+          className="inline-flex items-center gap-1"
+          title={`${tweet[key] || 0} ${noun}`}
+        >
+          <Icon className="size-3.5" aria-hidden="true" />
+          {compact(tweet[key])}
+        </span>
+      ))}
       {tweet.velocity != null && (
-        <span className="velocity-chip" title="Engagement gained in this window">
-          ↗ {compact(tweet.velocity)}
+        <span
+          className="inline-flex items-center gap-1 text-accent"
+          title="Engagement gained in this window"
+        >
+          <TrendingUp className="size-3.5" aria-hidden="true" />
+          {compact(tweet.velocity)}
         </span>
       )}
     </footer>
@@ -223,45 +306,61 @@ export default function TweetCard({ tweet }) {
     tweet.reply_to.handle.toLowerCase() === String(tweet.account || "").toLowerCase();
 
   return (
-    <article className={`tweet tweet-${(tweet.type || "tweet").toLowerCase()}`}>
+    <article
+      className={cn(
+        "tweet border-b border-paper-line px-4 py-3.5 last:border-b-0",
+        `tweet-${(tweet.type || "tweet").toLowerCase()}`,
+      )}
+      // Long feeds are the one place this app renders thousands of nodes;
+      // skipping layout for off-screen posts is what keeps scrolling smooth.
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 220px" }}
+    >
       {reposted && (
-        <div className="tweet-context">
-          ↻ {tweet.author?.display_name || `@${tweet.account}`} reposted
+        <div className="mb-1.5 pl-[3.25rem] text-xs text-fg-dim">
+          <Repeat2 className="mr-1 inline size-3.5" aria-hidden="true" />
+          {tweet.author?.display_name || `@${tweet.account}`} reposted
         </div>
       )}
-      {isSelfThread && <div className="tweet-context">🧵 Part of a thread</div>}
-      <div className="tweet-layout">
+      {isSelfThread && (
+        <div className="mb-1.5 pl-[3.25rem] text-xs text-fg-dim">Part of a thread</div>
+      )}
+      <div className="flex gap-3">
         <Avatar account={author} />
-        <div className="tweet-body">
-          <header>
-            <strong>{author.display_name || `@${author.handle || tweet.account}`}</strong>
+        <div className="min-w-0 flex-1">
+          <header className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+            <strong className="font-semibold">
+              {author.display_name || `@${author.handle || tweet.account}`}
+            </strong>
             {author.verified && (
-              <span className="verified" title={author.verified_type || "Verified"} aria-label="Verified">
-                ✓
-              </span>
+              <BadgeCheck
+                className="size-3.5 shrink-0 self-center text-accent"
+                title={author.verified_type || "Verified"}
+                aria-label="Verified"
+              />
             )}
-            <span className="handle">@{author.handle || tweet.account}</span>
+            <span className="font-mono text-xs text-fg-dim">
+              @{author.handle || tweet.account}
+            </span>
             {postedAt && url && (
               // The timestamp is the permalink: the most-wanted link on the card
               // should be the biggest target on it, not a glyph in the footer.
-              <a href={url} target="_blank" rel="noreferrer" className="tweet-time">
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="tweet-time text-xs text-fg-dim hover:text-accent hover:underline"
+              >
                 <time dateTime={postedAt} title={absoluteTime(postedAt)}>
                   · {relativeTime(postedAt)}
                 </time>
               </a>
             )}
-            <span className="tweet-badges">
-              {(tweet.searches || []).map((slug) => (
-                <span className="badge badge-search" key={slug} title="Found by a saved search">
-                  🔍 {slug}
-                </span>
-              ))}
-            </span>
           </header>
           {!reposted && tweet.reply_to?.handle && !isSelfThread && (
-            <div className="replying">
+            <div className="mt-0.5 text-xs text-fg-dim">
               Replying to{" "}
               <a
+                className="text-accent hover:underline"
                 href={statusLink(tweet.reply_to.handle, tweet.reply_to.tweet_id)}
                 target="_blank"
                 rel="noreferrer"
@@ -270,12 +369,16 @@ export default function TweetCard({ tweet }) {
               </a>
             </div>
           )}
-          {text && <p>{text}</p>}
+          {text && (
+            <p className="mt-1 whitespace-pre-wrap break-words font-sans text-md leading-relaxed">
+              {text}
+            </p>
+          )}
           {(tweet.entities?.urls || []).map(
             (link) =>
               link.expanded && (
                 <a
-                  className="expanded-link"
+                  className="mt-1 block truncate text-xs text-accent hover:underline"
                   key={link.expanded}
                   href={link.expanded}
                   target="_blank"
@@ -286,19 +389,35 @@ export default function TweetCard({ tweet }) {
               ),
           )}
           {tweet.possibly_sensitive && media.length ? (
-            <details className="sensitive">
-              <summary>Show potentially sensitive media</summary>
+            <details className="mt-2.5 rounded-sm border border-paper-line p-2.5">
+              <summary className="cursor-pointer text-xs text-fg-muted">
+                Show potentially sensitive media
+              </summary>
               <Media items={media} onOpen={setLightbox} permalinkUrl={url} />
             </details>
           ) : (
             <Media items={media} onOpen={setLightbox} permalinkUrl={url} />
           )}
           {tweet.card && (
-            <a className="link-card" href={tweet.card.url || url} target="_blank" rel="noreferrer">
-              {tweet.card.image_url && <img src={tweet.card.image_url} alt="" loading="lazy" />}
-              <span>
-                <strong>{tweet.card.title}</strong>
-                <small>{tweet.card.description}</small>
+            <a
+              className="mt-2.5 flex gap-2.5 overflow-hidden rounded-sm border border-paper-line hover:border-line-strong"
+              href={tweet.card.url || url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {tweet.card.image_url && (
+                <img
+                  className="size-20 shrink-0 object-cover"
+                  src={tweet.card.image_url}
+                  alt=""
+                  loading="lazy"
+                />
+              )}
+              <span className="min-w-0 py-2 pr-2.5">
+                <strong className="block truncate text-sm">{tweet.card.title}</strong>
+                <small className="mt-0.5 block truncate text-xs text-fg-muted">
+                  {tweet.card.description}
+                </small>
               </span>
             </a>
           )}

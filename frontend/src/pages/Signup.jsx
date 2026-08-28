@@ -53,7 +53,7 @@ export default function Signup() {
         retry: false,
       });
       signIn(tokens);
-      navigate("/", { replace: true });
+      navigate("/feed", { replace: true });
     } catch (err) {
       setError(err.message);
       setFieldErrors(err.fieldErrors || {});
@@ -72,14 +72,15 @@ export default function Signup() {
       error={error}
       footer={
         <>
-          Already have an account? <Link to="/login">Sign in</Link>
+          Already have an account? <Link className="text-accent hover:underline" to="/login">Sign in</Link>
         </>
       }
     >
-      <form className="auth-form" onSubmit={submit} noValidate>
-        <label className="auth-field">
-          <span>Username</span>
+      <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+        <label className="flex flex-col gap-1">
+          <span className="eyebrow">Username</span>
           <input
+            className="w-full rounded-sm border border-line bg-ink-850 px-2.5 py-2 text-sm text-fg placeholder:text-fg-dim hover:border-line-strong focus:border-accent focus:outline-none"
             aria-label="Username"
             name="username"
             autoComplete="username"
@@ -89,12 +90,13 @@ export default function Signup() {
             autoFocus
             required
           />
-          {firstOf("username") && <span className="auth-field-error">{firstOf("username")}</span>}
+          {firstOf("username") && <span className="text-xs text-danger">{firstOf("username")}</span>}
         </label>
 
-        <label className="auth-field">
-          <span>Email <em className="auth-optional">optional</em></span>
+        <label className="flex flex-col gap-1">
+          <span className="eyebrow">Email <em className="not-italic text-fg-dim">optional</em></span>
           <input
+            className="w-full rounded-sm border border-line bg-ink-850 px-2.5 py-2 text-sm text-fg placeholder:text-fg-dim hover:border-line-strong focus:border-accent focus:outline-none"
             aria-label="Email"
             name="email"
             type="email"
@@ -103,7 +105,7 @@ export default function Signup() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
-          {firstOf("email") && <span className="auth-field-error">{firstOf("email")}</span>}
+          {firstOf("email") && <span className="text-xs text-danger">{firstOf("email")}</span>}
         </label>
 
         <PasswordField
@@ -114,7 +116,7 @@ export default function Signup() {
           value={password}
           onChange={setPassword}
           error={firstOf("password")}
-          hint={password && <em className="auth-strength">{strengthFor(checks, password)}</em>}
+          hint={password && <em className="not-italic text-2xs text-fg-dim">{strengthFor(checks, password)}</em>}
         />
 
         <PasswordField
@@ -126,11 +128,11 @@ export default function Signup() {
           onChange={setConfirmation}
         />
 
-        <div className="auth-requirements">
+        <div className="rounded-sm border border-line p-3">
           <p>Password requirements</p>
           <ul>
             {checks.map(({ id, label, ok }) => (
-              <li className={ok ? "passed" : ""} key={id}>
+              <li className={ok ? "text-ok" : "text-fg-dim"} key={id}>
                 <span>{ok ? "✓" : "○"}</span>{label}
               </li>
             ))}
@@ -138,7 +140,7 @@ export default function Signup() {
         </div>
 
         <button
-          className="auth-submit"
+          className="mt-1 inline-flex h-10 w-full items-center justify-center gap-2 rounded-sm bg-accent px-4 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent/85 disabled:opacity-40"
           type="submit"
           disabled={busy || !username.trim() || !passwordValid}
         >

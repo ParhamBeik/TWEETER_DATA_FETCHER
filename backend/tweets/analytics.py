@@ -27,7 +27,9 @@ from fetching.accounts import archive_progress
 # fetch_report`; one spelling of the range syntax for the CLI and the API both.
 from fetching.management.commands.fetch_report import parse_since
 
-from tweets.models import FetchRun, KeyValueState, Search, Tweet, TwitterUser
+from tweets import topics
+from tweets.models import FetchRun, KeyValueState, Search, SearchTweet, Tweet, TwitterUser
+from tweets.permissions import IsStaff
 from tweets.serializers import TweetSerializer
 
 # Single source of truth for "engagement": kept as field names so both the ORM
@@ -129,12 +131,29 @@ def _for_accounts(qs, handles: list[str]):
     return qs.filter(account__in=handles) if handles else qs
 
 
-def _series(qs, window: Window, field: str, *, group: str | None = None) -> list[dict]:
+def _series(
+    qs,
+    window: Window,
+    field: str,
+    *,
+    group: str | None = None,
+    constant_group: tuple[str, str] | None = None,
+) -> list[dict]:
     """Bucketed counts, optionally split by a second column.
 
     ORM rather than raw SQL so this works on the SQLite test database too --
     only the JSON/trigram views below genuinely need Postgres.
+
+    `constant_group` labels every row with a fixed (key, value) instead of
+    grouping. SearchTweet has no source_subsystem column -- for that table it is
+    always "search" -- and this lets its series concatenate with the Tweet one
+    into a single long-format list the console pivots without special cases.
     """
+    if constant_group is not None:
+        key, value = constant_group
+        return [
+            {**row, key: value} for row in _series(qs, window, field)
+        ]
     values = ["bucket"] + ([group] if group else [])
     rows = (
         _in_window(qs, window, field)
@@ -256,22 +275,44 @@ class IngestionView(APIView):
         window = window_from(request)
         handles = accounts_from(request)
         tweets = _for_accounts(Tweet.objects.all(), handles)
+        # Search hits live in their own table now, so the collection-flow chart
+        # has to union them back in or the "search" series silently reads zero
+        # and the console claims a whole collector stopped working.
+        hits = _for_accounts(SearchTweet.objects.all(), handles)
 
         previous = Window(since=window.previous_since, until=window.since, bucket=window.bucket)
-        captured = _in_window(tweets, window, "ingested_at").count()
-        captured_before = _in_window(tweets, previous, "ingested_at").count()
+        captured = (
+            _in_window(tweets, window, "ingested_at").count()
+            + _in_window(hits, window, "ingested_at").count()
+        )
+        captured_before = (
+            _in_window(tweets, previous, "ingested_at").count()
+            + _in_window(hits, previous, "ingested_at").count()
+        )
 
         runs = FetchRun.objects.filter(
             started_at__gte=window.since, started_at__lte=window.until
         )
         run_totals = runs.order_by().values("subsystem", "status").annotate(count=Count("id"))
 
+        by_subsystem = {
+            row["source_subsystem"] or "unknown": row["count"]
+            for row in _in_window(tweets, window, "ingested_at")
+            .order_by()
+            .values("source_subsystem")
+            .annotate(count=Count("id"))
+        }
+        search_captured = _in_window(hits, window, "ingested_at").count()
+        if search_captured:
+            by_subsystem["search"] = by_subsystem.get("search", 0) + search_captured
+
         return Response({
             "since": window.since.isoformat(),
             "until": window.until.isoformat(),
             "bucket": window.bucket,
             # Who is doing the collecting, bucketed over the window.
-            "captured": _series(tweets, window, "ingested_at", group="source_subsystem"),
+            "captured": _series(tweets, window, "ingested_at", group="source_subsystem")
+            + _series(hits, window, "ingested_at", constant_group=("source_subsystem", "search")),
             # Which slice of history the archive now covers, by posted date.
             "posted": _series(tweets, window, "created_at"),
             "runs": _series(runs, window, "started_at", group="subsystem"),
@@ -284,14 +325,11 @@ class IngestionView(APIView):
                 "captured": captured,
                 "captured_previous": captured_before,
                 "captured_delta": captured - captured_before,
-                "by_subsystem": {
-                    row["source_subsystem"] or "unknown": row["count"]
-                    for row in _in_window(tweets, window, "ingested_at")
-                    .order_by()
-                    .values("source_subsystem")
-                    .annotate(count=Count("id"))
-                },
+                "by_subsystem": by_subsystem,
+                # The tracked-account archive only. Search hits are a rolling
+                # 30-day view of the firehose, not part of what we have archived.
                 "archive_total": Tweet.objects.count(),
+                "search_total": SearchTweet.objects.count(),
                 "oldest_tweet": (
                     Tweet.objects.filter(created_at__isnull=False)
                     .order_by("created_at")
@@ -524,40 +562,68 @@ _MIN_TOKEN_LENGTH = 3
 _TOPIC_LIMIT = 50
 
 
-def _hashtag_topics(window: Window, handles: list[str]) -> list[tuple[str, int, int]]:
+# How many candidates the grouping SQL hands to the scorer. Larger than the
+# number rendered on purpose: the support, filler and nested-gram filters all
+# reject rows, so ranking a list already truncated to 50 by raw count would leave
+# the panel half-empty exactly when the corpus is noisiest.
+_CANDIDATE_LIMIT = 600
+
+
+def _document_totals(window: Window, handles: list[str]) -> tuple[int, int]:
+    """Posts in the current and previous window -- the denominators for a rate.
+
+    Same scope as the miners below (retweets excluded), because a share computed
+    against a different population than the numerator is not a share.
+    """
+    scoped = _for_accounts(Tweet.objects.exclude(type="Retweet"), handles)
+    previous = Window(since=window.previous_since, until=window.since, bucket=window.bucket)
+    return (
+        _in_window(scoped, window).count(),
+        _in_window(scoped, previous).count(),
+    )
+
+
+def _hashtag_topics(window: Window, handles: list[str]) -> list[topics.TermStats]:
     account_filter = "AND account = ANY(%s)" if handles else ""
     params = [window.previous_since, window.until]
     if handles:
         params.append(handles)
-    params += [window.since, window.since, window.since]
+    params += [window.since, window.since, window.since, window.since]
     with connection.cursor() as cursor:
         cursor.execute(
             f"""
             WITH tags AS (
-                SELECT lower(tag) AS topic, created_at
+                SELECT lower(tag) AS topic, id, account, created_at
                 FROM tweets_tweet
                 CROSS JOIN LATERAL jsonb_array_elements_text(
                     COALESCE(entities->'hashtags', '[]'::jsonb)
                 ) AS tag
                 WHERE created_at >= %s AND created_at <= %s
+                  -- A repost carries the original's hashtags verbatim. Counting
+                  -- it again makes one viral post look like a movement.
+                  AND type <> 'Retweet'
                 {account_filter}
             )
             SELECT topic,
-                   count(*) FILTER (WHERE created_at >= %s) AS current_count,
-                   count(*) FILTER (WHERE created_at < %s) AS previous_count
+                   count(DISTINCT id) FILTER (WHERE created_at >= %s) AS docs,
+                   count(DISTINCT account) FILTER (WHERE created_at >= %s) AS authors,
+                   count(DISTINCT id) FILTER (WHERE created_at < %s) AS previous_docs
             FROM tags
             GROUP BY topic
-            HAVING count(*) FILTER (WHERE created_at >= %s) > 0
-            ORDER BY current_count DESC, topic
-            LIMIT {_TOPIC_LIMIT}
+            HAVING count(DISTINCT id) FILTER (WHERE created_at >= %s) > 0
+            ORDER BY docs DESC, topic
+            LIMIT {_CANDIDATE_LIMIT}
             """,
             params,
         )
-        return [(topic, int(current), int(previous)) for topic, current, previous in cursor.fetchall()]
+        return [
+            topics.TermStats(topic, "hashtag", int(docs), int(authors), int(previous))
+            for topic, docs, authors, previous in cursor.fetchall()
+        ]
 
 
-def _phrase_topics(window: Window, handles: list[str]) -> list[tuple[str, int, int]]:
-    """Frequent words and two-word phrases mined from tweet text.
+def _phrase_topics(window: Window, handles: list[str]) -> list[topics.TermStats]:
+    """Words and two-word phrases mined from tweet text, counted by document.
 
     Tokens come from splitting on non-alphanumerics rather than from
     to_tsvector: a tsvector is stored sorted by lexeme, so WITH ORDINALITY over
@@ -568,22 +634,30 @@ def _phrase_topics(window: Window, handles: list[str]) -> list[tuple[str, int, i
 
     URLs, @mentions and #hashtags are stripped first -- hashtags are counted by
     their own dimension, and a URL is one enormous meaningless token.
+
+    Counts are per *document*, not per occurrence. A post that says "gold" five
+    times is one post talking about gold, and the occurrence count was how a
+    single ranting thread used to reach the top of the chart.
     """
     account_filter = "AND account = ANY(%s)" if handles else ""
     params = [window.previous_since, window.until]
     if handles:
         params.append(handles)
-    params += [_STOPWORDS, _MIN_TOKEN_LENGTH, window.since, window.since, window.since]
+    params += [_STOPWORDS, _MIN_TOKEN_LENGTH, window.since, window.since, window.since, window.since]
     with connection.cursor() as cursor:
         cursor.execute(
             f"""
             WITH scoped AS (
-                SELECT id, created_at, text
+                SELECT id, account, created_at, text
                 FROM tweets_tweet
                 WHERE created_at >= %s AND created_at <= %s
+                  -- A repost is the original's text verbatim. Leaving them in
+                  -- let one widely-shared post contribute hundreds of identical
+                  -- documents, which is most of what made this panel unusable.
+                  AND type <> 'Retweet'
                 {account_filter}
             ), tokens AS (
-                SELECT s.id, s.created_at, token.lexeme, token.position
+                SELECT s.id, s.account, s.created_at, token.lexeme, token.position
                 FROM scoped s
                 CROSS JOIN LATERAL unnest(
                     regexp_split_to_array(
@@ -598,28 +672,53 @@ def _phrase_topics(window: Window, handles: list[str]) -> list[tuple[str, int, i
                   AND length(token.lexeme) >= %s
                   AND token.lexeme ~ '[^0-9_]'
             ), phrases AS (
-                SELECT lexeme AS topic, created_at FROM tokens
+                SELECT lexeme AS topic, id, account, created_at FROM tokens
                 UNION ALL
-                SELECT a.lexeme || ' ' || b.lexeme AS topic, a.created_at
+                SELECT a.lexeme || ' ' || b.lexeme AS topic, a.id, a.account, a.created_at
                 FROM tokens a
                 JOIN tokens b ON b.id = a.id AND b.position = a.position + 1
             )
             SELECT topic,
-                   count(*) FILTER (WHERE created_at >= %s) AS current_count,
-                   count(*) FILTER (WHERE created_at < %s) AS previous_count
+                   count(DISTINCT id) FILTER (WHERE created_at >= %s) AS docs,
+                   count(DISTINCT account) FILTER (WHERE created_at >= %s) AS authors,
+                   count(DISTINCT id) FILTER (WHERE created_at < %s) AS previous_docs
             FROM phrases
             GROUP BY topic
-            HAVING count(*) FILTER (WHERE created_at >= %s) > 1
-            ORDER BY current_count DESC, topic
-            LIMIT {_TOPIC_LIMIT}
+            HAVING count(DISTINCT id) FILTER (WHERE created_at >= %s) > 1
+            ORDER BY docs DESC, topic
+            LIMIT {_CANDIDATE_LIMIT}
             """,
             params,
         )
-        return [(topic, int(current), int(previous)) for topic, current, previous in cursor.fetchall()]
+        return [
+            topics.TermStats(topic, "phrase", int(docs), int(authors), int(previous))
+            for topic, docs, authors, previous in cursor.fetchall()
+        ]
+
+
+_BLOCKLIST_STATE = ("analytics", "topic_blocklist")
+
+
+def topic_blocklist() -> set[str]:
+    """Terms an operator has explicitly hidden.
+
+    Stored in KeyValueState rather than its own table: it is one small list, and
+    the generic namespaced-JSON store already exists for exactly this.
+    """
+    namespace, name = _BLOCKLIST_STATE
+    row = KeyValueState.objects.filter(namespace=namespace, name=name).first()
+    terms = (row.data or {}).get("terms") if row else None
+    return {str(term).lower() for term in terms or []}
 
 
 class TopicsView(APIView):
-    """What is being discussed: hashtags, mined phrases, or both."""
+    """What is being discussed, ranked by what changed rather than what is common.
+
+    `?rank=surging` (default) orders by how unusual a term's current rate is
+    against the previous window of equal length; `?rank=volume` orders by how
+    many posts mention it. The support, filler and nested-gram filters apply to
+    both -- they are about whether a row is a topic at all, not about ordering.
+    """
 
     def get(self, request):
         window = window_from(request)
@@ -627,32 +726,63 @@ class TopicsView(APIView):
         dimension = str(request.query_params.get("dimension") or "hashtags").lower()
         if dimension not in {"hashtags", "phrases", "both"}:
             dimension = "hashtags"
+        order = "volume" if str(request.query_params.get("rank") or "").lower() == "volume" else "surging"
         if connection.vendor != "postgresql":
-            return Response({"results": [], "dimension": dimension})
+            return Response({"results": [], "dimension": dimension, "rank": order})
 
-        rows: list[tuple[str, int, int, str]] = []
+        candidates: list[topics.TermStats] = []
         if dimension in {"hashtags", "both"}:
-            rows += [(t, c, p, "hashtag") for t, c, p in _hashtag_topics(window, handles)]
+            candidates += _hashtag_topics(window, handles)
         if dimension in {"phrases", "both"}:
-            rows += [(t, c, p, "phrase") for t, c, p in _phrase_topics(window, handles)]
-        rows.sort(key=lambda row: (-row[1], row[0]))
-        rows = rows[:_TOPIC_LIMIT]
+            candidates += _phrase_topics(window, handles)
+        total_docs, previous_total_docs = _document_totals(window, handles)
 
         return Response({
             "dimension": dimension,
+            "rank": order,
             "since": window.since.isoformat(),
             "until": window.until.isoformat(),
-            "results": [
-                {
-                    "topic": topic,
-                    "kind": kind,
-                    "current_count": current,
-                    "previous_count": previous,
-                    "delta": current - previous,
-                }
-                for topic, current, previous, kind in rows
-            ],
+            # The denominators, so the console can state a rate rather than
+            # asking the reader to trust a bare score.
+            "total_docs": total_docs,
+            "previous_total_docs": previous_total_docs,
+            "results": topics.rank_terms(
+                candidates,
+                total_docs=total_docs,
+                previous_total_docs=previous_total_docs,
+                blocklist=topic_blocklist(),
+                order=order,
+                limit=_TOPIC_LIMIT,
+            ),
         })
+
+
+class TopicBlocklistView(APIView):
+    """Hide or unhide a mined term.
+
+    The scoring gets rid of filler on its own; this covers the residue no
+    statistic can catch -- a boilerplate phrase every account in this particular
+    roster happens to use, which is genuinely unusual and genuinely useless.
+    """
+
+    permission_classes = [IsStaff]
+
+    def get(self, request):
+        return Response({"terms": sorted(topic_blocklist())})
+
+    def post(self, request):
+        term = str(request.data.get("topic") or "").strip().lower()
+        if not term:
+            return Response({"detail": "topic required"}, status=400)
+        terms = topic_blocklist()
+        # One endpoint, both directions: the console's control is a toggle, and
+        # two endpoints for one boolean is two things to keep in step.
+        terms.discard(term) if request.data.get("hidden") is False else terms.add(term)
+        namespace, name = _BLOCKLIST_STATE
+        KeyValueState.objects.update_or_create(
+            namespace=namespace, name=name, defaults={"data": {"terms": sorted(terms)}}
+        )
+        return Response({"terms": sorted(terms)})
 
 
 class AccountsAnalyticsView(APIView):

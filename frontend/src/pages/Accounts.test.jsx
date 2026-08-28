@@ -56,13 +56,13 @@ describe("Accounts roster", () => {
     api.mockImplementation(() => new Promise(() => {}));
     render(<Accounts />);
     expect(await screen.findByText("Loading accounts…")).toBeInTheDocument();
-    expect(screen.queryByText("No tracked accounts yet.")).toBeNull();
+    expect(screen.queryByText("No tracked accounts yet")).toBeNull();
   });
 
   it("shows the empty state only once the roster is known to be empty", async () => {
     routeApi({ accounts: [] });
     render(<Accounts />);
-    expect(await screen.findByText("No tracked accounts yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No tracked accounts yet")).toBeInTheDocument();
   });
 
   it("surfaces a roster failure to the operator", async () => {
@@ -98,7 +98,7 @@ describe("tracking a new account", () => {
     const user = userEvent.setup();
     routeApi();
     render(<Accounts />);
-    const track = await screen.findByRole("button", { name: "Track" });
+    const track = await screen.findByRole("button", { name: "Track account" });
     expect(track).toBeDisabled();
     await user.type(screen.getByLabelText("Account handle"), "elonmusk");
     expect(track).toBeEnabled();
@@ -108,10 +108,10 @@ describe("tracking a new account", () => {
     const user = userEvent.setup();
     routeApi();
     render(<Accounts />);
-    await screen.findByRole("button", { name: "Track" });
+    await screen.findByRole("button", { name: "Track account" });
     await user.type(screen.getByLabelText("Account handle"), "@elonmusk");
     await user.selectOptions(screen.getByLabelText("Priority tier"), "2");
-    await user.click(screen.getByRole("button", { name: "Track" }));
+    await user.click(screen.getByRole("button", { name: "Track account" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/", {
       method: "POST",
       body: { handle: "elonmusk", priority: 2 },
@@ -122,10 +122,10 @@ describe("tracking a new account", () => {
     const user = userEvent.setup();
     routeApi();
     render(<Accounts />);
-    await screen.findByRole("button", { name: "Track" });
+    await screen.findByRole("button", { name: "Track account" });
     const input = screen.getByLabelText("Account handle");
     await user.type(input, "elonmusk");
-    await user.click(screen.getByRole("button", { name: "Track" }));
+    await user.click(screen.getByRole("button", { name: "Track account" }));
     expect(await screen.findByText("Account tracked; initial fetch queued.")).toBeInTheDocument();
     expect(input).toHaveValue("");
   });
@@ -138,9 +138,9 @@ describe("tracking a new account", () => {
       return path === "/accounts/" ? [] : { results: [] };
     });
     render(<Accounts />);
-    await screen.findByRole("button", { name: "Track" });
+    await screen.findByRole("button", { name: "Track account" });
     await user.type(screen.getByLabelText("Account handle"), "nope");
-    await user.click(screen.getByRole("button", { name: "Track" }));
+    await user.click(screen.getByRole("button", { name: "Track account" }));
     expect(await screen.findByText("No such account on X.")).toBeInTheDocument();
   });
 });
@@ -151,7 +151,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("elonmusk")] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@elonmusk" });
-    await user.click(screen.getByRole("button", { name: "fetch" }));
+    await user.click(screen.getByRole("button", { name: "Fetch" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/elonmusk/fetch/", { method: "POST" }));
     expect(await screen.findByText("Queued live + historical for @elonmusk.")).toBeInTheDocument();
   });
@@ -161,7 +161,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("elonmusk")] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@elonmusk" });
-    await user.click(screen.getByRole("button", { name: "disable" }));
+    await user.click(screen.getByRole("button", { name: "Disable" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/elonmusk/", {
       method: "PATCH",
       body: { tracking: false },
@@ -173,7 +173,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("elonmusk", { tracking: false })] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@elonmusk" });
-    await user.click(screen.getByRole("button", { name: "enable" }));
+    await user.click(screen.getByRole("button", { name: "Enable" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/elonmusk/", {
       method: "PATCH",
       body: { tracking: true },
@@ -184,7 +184,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("ok"), account("blocked", { quarantined: true })] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@ok" });
-    expect(screen.getAllByRole("button", { name: "unquarantine" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Unquarantine" })).toHaveLength(1);
   });
 
   it("clears quarantine through the row action", async () => {
@@ -192,7 +192,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("blocked", { quarantined: true })] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@blocked" });
-    await user.click(screen.getByRole("button", { name: "unquarantine" }));
+    await user.click(screen.getByRole("button", { name: "Unquarantine" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/blocked/", {
       method: "PATCH",
       body: { quarantined: false },
@@ -230,7 +230,7 @@ describe("account timeline", () => {
     routeApi({ accounts: [account("elonmusk")] });
     render(<Accounts />);
     await user.click(await screen.findByRole("button", { name: "@elonmusk" }));
-    expect(await screen.findByText(/No tweets yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing collected yet/)).toBeInTheDocument();
   });
 
   // Regression: `if (loading) return` covered the initial open as well as the
@@ -292,7 +292,7 @@ describe("comparison tray", () => {
     for (const h of handles) {
       await user.click(screen.getByLabelText(`Compare @${h}`));
     }
-    const tray = screen.getByText("Compare accounts").closest("article");
+    const tray = screen.getByText("Compare accounts").closest("section");
     expect(within(tray).getAllByText(/^@/)).toHaveLength(4);
     expect(within(tray).queryByText("@a")).toBeNull();
   });

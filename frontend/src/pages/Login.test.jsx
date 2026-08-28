@@ -128,7 +128,7 @@ describe("Login submission", () => {
     await user.click(screen.getByRole("button", { name: /Sign in/ }));
 
     await waitFor(() => expect(signIn).toHaveBeenCalledWith(tokens));
-    expect(navigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(navigate).toHaveBeenCalledWith("/feed", { replace: true });
   });
 
   it("surfaces the server's rejection and starts no session", async () => {
