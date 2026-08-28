@@ -131,6 +131,11 @@ class Search(models.Model):
     # query came last was killed mid-run every time.
     interval_seconds = models.PositiveIntegerField(default=1800)
     last_run_at = models.DateTimeField(null=True, blank=True)
+    # Celery id of the run this search has waiting in the queue, stamped by
+    # dispatch_due_searches and cleared when run_search picks it up. Deleting a
+    # search revokes it; without the id there is no way to stop work that was
+    # queued for a query the operator has since removed.
+    queued_task_id = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -140,16 +145,79 @@ class Search(models.Model):
         return f"{self.slug} [{self.product}]"
 
 
-class SearchResult(models.Model):
-    """Ordered link between a Search and a Tweet it returned."""
+class SearchTweet(models.Model):
+    """A SearchTimeline hit.
 
-    search = models.ForeignKey(Search, on_delete=models.CASCADE, related_name="results")
-    tweet = models.ForeignKey(Tweet, on_delete=models.CASCADE, related_name="search_results")
-    rank = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
+    Physically separate from `Tweet`: the two come from different endpoints on
+    different cadences with different retention, and mixing them made the feed a
+    blend of two unrelated collectors. `Tweet` is what the account collector
+    (UserTweets) owns; everything here arrived through a saved search.
+
+    No `source_subsystem` column -- for this table it is always "search".
+    """
+
+    dedup_key = models.CharField(max_length=160, unique=True)
+    tweet_id = models.CharField(max_length=64, db_index=True)
+    author_rest_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
+    account = models.CharField(max_length=100, db_index=True)
+    author = models.ForeignKey(
+        TwitterUser, on_delete=models.SET_NULL, null=True, blank=True, related_name="search_tweets"
+    )
+
+    text = models.TextField(blank=True, default="")
+    url = models.URLField(max_length=500, blank=True, default="")
+    type = models.CharField(max_length=20, default="Tweet")
+
+    created_at = models.DateTimeField(db_index=True, null=True, blank=True)
+    raw_created_at = models.CharField(max_length=64, blank=True, default="")
+
+    likes = models.BigIntegerField(default=0)
+    retweets = models.BigIntegerField(default=0)
+    replies = models.BigIntegerField(default=0)
+    quotes = models.BigIntegerField(default=0)
+    bookmarks = models.BigIntegerField(default=0)
+    views = models.BigIntegerField(default=0)
+
+    source_language = models.CharField(max_length=16, blank=True, null=True)
+    source_endpoint = models.CharField(max_length=64, blank=True, default="SearchTimeline")
+    conversation_id = models.CharField(max_length=64, blank=True, null=True)
+
+    entities = models.JSONField(default=dict, blank=True)
+    extras = models.JSONField(default=dict, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+
+    ingested_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [("search", "tweet")]
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["-created_at", "-id"]),
+            # The Dashboard's collection-flow chart buckets search capture on
+            # when we saw the hit, the same way it does for `Tweet`.
+            models.Index(fields=["-ingested_at"]),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"{self.account}:{self.tweet_id}"
+
+
+class SearchHit(models.Model):
+    """Ordered link between a Search and a SearchTweet it returned.
+
+    One body per tweet, one hit per (search, tweet): two queries that both match
+    a post share the row rather than storing the payload twice.
+    """
+
+    search = models.ForeignKey(Search, on_delete=models.CASCADE, related_name="hits")
+    search_tweet = models.ForeignKey(
+        SearchTweet, on_delete=models.CASCADE, related_name="hits"
+    )
+    rank = models.IntegerField(default=0)
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("search", "search_tweet")]
         ordering = ["rank", "-id"]
 
 
@@ -169,6 +237,14 @@ class FetchRun(models.Model):
     task_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     subsystem = models.CharField(max_length=32, db_index=True)
     target = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    # Which saved search this run was for, when it was one. SET_NULL rather than
+    # CASCADE only in shape -- teardown_search deletes these rows explicitly --
+    # but a run must never be able to block deleting the query it ran for.
+    # `target` already spells "<slug>:<product>"; this makes "that phrase's run
+    # history" one query instead of a string parse against a mutable slug.
+    search = models.ForeignKey(
+        "Search", on_delete=models.SET_NULL, null=True, blank=True, related_name="runs"
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="running", db_index=True)
     return_code = models.IntegerField(null=True, blank=True)
     summary = models.JSONField(default=dict, blank=True)

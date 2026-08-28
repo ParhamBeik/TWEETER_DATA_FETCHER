@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* Signal Archive — design tokens.
+
+   The subject is a collection instrument, not a business dashboard: it walks X
+   timelines backwards, spends a metered request budget, and archives what it
+   finds. So the console is built as an instrument panel — cold graphite chassis,
+   monospaced readouts, hairline rules, near-square corners — rather than as a
+   card grid with pill buttons.
+
+   One structural idea runs through the palette: **the machine is cold, what it
+   caught is warm.** Collector surfaces (dashboard, workflow, ops) sit on cold
+   graphite; reading surfaces (feed, search results) sit on a warmer near-black
+   with a wider measure and larger type. The app's real duality — a machine and
+   the archive it produces — is what the two temperatures encode.
+
+   Type carries the personality:
+     Space Grotesk  chrome, headings, nav        (technical, odd terminals)
+     Inter          tweet text only              (deliberately invisible while
+                                                  reading; the identity lives in
+                                                  the chrome around it)
+     IBM Plex Mono  every number, id, key, label (this is a readout, not prose)
+
+   The accent is periwinkle for one concrete reason: the data-visualisation
+   palette in charts.js is locked and CVD-validated (blue / orange / green /
+   amber / pink), and a UI accent that collides with a data series makes a chart
+   lie. Nothing in that palette is purple, so nothing on screen can mistake
+   chrome for data.
+
+   The faces are loaded by <link> in index.html rather than @import here: a CSS
+   @import cannot start fetching until this stylesheet has itself been fetched
+   and parsed, which delays first paint by a whole round trip. Every family has a
+   real fallback stack below, so an offline deploy renders in system faces rather
+   than nothing. */
+
+@theme {
+  /* Cold chassis. Graphite with a faint green cast — a phosphor screen that has
+     been switched off. Deliberately not the navy this console used to be, and
+     not the near-black-plus-acid-accent every generated dashboard arrives at. */
+  --color-ink-900: #0b0e0e;
+  --color-ink-850: #0e1212;
+  --color-ink-800: #101414;
+  --color-ink-700: #161b1b;
+  --color-ink-600: #1c2322;
+  --color-line: #232b2b;
+  --color-line-strong: #33403f;
+
+  /* Warm reading surface. Same value range as the chassis so the shell holds
+     together, shifted toward amber so a reading column feels like paper under a
+     lamp rather than another panel. */
+  --color-paper: #13100e;
+  --color-paper-raised: #191512;
+  --color-paper-line: #2a231f;
+
+  --color-fg: #e4eae8;
+  --color-fg-muted: #93a09e;
+  --color-fg-dim: #66716f;
+
+  --color-accent: #a99bf5;
+  --color-accent-soft: #2a2542;
+  --color-accent-ink: #0b0e0e;
+
+  /* Status is a reserved role palette, mirroring charts.js. It never doubles as
+     a data series and never appears without a text label beside it. */
+  --color-ok: #3fae6d;
+  --color-warn: #d6a127;
+  --color-serious: #e08a55;
+  --color-danger: #e06a6a;
+
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 2.25rem;
+
+  /* Machined, not doctrinaire: sharp enough to read as an instrument, not the
+     zero-radius broadsheet look. */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 5px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-ink-900);
+    color: var(--color-fg);
+    font-family: var(--font-display);
+    font-size: var(--text-base);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Every figure in this console is meant to be compared against the one above
+     it — quota remaining, page counts, engagement. Proportional digits make
+     those columns jitter. */
+  .tabular,
+  table,
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One focus treatment everywhere, on the accent, never removed. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+  }
+
+  /* The scrollbar is part of an instrument's chrome; the default light one
+     punches a hole in a dark panel. */
+  * {
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+@layer utilities {
+  /* The eyebrow is a readout label, not decoration: it names which subsystem or
+     collector the panel below reports on. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-fg-dim);
+  }
+
+  /* Annunciator strip: status as a coloured edge plus a label, the way a real
+     panel marks a channel. Colour alone never carries meaning here. */
+  .annunciator {
+    border-left: 2px solid var(--color-line-strong);
+    padding-left: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

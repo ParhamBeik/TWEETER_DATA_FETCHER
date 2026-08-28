@@ -13,5 +13,9 @@ export default function InfiniteSentinel({ next, loading, onLoad }) {
     return () => observer.disconnect();
   }, [next, loading, onLoad]);
 
-  return <div ref={ref} className="load-sentinel" role="status">{loading ? "Loading…" : ""}</div>;
+  return (
+    <div ref={ref} className="py-4 text-center text-xs text-fg-dim" role="status">
+      {loading ? "Loading…" : ""}
+    </div>
+  );
 }

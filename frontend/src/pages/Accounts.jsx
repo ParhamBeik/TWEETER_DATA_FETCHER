@@ -2,10 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
+import { cn } from "@/lib/cn";
+import { compact, duration } from "../format";
+import { Button } from "@/ui/button";
+import { Empty, ErrorNote } from "@/ui/controls";
+import { Input, Select } from "@/ui/field";
+import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";
+import { Badge, TONE } from "@/ui/status";
+
+const TIERS = [1, 2, 3, 4, 5, 6, 7];
 
 function formatWhen(value) {
   return value ? new Date(value).toLocaleString() : "never";
 }
+
+const TH = "pb-2 pr-3 text-left eyebrow font-normal";
+const TD = "py-2 pr-3 align-top text-xs";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
@@ -109,145 +121,204 @@ export default function Accounts() {
   }
 
   return (
-    <section className="accounts">
-      <header>
-        <p className="eyebrow">Accounts</p>
-        <h2 className="page-title">Roster, tiers, and collection health</h2>
-      </header>
-      <form className="follow-form" onSubmit={addAccount}>
-        <input
+    <section className="flex flex-col gap-5">
+      <PageHead
+        label="Accounts"
+        title="Roster, tiers and collection health"
+        lede="A tier sets how much of the shared X budget an account may spend. The interval beside it is what the collector actually measured from how often that account posts."
+      />
+
+      <form className="flex flex-wrap items-end gap-2" onSubmit={addAccount}>
+        <Input
+          className="w-52"
           aria-label="Account handle"
           placeholder="handle, e.g. elonmusk"
           value={handle}
           onChange={(e) => setHandle(e.target.value)}
         />
-        <select
+        <Select
+          className="w-28"
           aria-label="Priority tier"
           value={priority}
           onChange={(e) => setPriority(e.target.value)}
         >
-          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+          {TIERS.map((n) => (
             <option key={n} value={n}>
-              P{n}
+              Priority {n}
             </option>
           ))}
-        </select>
-        <button type="submit" disabled={!handle.trim()}>
-          Track
-        </button>
+        </Select>
+        <Button type="submit" variant="primary" disabled={!handle.trim()}>
+          Track account
+        </Button>
       </form>
-      {status && <p className="status">{status}</p>}
-      {error && <p className="error">{error}</p>}
+
+      {status && <p className="annunciator border-l-accent text-sm text-fg-muted">{status}</p>}
+      {error && <ErrorNote>{error}</ErrorNote>}
+
       {compare.length > 0 && (
-        <article className="panel comparison">
-          <h3>Compare accounts</h3>
-          <div className="comparison-grid">
-            {compare.map((handle) => {
-              const metric = analytics[handle] || {};
-              return <div key={handle}><strong>@{handle}</strong><br /><span className="muted">{metric.posts || 0} posts · {Math.round(metric.average_engagement || 0).toLocaleString()} avg engagement</span></div>;
+        <Panel>
+          <PanelHead label="Comparison" title="Compare accounts" />
+          <PanelBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {compare.map((row) => {
+              const metric = analytics[row] || {};
+              return (
+                <div key={row} className="annunciator border-l-accent">
+                  <p className="font-mono text-sm">@{row}</p>
+                  <p className="mt-1 font-mono text-lg tabular">
+                    {compact(Math.round(metric.average_engagement || 0))}
+                  </p>
+                  <p className="text-xs text-fg-dim">
+                    avg engagement · {compact(metric.posts || 0)} posts
+                  </p>
+                </div>
+              );
             })}
-          </div>
-        </article>
+          </PanelBody>
+        </Panel>
       )}
 
-      <div className="split wide">
-        <div className="account-table-wrap">
-          <table className="account-table">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Tier</th>
-                <th>Interval</th>
-                <th>Last checked</th>
-                <th>Status</th>
-                <th>Tweets</th>
-                <th>Engagement</th>
-                <th>Compare</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((a) => (
-                <tr key={a.handle} className={selected === a.handle ? "active" : ""}>
-                  <td>
-                    <button className="link" onClick={() => openTimeline(a.handle)}>
-                      @{a.handle}
-                    </button>
-                    {a.display_name && a.display_name !== a.handle && (
-                      <div className="muted">{a.display_name}</div>
-                    )}
-                  </td>
-                  <td>
-                    <select
-                      value={a.priority}
-                      onChange={(e) => patch(a.handle, { priority: Number(e.target.value) })}
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                        <option key={n} value={n}>
-                          P{n}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>{a.poll_interval_seconds}s</td>
-                  <td>
-                    <div>{formatWhen(a.last_checked_at)}</div>
-                  </td>
-                  <td>
-                    {a.quarantined ? (
-                      <span className="run-badge failed">quarantined</span>
-                    ) : a.tracking ? (
-                      <span className="run-badge completed">tracking</span>
-                    ) : (
-                      <span className="run-badge">off</span>
-                    )}
-                    {a.quarantine_reason && <div className="muted">{a.quarantine_reason}</div>}
-                    {a.last_status && <div className="muted">{a.last_status}</div>}
-                  </td>
-                  <td>{a.recent_tweet_count}</td>
-                  <td>{Math.round(analytics[a.handle]?.average_engagement || 0).toLocaleString()}</td>
-                  <td><input aria-label={`Compare @${a.handle}`} type="checkbox" checked={compare.includes(a.handle)} onChange={() => toggleCompare(a.handle)} /></td>
-                  <td className="account-actions">
-                    <button className="link small" onClick={() => fetchNow(a.handle)}>
-                      fetch
-                    </button>
-                    <button
-                      className="link small"
-                      onClick={() => patch(a.handle, { tracking: !a.tracking })}
-                    >
-                      {a.tracking ? "disable" : "enable"}
-                    </button>
-                    {a.quarantined && (
-                      <button
-                        className="link small"
-                        onClick={() => patch(a.handle, { quarantined: false })}
-                      >
-                        unquarantine
-                      </button>
-                    )}
-                  </td>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+        <Panel className="min-w-0">
+          <PanelHead label={`${accounts.length} accounts`} className="px-4 py-2" />
+          <PanelBody className="overflow-x-auto">
+            <table className="w-full min-w-[46rem]">
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className={TH}>Account</th>
+                  <th scope="col" className={TH}>Tier</th>
+                  <th scope="col" className={TH}>Polled every</th>
+                  <th scope="col" className={TH}>Last checked</th>
+                  <th scope="col" className={TH}>Status</th>
+                  <th scope="col" className={TH}>Posts</th>
+                  <th scope="col" className={TH}>Engagement</th>
+                  <th scope="col" className={TH}>Compare</th>
+                  <th scope="col" className={TH} />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {!rosterLoaded && <p className="muted">Loading accounts…</p>}
-          {rosterLoaded && accounts.length === 0 && (
-            <p className="muted">No tracked accounts yet.</p>
-          )}
-        </div>
+              </thead>
+              <tbody>
+                {accounts.map((a) => (
+                  <tr
+                    key={a.handle}
+                    className={cn(
+                      "border-b border-line last:border-b-0",
+                      selected === a.handle && "bg-ink-700",
+                    )}
+                  >
+                    <td className={TD}>
+                      <button
+                        type="button"
+                        className="font-mono text-sm hover:text-accent hover:underline"
+                        onClick={() => openTimeline(a.handle)}
+                      >
+                        @{a.handle}
+                      </button>
+                      {a.display_name && a.display_name !== a.handle && (
+                        <div className="text-fg-dim">{a.display_name}</div>
+                      )}
+                    </td>
+                    <td className={TD}>
+                      <Select
+                        aria-label={`Tier for @${a.handle}`}
+                        className="w-24"
+                        value={a.priority}
+                        onChange={(e) => patch(a.handle, { priority: Number(e.target.value) })}
+                      >
+                        {TIERS.map((n) => (
+                          <option key={n} value={n}>
+                            P{n}
+                          </option>
+                        ))}
+                      </Select>
+                    </td>
+                    <td className={cn(TD, "font-mono tabular")}>
+                      {duration(a.poll_interval_seconds)}
+                    </td>
+                    <td className={cn(TD, "text-fg-muted")}>{formatWhen(a.last_checked_at)}</td>
+                    <td className={TD}>
+                      {a.quarantined ? (
+                        <Badge tone={TONE.danger}>quarantined</Badge>
+                      ) : a.tracking ? (
+                        <Badge tone={TONE.ok}>tracking</Badge>
+                      ) : (
+                        <Badge tone={TONE.idle}>off</Badge>
+                      )}
+                      {a.quarantine_reason && (
+                        <div className="mt-1 text-fg-dim">{a.quarantine_reason}</div>
+                      )}
+                      {a.last_status && <div className="mt-1 text-fg-dim">{a.last_status}</div>}
+                    </td>
+                    <td className={cn(TD, "font-mono tabular")}>{compact(a.recent_tweet_count)}</td>
+                    <td className={cn(TD, "font-mono tabular")}>
+                      {compact(Math.round(analytics[a.handle]?.average_engagement || 0))}
+                    </td>
+                    <td className={TD}>
+                      <input
+                        aria-label={`Compare @${a.handle}`}
+                        type="checkbox"
+                        className="accent-[var(--color-accent)]"
+                        checked={compare.includes(a.handle)}
+                        onChange={() => toggleCompare(a.handle)}
+                      />
+                    </td>
+                    <td className={cn(TD, "whitespace-nowrap")}>
+                      <Button size="sm" variant="quiet" onClick={() => fetchNow(a.handle)}>
+                        Fetch
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        onClick={() => patch(a.handle, { tracking: !a.tracking })}
+                      >
+                        {a.tracking ? "Disable" : "Enable"}
+                      </Button>
+                      {a.quarantined && (
+                        <Button
+                          size="sm"
+                          variant="quiet"
+                          onClick={() => patch(a.handle, { quarantined: false })}
+                        >
+                          Unquarantine
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!rosterLoaded && <p className="mt-3 text-xs text-fg-muted">Loading accounts…</p>}
+            {rosterLoaded && accounts.length === 0 && (
+              <Empty className="mt-3" title="No tracked accounts yet">
+                Add a handle above to start collecting its timeline.
+              </Empty>
+            )}
+          </PanelBody>
+        </Panel>
 
-        <div className="timeline">
-          {selected && <h3>@{selected}</h3>}
-          {tweets.map((t) => (
-            <TweetCard key={t.id} tweet={t} />
-          ))}
-          <InfiniteSentinel
-            next={next}
-            loading={loading}
-            onLoad={(url) => selected && openTimeline(selected, url)}
-          />
-          {selected && !loading && tweets.length === 0 && (
-            <p className="muted">No tweets yet — the fetch may still be running.</p>
+        <div className="min-w-0">
+          {selected ? (
+            <>
+              <p className="eyebrow mb-2">Timeline · @{selected}</p>
+              <div className="rounded-sm bg-paper">
+                {tweets.map((t) => (
+                  <TweetCard key={t.id} tweet={t} />
+                ))}
+                <InfiniteSentinel
+                  next={next}
+                  loading={loading}
+                  onLoad={(url) => selected && openTimeline(selected, url)}
+                />
+              </div>
+              {!loading && tweets.length === 0 && (
+                <Empty title="Nothing collected yet">
+                  The first fetch for this account may still be running.
+                </Empty>
+              )}
+            </>
+          ) : (
+            <Empty title="Pick an account">
+              Select a handle to read what the collector has captured from it.
+            </Empty>
           )}
         </div>
       </div>

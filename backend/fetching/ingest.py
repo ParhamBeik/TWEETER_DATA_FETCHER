@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Iterable
 
-from tweets.models import Search, SearchResult, Tweet, TweetMetric, TwitterUser
+from tweets.models import Search, SearchHit, SearchTweet, Tweet, TweetMetric, TwitterUser
 
 from . import metric_gates
 
@@ -49,6 +49,11 @@ _TWEET_UPDATE_FIELDS = [
 # pipeline *first* captured a tweet, and the live poll re-sees backfilled tweets
 # constantly. Including it would hand every historical tweet to "live" within a
 # cycle or two and make the collection-flow chart a lie.
+
+# SearchTweet carries no source_subsystem (it is always "search") and no author
+# FK churn beyond what _row_fields resolves, so its refresh set is the same list
+# minus the column that does not exist on that table.
+_SEARCH_TWEET_UPDATE_FIELDS = list(_TWEET_UPDATE_FIELDS)
 
 
 def dedup_key(item: dict) -> str:
@@ -148,46 +153,73 @@ def _author_defaults(item: dict, account: str) -> dict | None:
     return defaults
 
 
-def _tweet_row(
-    item: dict, authors_by_handle: dict[str, TwitterUser], subsystem: str = ""
-) -> Tweet | None:
+def account_of(item: dict) -> str:
+    """The handle a normalized item belongs to, spelled the way rows store it."""
+    author_data = item.get("author", {}) if isinstance(item.get("author"), dict) else {}
+    return str(item.get("account") or author_data.get("handle") or "unknown").lstrip("@").lower()
+
+
+def _row_fields(item: dict, authors_by_handle: dict[str, TwitterUser]) -> dict | None:
+    """The normalized column values shared by Tweet and SearchTweet.
+
+    One parser for both tables. The two models differ only in which columns they
+    carry (SearchTweet has no source_subsystem -- for that table it is always
+    "search"), never in how a field is derived from the engine's payload.
+    """
     key = dedup_key(item)
     if not key:
         return None
-    tweet_id = str(item.get("rest_id") or item.get("id") or item.get("tweet_id") or "")
-    author_data = item.get("author", {}) if isinstance(item.get("author"), dict) else {}
-    account = str(item.get("account") or author_data.get("handle") or "unknown").lstrip("@").lower()
-    # Leave NULL when the timestamp is unparseable. Stamping now() would sort the
-    # tweet to the top of the feed forever, and raw_created_at preserves the
-    # original string for diagnosis.
-    created_at = _parse_created_at(item.get("created_at") or item.get("raw_timestamp"))
-    return Tweet(
-        dedup_key=key,
-        tweet_id=tweet_id,
-        author_rest_id=item.get("author_id"),
-        account=account,
-        author=authors_by_handle.get(account),
-        text=item.get("text") or "",
-        url=item.get("url") or "",
-        type=item.get("type") or "Tweet",
-        created_at=created_at,
-        raw_created_at=str(item.get("created_at") or ""),
+    account = account_of(item)
+    return {
+        "dedup_key": key,
+        "tweet_id": str(item.get("rest_id") or item.get("id") or item.get("tweet_id") or ""),
+        "author_rest_id": item.get("author_id"),
+        "account": account,
+        "author": authors_by_handle.get(account),
+        "text": item.get("text") or "",
+        "url": item.get("url") or "",
+        "type": item.get("type") or "Tweet",
+        # Leave NULL when the timestamp is unparseable. Stamping now() would sort
+        # the tweet to the top of the feed forever, and raw_created_at preserves
+        # the original string for diagnosis.
+        "created_at": _parse_created_at(item.get("created_at") or item.get("raw_timestamp")),
+        "raw_created_at": str(item.get("created_at") or ""),
         **metrics_for(item),
-        source_language=item.get("source_language"),
-        source_endpoint=item.get("source_endpoint") or "",
-        source_subsystem=subsystem,
-        conversation_id=item.get("conversation_id"),
-        entities=item.get("entities") or {},
-        extras=_extras_from_item(item),
-        payload=item,
-    )
+        "source_language": item.get("source_language"),
+        "source_endpoint": item.get("source_endpoint") or "",
+        "conversation_id": item.get("conversation_id"),
+        "entities": item.get("entities") or {},
+        "extras": _extras_from_item(item),
+        "payload": item,
+    }
+
+
+def _tweet_row(
+    item: dict, authors_by_handle: dict[str, TwitterUser], subsystem: str = ""
+) -> Tweet | None:
+    fields = _row_fields(item, authors_by_handle)
+    if fields is None:
+        return None
+    return Tweet(source_subsystem=subsystem, **fields)
+
+
+def _search_tweet_row(
+    item: dict, authors_by_handle: dict[str, TwitterUser]
+) -> SearchTweet | None:
+    fields = _row_fields(item, authors_by_handle)
+    if fields is None:
+        return None
+    # SearchTimeline is the only endpoint that feeds this table; the engine does
+    # not always stamp source_endpoint on a search item, so default it here
+    # rather than storing a blank that reads as "unknown provenance".
+    fields["source_endpoint"] = fields["source_endpoint"] or "SearchTimeline"
+    return SearchTweet(**fields)
 
 
 def _upsert_authors(items: Iterable[dict]) -> dict[str, TwitterUser]:
     pending: dict[str, dict] = {}
     for item in items:
-        author_data = item.get("author", {}) if isinstance(item.get("author"), dict) else {}
-        account = str(item.get("account") or author_data.get("handle") or "unknown").lstrip("@").lower()
+        account = account_of(item)
         defaults = _author_defaults(item, account)
         if defaults is None:
             continue
@@ -332,30 +364,55 @@ def _record_metrics(rows: list[Tweet], previous: dict[str, Tweet]) -> None:
         TweetMetric.objects.bulk_create(snapshots)
 
 
-def ingest_search_results(search: Search, items, subsystem: str = "search") -> int:
-    """Upsert tweets and link them to a search, ranked by arrival order."""
-    batch = list(items)
+def ingest_search_hits(search: Search, items) -> int:
+    """Upsert SearchTimeline hits and link them to a search, in arrival order.
+
+    Writes to SearchTweet/SearchHit, never to Tweet. The two collectors are kept
+    in separate tables: UserTweets owns the tracked-account archive that the feed
+    and the engagement analytics read, and a saved search is a transient view of
+    the wider firehose with its own 30-day retention. Mixing them made the feed a
+    blend of both and gave search hits the archive's retention by accident.
+    """
+    batch = [item for item in items if isinstance(item, dict)]
     if not batch:
         return 0
-    ingest_tweets(batch, subsystem)
-    keys = []
-    for item in batch:
-        key = dedup_key(item)
-        if key:
-            keys.append(key)
-    tweets = {t.dedup_key: t for t in Tweet.objects.filter(dedup_key__in=keys)}
-    links = []
+    authors = _upsert_authors(batch)
+    rows: list[SearchTweet] = []
+    ranks: dict[str, int] = {}
     for rank, item in enumerate(batch):
-        tweet = tweets.get(dedup_key(item))
-        if tweet is None:
+        row = _search_tweet_row(item, authors)
+        # First occurrence wins the rank: a query that returns the same post
+        # twice in one page should not push it down the result list.
+        if row is None or row.dedup_key in ranks:
             continue
-        links.append(SearchResult(search=search, tweet=tweet, rank=rank))
+        ranks[row.dedup_key] = rank
+        rows.append(row)
+    if not rows:
+        return 0
+    SearchTweet.objects.bulk_create(
+        rows,
+        update_conflicts=True,
+        unique_fields=["dedup_key"],
+        update_fields=_SEARCH_TWEET_UPDATE_FIELDS,
+    )
+    saved = {
+        row.dedup_key: row
+        for row in SearchTweet.objects.filter(dedup_key__in=list(ranks)).only("id", "dedup_key")
+    }
+    links = [
+        SearchHit(search=search, search_tweet=saved[key], rank=rank)
+        for key, rank in ranks.items()
+        if key in saved
+    ]
     if links:
-        SearchResult.objects.bulk_create(
+        SearchHit.objects.bulk_create(
             links,
             update_conflicts=True,
-            unique_fields=["search", "tweet"],
-            update_fields=["rank"],
+            unique_fields=["search", "search_tweet"],
+            # last_seen_at is auto_now, which bulk_create's upsert path does not
+            # refresh, so it is listed explicitly -- it is how the console shows
+            # that a repoll re-saw a result rather than only first finding it.
+            update_fields=["rank", "last_seen_at"],
         )
     logger.info(
         "search %r: linked %d/%d fetched result(s)", search.name, len(links), len(batch),

@@ -7,6 +7,7 @@ from datetime import timedelta
 from io import StringIO
 
 from django.db import connection
+from django.db.models import Count, Exists, OuterRef
 from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
 from django.utils import timezone
@@ -31,12 +32,13 @@ from config.pagination import (
 
 from .analytics import engagement_expression, normalize_handles
 
-from .models import FetchRun, Search, Tweet, TwitterUser, XSession
+from .models import FetchRun, Search, SearchTweet, Tweet, TwitterUser, XSession
 from .serializers import (
     AccountOpsSerializer,
     FetchRunDetailSerializer,
     FetchRunSerializer,
     SearchSerializer,
+    SearchTweetSerializer,
     TweetSerializer,
 )
 
@@ -66,14 +68,19 @@ FEED_WINDOWS = {"1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720}
 
 
 def feed_queryset(params):
+    """The tracked-account stream: everything the UserTweets collector captured.
+
+    Saved searches are deliberately absent. They used to be unioned in here, so
+    the feed was a blend of two collectors with different cadences, different
+    retention and different meanings of "why is this post here" -- and a query
+    the operator had merely saved silently rewrote everyone's feed. Search hits
+    now live in their own tables and are read through /api/searches/{id}/results/.
+    """
     tracked = list(
         TwitterUser.objects.filter(tracking=True).values_list("handle", "priority")
     )
     handle_to_priority = {handle: priority for handle, priority in tracked}
-    search_ids = Search.objects.filter(enabled=True).values_list("id", flat=True)
-    qs = Tweet.objects.filter(account__in=list(handle_to_priority)) | Tweet.objects.filter(
-        search_results__search_id__in=list(search_ids)
-    )
+    qs = Tweet.objects.filter(account__in=list(handle_to_priority))
     # Repeatable ?account=, matching the analytics endpoints. params.get() would
     # silently keep only the last value, so a two-account selection returned one
     # account's posts.
@@ -124,12 +131,10 @@ def feed_queryset(params):
             qs = qs.annotate(_search=SearchVector("text")).filter(_search=query)
         else:
             qs = qs.filter(text__icontains=query)
-    qs = with_feed_ts(
-        qs.distinct()
-        .select_related("author")
-        .prefetch_related("search_results__search")
-        .defer("payload")
-    )
+    # No .distinct() any more: the union with search results was the only thing
+    # that could produce a duplicate row, and distinct() over a deferred JSONB
+    # payload is expensive on a table this size.
+    qs = with_feed_ts(qs.select_related("author").defer("payload"))
     if str(params.get("sort") or "").lower() == "top":
         # Secondary key is feed_ts, not id: ties on engagement should break by
         # recency, and the offset paginator needs a fully deterministic order.
@@ -140,7 +145,7 @@ def feed_queryset(params):
 
 
 class FeedView(ListAPIView):
-    """Merged latest tweets from tracked accounts + enabled searches."""
+    """Latest tweets from tracked accounts. Saved searches have their own page."""
 
     serializer_class = TweetSerializer
 
@@ -330,22 +335,33 @@ class XSessionView(APIView):
 
 
 class SearchViewSet(viewsets.ModelViewSet):
-    """List/create searches; creating one enqueues an on-demand fetch."""
+    """A saved search as a manageable unit of work.
+
+    Beyond list/create: edit, pause, run now, inspect the schedule and run
+    history, and delete -- where delete really means the whole job behind the
+    phrase goes away (see fetching.searches.teardown_search).
+    """
 
     serializer_class = SearchSerializer
-    # Anyone signed in may browse saved searches; creating one starts a browser
-    # bootstrap against the shared session, so that is an operator action.
+    # Anyone signed in may browse saved searches; every write here either spends
+    # X quota or changes what the collector does, so all of them are staff. PATCH
+    # and DELETE were previously blocked outright because the viewset predated
+    # this gate and left them open to any authenticated user.
     permission_classes = [IsStaffOrReadOnly]
-    # No PATCH: it let any authenticated user rewrite another search's raw_query
-    # or set enabled=False (silently dropping it from repoll_searches and from
-    # everyone's feed), and no UI ever called it. Edit via admin if needed.
-    http_method_names = ["get", "post", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     # Searches paginate on their own non-null created_at; only the `results`
-    # action returns Tweets and needs the feed_ts-ordered paginator.
+    # action returns tweets and needs the feed_ts-ordered paginator.
     pagination_class = CreatedAtCursorPagination
 
     def get_queryset(self):
-        qs = Search.objects.all()
+        qs = Search.objects.annotate(
+            hit_count_annotated=Count("hits", distinct=True),
+            # Resolved here so a list of N searches costs one query rather than
+            # N -- schedule_for takes the flag pre-computed for exactly this.
+            is_running_annotated=Exists(
+                FetchRun.objects.filter(search=OuterRef("pk"), status="running")
+            ),
+        )
         product = self.request.query_params.get("product")
         if product:
             qs = qs.filter(product__iexact=product)
@@ -360,27 +376,79 @@ class SearchViewSet(viewsets.ModelViewSet):
         )
         from fetching.tasks import run_search
 
-        run_search.delay(search.id)
+        # Run immediately rather than waiting up to one dispatch interval: a
+        # query you just wrote should start collecting while you are still
+        # looking at it. The recurring schedule takes over from there.
+        result = run_search.delay(search.id)
+        Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
+
+    def perform_destroy(self, instance):
+        from fetching.searches import teardown_search
+
+        teardown_search(instance)
+
+    def destroy(self, request, *args, **kwargs):
+        from fetching.searches import teardown_search
+
+        # Report what went, rather than a bare 204. Deleting a search removes
+        # results and history an operator cannot get back, so the response says
+        # exactly what it cost.
+        return Response(teardown_search(self.get_object()))
 
     @action(detail=True, methods=["get"])
     def results(self, request, pk=None):
         search = self.get_object()
+        # Newest first, not by SearchHit.rank. CursorPagination replaces the
+        # queryset's ordering with its own (StandardCursorPagination.ordering),
+        # so an order_by here would be silently ignored -- as it was before this
+        # split, where the same dead `order_by("search_results__rank")` gave the
+        # impression results came back in X's order and they never did.
+        # A rank-ordered view needs offset paging, the way the feed's `top` sort
+        # does. ponytail: not built until someone wants it.
+        # No .distinct(): (search, search_tweet) is unique, so the join cannot
+        # duplicate a row.
         tweets = with_feed_ts(
-            Tweet.objects.filter(search_results__search=search)
+            SearchTweet.objects.filter(hits__search=search)
             .select_related("author")
             .defer("payload")
-        ).order_by("search_results__rank", "-feed_ts")
+        )
         paginator = StandardCursorPagination()
         page = paginator.paginate_queryset(tweets, request, view=self)
-        serializer = TweetSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        return paginator.get_paginated_response(SearchTweetSerializer(page, many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def runs(self, request, pk=None):
+        """This phrase's fetch history: what ran, how it ended, what it cost."""
+        search = self.get_object()
+        queryset = FetchRun.objects.filter(search=search).order_by("-started_at", "-id")
+        paginator = FetchRunCursorPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        return paginator.get_paginated_response(FetchRunSerializer(page, many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def schedule(self, request, pk=None):
+        """The recurring job behind this phrase, cheap enough to poll."""
+        from fetching.searches import schedule_for
+
+        return Response(schedule_for(self.get_object()))
+
+    @action(detail=True, methods=["post"], permission_classes=[IsStaff])
+    def pause(self, request, pk=None):
+        """Stop or resume the schedule without losing the query or its results."""
+        search = self.get_object()
+        search.enabled = not search.enabled
+        search.save(update_fields=["enabled"])
+        from fetching.searches import schedule_for
+
+        return Response(schedule_for(search))
 
     @action(detail=True, methods=["post"])
     def refresh(self, request, pk=None):
         search = self.get_object()
         from fetching.tasks import run_search
 
-        run_search.delay(search.id)
+        result = run_search.delay(search.id)
+        Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
 

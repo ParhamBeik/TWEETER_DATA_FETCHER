@@ -143,7 +143,7 @@ describe("Signup form", () => {
     await user.click(screen.getByRole("button", { name: /Create account/ }));
 
     await waitFor(() => expect(signIn).toHaveBeenCalledWith(tokens));
-    expect(navigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(navigate).toHaveBeenCalledWith("/feed", { replace: true });
   });
 
   it("puts the server's per-field rejection next to the field it names", async () => {

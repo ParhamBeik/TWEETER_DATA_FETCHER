@@ -9,10 +9,9 @@ from typing import Callable, Optional
 from celery import current_task, shared_task
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
-from tweets.models import FetchRun, RawPage, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import FetchRun, RawPage, Search, SearchHit, SearchTweet, Tweet, TwitterUser
 
 from . import runner
 from .accounts import (
@@ -22,7 +21,7 @@ from .accounts import (
     median_gap_seconds,
     sync_quarantine_from_live_state,
 )
-from .ingest import ingest_search_results, ingest_tweets
+from .ingest import ingest_search_hits, ingest_tweets
 
 logger = logging.getLogger(__name__)
 
@@ -114,11 +113,16 @@ def _run_cycle(
     failed = False
     try:
         if subsystem == "search":
+            # One search per run since dispatch_due_searches took over, but the
+            # signature still accepts a list for repoll_searches. Attributing the
+            # run to a single search is what makes "this phrase's history" a
+            # relation rather than a parse of `target`.
+            if len(searches or []) == 1:
+                FetchRun.objects.filter(pk=result.run.pk).update(search=searches[0])
             for search in searches or []:
-                count += ingest_search_results(
+                count += ingest_search_hits(
                     search,
                     runner.iter_search_tweets(result.root, search.slug, search.product),
-                    subsystem,
                 )
                 # Stamped on every attempt, not only a completed one. This is what
                 # dispatch_due_searches schedules from, so leaving it unset after a
@@ -274,7 +278,14 @@ def run_search(search_id: int) -> int:
     """Run one saved search, alone, with the whole cycle budget to itself."""
     search = Search.objects.filter(id=search_id).first()
     if search is None:
+        # The query was deleted between dispatch and pickup. Nothing to do, and
+        # nothing to complain about -- teardown_search revokes what it can, and
+        # this is the backstop for the message it could not.
         return 0
+    # The claim is spent the moment the work starts: leaving the id set would let
+    # a delete try to revoke a task that is already running, and would keep the
+    # console showing "queued" for the whole run.
+    Search.objects.filter(id=search_id).update(queued_task_id="")
     # Locked per search: dispatch_due_searches and a manual trigger can both
     # reach this, and two browser bootstraps against the one shared X session
     # is exactly the race _cycle_lock exists to prevent.
@@ -321,7 +332,13 @@ def dispatch_due_searches() -> int:
                 search.slug,
             )
             continue
-        run_search.delay(search.id)
+        result = run_search.delay(search.id)
+        # Stamped after the claim, not instead of it: the CAS is what prevents
+        # double-queuing, this only records *which* message won so a delete can
+        # revoke it. A crash between the two leaves the search looking idle for
+        # one interval, which is already the semantic for a run that did not
+        # finish.
+        Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
         queued += 1
     if queued:
         logger.info("dispatch_due_searches: queued %d search(es)", queued)
@@ -381,14 +398,25 @@ def recompute_poll_intervals() -> int:
 
 @shared_task(name="fetching.tasks.purge_expired_search_tweets")
 def purge_expired_search_tweets() -> int:
-    """Drop search-only tweets older than SEARCH_TWEET_TTL_DAYS."""
+    """Drop search hits older than SEARCH_TWEET_TTL_DAYS.
+
+    Simpler than it used to be, and that is the point of the split. The old
+    version had to exclude tracked handles by hand, because search results and
+    the tracked-account archive shared one table and one row could belong to
+    both; a search hit now lives in its own table with its own clock, so the
+    tracked archive cannot be caught by this.
+
+    Bodies go when their last hit does -- a tweet two queries both matched
+    survives until neither wants it.
+
+    Task name= is unchanged: it is a wire identifier and renaming one strands any
+    message already queued under the old name.
+    """
     cutoff = timezone.now() - timedelta(days=settings.SEARCH_TWEET_TTL_DAYS)
-    tracked = TwitterUser.objects.filter(tracking=True).values_list("handle", flat=True)
-    has_search = Exists(SearchResult.objects.filter(tweet_id=OuterRef("pk")))
-    qs = Tweet.objects.filter(has_search, ingested_at__lt=cutoff).exclude(
-        account__in=list(tracked)
-    )
-    deleted, _ = qs.delete()
+    SearchHit.objects.filter(last_seen_at__lt=cutoff).delete()
+    deleted, _ = SearchTweet.objects.filter(
+        ingested_at__lt=cutoff, hits__isnull=True
+    ).delete()
     return deleted
 
 

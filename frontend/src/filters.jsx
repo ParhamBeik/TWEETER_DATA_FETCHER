@@ -1,7 +1,15 @@
-// Filter controls shared by Pulse, Feed and Analyze, so the three pages offer
-// one vocabulary for "which window" and "which accounts" instead of three.
+// Filter controls shared by the dashboard, the feed and Analyze, so the three
+// pages offer one vocabulary for "which window" and "which accounts" instead of
+// three. The presentation moved onto the ui/ primitives; the hooks and the
+// windowParams contract below are unchanged and still shared.
 import { useEffect, useRef, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import { Check } from "lucide-react";
 import { api } from "./api";
+import { cn } from "@/lib/cn";
+import { Input } from "@/ui/field";
+
+export { Segmented, ToggleChips } from "@/ui/controls";
 
 export const RANGES = [
   { value: "1h", label: "1h" },
@@ -17,56 +25,6 @@ export const BUCKETS = [
   { value: "day", label: "Daily" },
   { value: "week", label: "Weekly" },
 ];
-
-/**
- * A row of mutually exclusive options. `aria-pressed` rather than a radiogroup:
- * these read as toggle buttons and the pressed state is what a screen reader
- * needs, since the label alone does not say which is active.
- */
-export function Segmented({ label, options, value, onChange, name }) {
-  return (
-    <div className="segmented" role="group" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          name={name}
-          aria-pressed={value === option.value}
-          className={value === option.value ? "segment active" : "segment"}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Independent on/off chips -- post types, media-only, and similar. */
-export function ToggleChips({ label, options, values, onChange }) {
-  return (
-    <div className="chip-row" role="group" aria-label={label}>
-      {options.map((option) => {
-        const on = values.includes(option.value);
-        return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={on}
-            className={on ? "chip active" : "chip"}
-            onClick={() =>
-              onChange(
-                on ? values.filter((v) => v !== option.value) : [...values, option.value],
-              )
-            }
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /**
  * The tracked-account roster, cached for the life of the page.
@@ -100,14 +58,22 @@ export function Avatar({ account, size = 40, className = "" }) {
   const style = { width: size, height: size };
   if (!url || failed) {
     return (
-      <div className={`avatar avatar-fallback ${className}`} style={style} aria-hidden="true">
+      <div
+        className={cn(
+          "avatar avatar-fallback flex shrink-0 items-center justify-center rounded-full",
+          "bg-ink-700 font-mono text-xs text-fg-muted",
+          className,
+        )}
+        style={style}
+        aria-hidden="true"
+      >
         {(handle[0] || "?").toUpperCase()}
       </div>
     );
   }
   return (
     <img
-      className={`avatar ${className}`}
+      className={cn("avatar shrink-0 rounded-full object-cover", className)}
       style={style}
       src={url}
       alt=""
@@ -120,27 +86,15 @@ export function Avatar({ account, size = 40, className = "" }) {
 }
 
 /**
- * Multi-select account picker. Closes on outside click and on Escape, so it
- * does not trap keyboard users inside an open popover.
+ * Multi-select account picker.
+ *
+ * Radix Popover handles outside-click, Escape and focus return -- the three
+ * things a hand-rolled popover gets subtly wrong and that make one a keyboard
+ * trap.
  */
 export function AccountPicker({ accounts, selected, onChange }) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const root = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = (event) => {
-      if (root.current && !root.current.contains(event.target)) setOpen(false);
-    };
-    const escape = (event) => event.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open]);
+  const search = useRef(null);
 
   const visible = accounts.filter((row) =>
     `${row.handle} ${row.display_name || ""}`.toLowerCase().includes(query.toLowerCase()),
@@ -153,30 +107,40 @@ export function AccountPicker({ accounts, selected, onChange }) {
         : `${selected.length} accounts`;
 
   return (
-    <div className="account-picker" ref={root}>
-      <button
-        type="button"
-        className="picker-trigger"
-        aria-expanded={open}
+    <Popover.Root>
+      <Popover.Trigger
+        className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line px-2.5 text-xs text-fg-muted hover:border-line-strong hover:text-fg"
         aria-haspopup="listbox"
-        onClick={() => setOpen((was) => !was)}
       >
         {summary}
-      </button>
-      {open && (
-        <div className="picker-menu" role="listbox" aria-label="Accounts">
-          <input
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          sideOffset={4}
+          align="start"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            search.current?.focus();
+          }}
+          className="z-50 w-64 rounded-sm border border-line-strong bg-ink-800 p-2"
+        >
+          <Input
+            ref={search}
             aria-label="Filter accounts"
             placeholder="filter accounts"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
           {selected.length > 0 && (
-            <button type="button" className="link small" onClick={() => onChange([])}>
+            <button
+              type="button"
+              className="mt-1.5 text-xs text-accent hover:underline"
+              onClick={() => onChange([])}
+            >
               Clear selection
             </button>
           )}
-          <ul>
+          <ul className="mt-1.5 max-h-64 overflow-y-auto" role="listbox" aria-label="Accounts">
             {visible.map((row) => {
               const on = selected.includes(row.handle);
               return (
@@ -185,27 +149,33 @@ export function AccountPicker({ accounts, selected, onChange }) {
                     type="button"
                     role="option"
                     aria-selected={on}
-                    className={on ? "picker-row active" : "picker-row"}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-xs px-1.5 py-1 text-left hover:bg-ink-700",
+                      on && "text-accent",
+                    )}
                     onClick={() =>
                       onChange(
-                        on
-                          ? selected.filter((h) => h !== row.handle)
-                          : [...selected, row.handle],
+                        on ? selected.filter((h) => h !== row.handle) : [...selected, row.handle],
                       )
                     }
                   >
-                    <Avatar account={row} size={24} />
-                    <span className="picker-name">{row.display_name || row.handle}</span>
-                    <span className="picker-handle">@{row.handle}</span>
+                    <Avatar account={row} size={20} />
+                    <span className="min-w-0 flex-1 truncate text-xs">
+                      {row.display_name || row.handle}
+                    </span>
+                    <span className="shrink-0 font-mono text-2xs text-fg-dim">@{row.handle}</span>
+                    {on && <Check className="size-3 shrink-0" aria-hidden="true" />}
                   </button>
                 </li>
               );
             })}
-            {!visible.length && <li className="muted picker-empty">No matching account.</li>}
+            {!visible.length && (
+              <li className="px-1.5 py-2 text-xs text-fg-dim">No matching account.</li>
+            )}
           </ul>
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 

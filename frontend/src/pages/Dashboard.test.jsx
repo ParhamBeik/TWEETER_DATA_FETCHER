@@ -2,10 +2,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Pulse from "./Pulse";
+import Dashboard from "./Dashboard";
 import { api } from "../api";
 
-// Component tests: Pulse composes two endpoints into stat tiles, charts and
+// Component tests: The dashboard composes two endpoints into stat tiles, charts and
 // pipeline panels, so the network boundary is the only thing mocked.
 
 vi.mock("../api", async () => {
@@ -101,7 +101,7 @@ const pipeline = (over = {}) => ({
 const renderPulse = () =>
   render(
     <MemoryRouter>
-      <Pulse />
+      <Dashboard />
     </MemoryRouter>,
   );
 
@@ -147,7 +147,7 @@ describe("Pulse data loading", () => {
   });
 });
 
-describe("Pulse stat tiles", () => {
+describe("Dashboard stat tiles", () => {
   it("reports what was captured and how it compares to the previous period", async () => {
     renderPulse();
     expect(await screen.findByText("40")).toBeInTheDocument();
@@ -160,12 +160,9 @@ describe("Pulse stat tiles", () => {
     expect(screen.getByText(/30 days deep/)).toBeInTheDocument();
   });
 
-  it("shows the remaining X quota and when it resets", async () => {
-    renderPulse();
-    expect(await screen.findByText("12/50")).toBeInTheDocument();
-    // The countdown appears on both the tile and the quota bar below it.
-    expect(screen.getAllByText(/resets in 4m 0s/).length).toBeGreaterThan(0);
-  });
+  // Quota is no longer a tile here: it moved to the budget rail that sits above
+  // every page, since it explains what the other collectors are doing too. See
+  // BudgetRail.test.jsx.
 
   it("shows backfill completion as a fraction of the roster", async () => {
     renderPulse();
@@ -198,13 +195,17 @@ describe("Pulse stat tiles", () => {
   });
 });
 
-describe("Pulse collection attribution", () => {
+describe("Dashboard collection attribution", () => {
   it("names which pipeline captured how much", async () => {
     renderPulse();
-    const legend = await screen.findByText(/Archive walk:/);
-    expect(legend).toBeInTheDocument();
+    // Scoped to the legend list: "Archive walk" also names a collector in the
+    // pipeline panel further down the page.
+    const legend = (await screen.findAllByText("Archive walk"))
+      .map((node) => node.closest("li"))
+      .find(Boolean);
     expect(within(legend).getByText("30")).toBeInTheDocument();
-    expect(within(await screen.findByText(/Live poll:/)).getByText("10")).toBeInTheDocument();
+    const live = within(legend.parentElement).getByText("Live poll").closest("li");
+    expect(within(live).getByText("10")).toBeInTheDocument();
   });
 
   it("explains an empty window rather than drawing a blank chart", async () => {
@@ -222,7 +223,7 @@ describe("Pulse collection attribution", () => {
   });
 });
 
-describe("Pulse pipeline panel", () => {
+describe("Dashboard pipeline panel", () => {
   it("shows the last run and the countdown to the next one", async () => {
     renderPulse();
     expect(await screen.findByText("+42 posts")).toBeInTheDocument();
@@ -231,14 +232,7 @@ describe("Pulse pipeline panel", () => {
 
   it("marks a subsystem that is running right now", async () => {
     renderPulse();
-    expect(await screen.findByText("running now")).toBeInTheDocument();
-  });
-
-  it("exposes the quota bar as a meter for assistive technology", async () => {
-    renderPulse();
-    const meter = await screen.findByRole("meter", { name: /UserTweets requests remaining/ });
-    expect(meter).toHaveAttribute("aria-valuenow", "12");
-    expect(meter).toHaveAttribute("aria-valuemax", "50");
+    expect(await screen.findByText("fetching now")).toBeInTheDocument();
   });
 
   it("reports endpoint health with words, never colour alone", async () => {

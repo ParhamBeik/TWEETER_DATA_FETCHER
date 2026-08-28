@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,11 +12,14 @@ import { clearTokens, getRefreshToken } from "./api";
 vi.mock("./pages/Feed", () => ({ default: () => <div>feed page</div> }));
 vi.mock("./pages/Search", () => ({ default: () => <div>search page</div> }));
 vi.mock("./pages/Accounts", () => ({ default: () => <div>accounts page</div> }));
-vi.mock("./pages/Cycles", () => ({ default: () => <div>cycles page</div> }));
-vi.mock("./pages/Pulse", () => ({ default: () => <div>pulse page</div> }));
+vi.mock("./pages/Ops", () => ({ default: () => <div>ops page</div> }));
+vi.mock("./pages/Dashboard", () => ({ default: () => <div>dashboard page</div> }));
 vi.mock("./pages/Analyze", () => ({ default: () => <div>analyze page</div> }));
 vi.mock("./pages/Login", () => ({ default: () => <div>login page</div> }));
 vi.mock("./pages/Signup", () => ({ default: () => <div>signup page</div> }));
+// The budget rail polls collector state on every screen; the shell tests are
+// about routing, not about what it reports.
+vi.mock("./BudgetRail", () => ({ default: () => null }));
 
 const ROUTER_FUTURE = { v7_startTransition: true, v7_relativeSplatPath: true };
 
@@ -53,12 +56,13 @@ beforeEach(() => {
 
 describe("unauthenticated visitors", () => {
   it.each([
-    ["/", "dashboard"],
+    ["/", "root"],
     ["/feed", "feed"],
     ["/analyze", "analyze"],
     ["/accounts", "accounts"],
     ["/ops", "ops"],
-    ["/searches", "searches"],
+    ["/search", "search"],
+    ["/dashboard", "dashboard"],
   ])("redirects %s to the login form", async (route) => {
     renderApp(route);
     expect(await screen.findByText("login page")).toBeInTheDocument();
@@ -69,10 +73,9 @@ describe("unauthenticated visitors", () => {
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
-  it("still renders the brand link", () => {
-    renderApp("/");
-    expect(screen.getByRole("link", { name: "Signal Archive" })).toBeInTheDocument();
-  });
+  // The signed-out shell is the form and nothing else: a marketing panel and a
+  // brand link to a place you cannot reach are chrome this console has no use
+  // for.
 
   it("can reach the signup page", async () => {
     renderApp("/signup");
@@ -84,25 +87,41 @@ describe("authenticated operators", () => {
   beforeEach(() => signedIn());
 
   it.each([
-    ["/", "pulse page"],
+    ["/dashboard", "dashboard page"],
     ["/feed", "feed page"],
     ["/analyze", "analyze page"],
     ["/accounts", "accounts page"],
-    ["/ops", "cycles page"],
-    ["/searches", "search page"],
+    ["/ops", "ops page"],
+    ["/search", "search page"],
+    ["/search/12", "search page"],
   ])("renders %s", async (route, expected) => {
     renderApp(route);
     expect(await screen.findByText(expected)).toBeInTheDocument();
   });
 
-  it("falls back to the dashboard for an unknown route", async () => {
-    renderApp("/does-not-exist");
-    expect(await screen.findByText("pulse page")).toBeInTheDocument();
+  // The feed, not the dashboard: someone who lands here came to read what was
+  // collected, and instrument readings are a deliberate second stop.
+  it("lands on the feed at the root", async () => {
+    renderApp("/");
+    expect(await screen.findByText("feed page")).toBeInTheDocument();
   });
 
-  // Regression: /searches was routed but absent from the nav, so the Search page
-  // was unreachable by clicking anything in the UI.
-  it.each(["Pulse", "Feed", "Analyze", "Searches", "Accounts", "Ops"])(
+  it.each([
+    ["/pulse", "dashboard page"],
+    ["/cycles", "ops page"],
+  ])("forwards the old %s bookmark", async (route, expected) => {
+    renderApp(route);
+    expect(await screen.findByText(expected)).toBeInTheDocument();
+  });
+
+  it("falls back to the feed for an unknown route", async () => {
+    renderApp("/does-not-exist");
+    expect(await screen.findByText("feed page")).toBeInTheDocument();
+  });
+
+  // Regression: a route that is not in the nav is unreachable by clicking
+  // anything in the UI, which is how the search page was once stranded.
+  it.each(["Feed", "Search", "Dashboard", "Analyze", "Accounts", "Ops"])(
     "links to %s in the primary navigation",
     async (label) => {
       renderApp("/");
@@ -112,9 +131,22 @@ describe("authenticated operators", () => {
 
   it("navigates to a page when its nav link is clicked", async () => {
     const user = userEvent.setup();
-    renderApp("/");
-    await user.click(await screen.findByRole("link", { name: "Searches" }));
+    renderApp("/feed");
+    await user.click(await screen.findByRole("link", { name: "Search" }));
     expect(await screen.findByText("search page")).toBeInTheDocument();
+  });
+
+  // Order is the operator's order of attention, and it is a contract: the
+  // dashboard used to be first, which put instrument readings in front of a
+  // person who came to read posts.
+  it("orders the navigation feed, search, then dashboard", async () => {
+    renderApp("/feed");
+    await screen.findByRole("link", { name: "Feed" });
+    const nav = screen.getByRole("navigation", { name: "Sections" });
+    const labels = within(nav)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(labels.slice(0, 3)).toEqual(["/feed", "/search", "/dashboard"]);
   });
 
   it("clears the session and returns to the login form on sign out", async () => {
@@ -134,7 +166,7 @@ describe("authenticated operators", () => {
 
   it("sends a signed-in visitor away from the login page", async () => {
     renderApp("/login");
-    expect(await screen.findByText("pulse page")).toBeInTheDocument();
+    expect(await screen.findByText("feed page")).toBeInTheDocument();
   });
 });
 
@@ -142,14 +174,14 @@ describe("a non-staff reader", () => {
   beforeEach(() => signedIn({ is_staff: false }));
 
   it("does not see the Ops link", async () => {
-    renderApp("/");
+    renderApp("/feed");
     // Wait for the session to restore before asserting on an absence.
     expect(await screen.findByRole("link", { name: "Feed" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Ops" })).toBeNull();
   });
 
   it("still sees the reading pages", async () => {
-    renderApp("/");
+    renderApp("/feed");
     expect(await screen.findByRole("link", { name: "Analyze" })).toBeInTheDocument();
   });
 });

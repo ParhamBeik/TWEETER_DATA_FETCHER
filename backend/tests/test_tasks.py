@@ -6,7 +6,7 @@ import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
-from fetching.ingest import upsert_tweet
+from fetching.ingest import ingest_search_hits, upsert_tweet
 from fetching.tasks import (
     _backfill_queue,
     backfill_historical_all,
@@ -16,7 +16,16 @@ from fetching.tasks import (
     purge_old_raw_pages,
     repoll_searches,
 )
-from tweets.models import EndpointState, FetchRun, RawPage, Search, SearchResult, Tweet, TwitterUser
+from tweets.models import (
+    EndpointState,
+    FetchRun,
+    RawPage,
+    Search,
+    SearchHit,
+    SearchTweet,
+    Tweet,
+    TwitterUser,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -26,56 +35,63 @@ def _clear_cycle_locks():
     cache.clear()
 
 
+def _hit(rest_id: str, account: str, text: str) -> dict:
+    return {
+        "rest_id": rest_id,
+        "author_id": f"9{rest_id}",
+        "account": account,
+        "text": text,
+        "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+    }
+
+
 @pytest.mark.django_db
-def test_purge_expired_search_tweets_keeps_tracked_accounts(settings):
+def test_purge_expired_search_tweets_drops_only_stale_hits(settings):
+    """Search retention runs on its own clock over its own table.
+
+    The tracked-account archive used to share that table, so this task had to
+    exclude tracked handles by hand to avoid deleting the archive. The split is
+    what makes the rule simply "a stale search hit", and this asserts the archive
+    is now out of reach rather than merely excluded.
+    """
     settings.SEARCH_TWEET_TTL_DAYS = 30
     TwitterUser.objects.create(handle="jack", tracking=True)
     search = Search.objects.create(name="ai", slug="ai", raw_query="ai")
 
-    old_search_only = upsert_tweet(
-        {
-            "rest_id": "1",
-            "author_id": "9",
-            "account": "random",
-            "text": "old search",
-            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
-        }
-    )
-    SearchResult.objects.create(search=search, tweet=old_search_only, rank=0)
-    Tweet.objects.filter(pk=old_search_only.pk).update(
-        ingested_at=timezone.now() - timedelta(days=31)
-    )
+    ingest_search_hits(search, [_hit("1", "random", "old search"), _hit("3", "fresh", "fresh")])
+    stale = timezone.now() - timedelta(days=31)
+    SearchTweet.objects.filter(tweet_id="1").update(ingested_at=stale)
+    SearchHit.objects.filter(search_tweet__tweet_id="1").update(last_seen_at=stale)
 
-    kept_tracked = upsert_tweet(
-        {
-            "rest_id": "2",
-            "author_id": "1",
-            "account": "jack",
-            "text": "old but tracked",
-            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
-        }
-    )
-    SearchResult.objects.create(search=search, tweet=kept_tracked, rank=1)
-    Tweet.objects.filter(pk=kept_tracked.pk).update(
-        ingested_at=timezone.now() - timedelta(days=31)
-    )
-
-    fresh_search = upsert_tweet(
-        {
-            "rest_id": "3",
-            "author_id": "8",
-            "account": "fresh",
-            "text": "fresh search",
-            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
-        }
-    )
-    SearchResult.objects.create(search=search, tweet=fresh_search, rank=2)
+    archived = upsert_tweet(_hit("2", "jack", "old but tracked"))
+    Tweet.objects.filter(pk=archived.pk).update(ingested_at=stale)
 
     deleted = purge_expired_search_tweets()
-    assert deleted >= 1
-    assert not Tweet.objects.filter(tweet_id="1").exists()
+
+    assert deleted == 1
+    assert not SearchTweet.objects.filter(tweet_id="1").exists()
+    assert SearchTweet.objects.filter(tweet_id="3").exists()
+    # The tracked archive is a different table entirely and cannot be caught.
     assert Tweet.objects.filter(tweet_id="2").exists()
-    assert Tweet.objects.filter(tweet_id="3").exists()
+
+
+@pytest.mark.django_db
+def test_purge_expired_search_tweets_keeps_a_body_a_live_search_still_wants(settings):
+    """A tweet two queries matched survives until neither wants it."""
+    settings.SEARCH_TWEET_TTL_DAYS = 30
+    stale_search = Search.objects.create(name="old", slug="old", raw_query="old")
+    live_search = Search.objects.create(name="new", slug="new", raw_query="new")
+    ingest_search_hits(stale_search, [_hit("7", "someone", "shared post")])
+    ingest_search_hits(live_search, [_hit("7", "someone", "shared post")])
+
+    stale = timezone.now() - timedelta(days=31)
+    SearchTweet.objects.filter(tweet_id="7").update(ingested_at=stale)
+    SearchHit.objects.filter(search=stale_search).update(last_seen_at=stale)
+
+    assert purge_expired_search_tweets() == 0
+    assert SearchTweet.objects.filter(tweet_id="7").exists()
+    assert SearchHit.objects.filter(search=live_search).exists()
+    assert not SearchHit.objects.filter(search=stale_search).exists()
 
 
 @pytest.mark.django_db

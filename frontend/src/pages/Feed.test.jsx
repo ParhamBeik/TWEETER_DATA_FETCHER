@@ -59,7 +59,7 @@ describe("Feed initial render", () => {
 
   it("shows an empty state when nothing matches", async () => {
     renderFeed();
-    expect(await screen.findByText("No posts match these filters.")).toBeInTheDocument();
+    expect(await screen.findByText("No posts match these filters")).toBeInTheDocument();
   });
 
   it("shows the server error instead of a blank page when the feed fails", async () => {
@@ -72,7 +72,7 @@ describe("Feed initial render", () => {
     api.mockRejectedValue(new Error("Service unavailable"));
     renderFeed();
     await screen.findByText("Service unavailable");
-    expect(screen.queryByText("No posts match these filters.")).toBeNull();
+    expect(screen.queryByText("No posts match these filters")).toBeNull();
   });
 });
 
