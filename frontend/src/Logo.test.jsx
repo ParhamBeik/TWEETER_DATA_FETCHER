@@ -18,9 +18,9 @@ describe("Logo", () => {
     expect(screen.queryByRole("img")).toBeNull();
   });
 
-  it("draws three archive strata", () => {
+  it("draws four telemetry frequency bars", () => {
     const { container } = render(<Logo />);
-    expect(container.querySelectorAll("rect")).toHaveLength(3);
+    expect(container.querySelectorAll("rect")).toHaveLength(4);
   });
 });
 
