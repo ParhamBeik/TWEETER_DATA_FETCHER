@@ -905,7 +905,10 @@ class NarrativesView(APIView):
             # SET LOCAL is scoped to a transaction, so the atomic block is what
             # makes the timeout real rather than a no-op under autocommit.
             with transaction.atomic(), connection.cursor() as cursor:
-                cursor.execute("SET LOCAL statement_timeout = %s", [NARRATIVE_TIMEOUT_MS])
+                # Postgres will not accept a bind parameter after SET, so the
+                # value is interpolated -- safe here and only here because it is
+                # a module-level int this file owns, never request input.
+                cursor.execute(f"SET LOCAL statement_timeout = {int(NARRATIVE_TIMEOUT_MS)}")
                 cursor.execute(
                     f"""
                     WITH candidates AS (
@@ -927,8 +930,11 @@ class NarrativesView(APIView):
                     JOIN candidates follower
                       ON follower.id <> first.id
                      -- The whole point of the panel: propagation BETWEEN accounts.
-                     -- Without this, 90% of results were one newsroom's own
+                     -- Without this, 9 in 10 results were one newsroom's own
                      -- reruns of its own headline matching itself.
+                     -- (Keep percent signs out of this string entirely: the
+                     -- driver scans the whole query, comments included, for
+                     -- placeholders. test_raw_sql_placeholders.py enforces it.)
                      AND follower.account <> first.account
                      AND first.created_at <= follower.created_at
                      AND follower.created_at <= first.created_at + (%s || ' hours')::interval
