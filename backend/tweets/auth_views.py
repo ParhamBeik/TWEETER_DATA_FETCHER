@@ -115,7 +115,9 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        username = str(request.data.get("username") or "").strip()
+        raw_username = str(request.data.get("username") or "").strip()
+        matched_user = User.objects.filter(username__iexact=raw_username).first()
+        username = matched_user.username if matched_user is not None else raw_username
         user = authenticate(username=username, password=request.data.get("password") or "")
         if user is None or not user.is_active:
             # One message for both "no such user" and "wrong password", so the

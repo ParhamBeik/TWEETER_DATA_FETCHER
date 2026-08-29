@@ -89,7 +89,14 @@ class Window:
 
 
 def _parse_when(value) -> datetime | None:
-    parsed = parse_datetime(str(value).replace("Z", "+00:00")) if value else None
+    if not value:
+        return None
+    import re
+    raw = str(value).replace("Z", "+00:00")
+    parsed = parse_datetime(raw)
+    if parsed is None and " " in raw:
+        raw_fixed = re.sub(r"\s([0-9]{2}:[0-9]{2})$", r"+\1", raw)
+        parsed = parse_datetime(raw_fixed)
     if parsed is not None and timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, dt_timezone.utc)
     return parsed
@@ -207,7 +214,7 @@ class OverviewView(APIView):
         ))
         tweet_counts = Tweet.objects.aggregate(
             total=Count("id"),
-            in_window=Count("id", filter=Q(created_at__gte=window.since)),
+            in_window=Count("id", filter=Q(created_at__gte=window.since, created_at__lte=window.until)),
         )
         account_counts = TwitterUser.objects.aggregate(
             tracked=Count("id", filter=Q(tracking=True)),
@@ -842,11 +849,13 @@ class TopicBlocklistView(APIView):
 class AccountsAnalyticsView(APIView):
     def get(self, request):
         window = window_from(request)
+        # Exclude retweets so accounts are ranked strictly on their own authored content,
+        # rather than crediting other people's viral posts they happened to repost.
         rows = (
             _in_window(
                 Tweet.objects.filter(
                     account__in=TwitterUser.objects.filter(tracking=True).values("handle")
-                ),
+                ).exclude(type="Retweet"),
                 window,
             )
             .values("account")
@@ -923,8 +932,8 @@ class NarrativesView(APIView):
                         ORDER BY created_at DESC
                         LIMIT %s
                     )
-                    SELECT first.account, first.tweet_id, first.created_at,
-                           follower.account, follower.tweet_id, follower.created_at,
+                    SELECT first.account, first.tweet_id, first.created_at, first.body,
+                           follower.account, follower.tweet_id, follower.created_at, follower.body,
                            similarity(first.body, follower.body) AS score
                     FROM candidates first
                     JOIN candidates follower
@@ -962,9 +971,19 @@ class NarrativesView(APIView):
             )
         return Response({"results": [
             {
-                "first": {"account": first_account, "tweet_id": first_id, "created_at": first_at},
-                "follower": {"account": follower_account, "tweet_id": follower_id, "created_at": follower_at},
+                "first": {
+                    "account": first_account,
+                    "tweet_id": first_id,
+                    "created_at": first_at,
+                    "text": first_text,
+                },
+                "follower": {
+                    "account": follower_account,
+                    "tweet_id": follower_id,
+                    "created_at": follower_at,
+                    "text": follower_text,
+                },
                 "similarity": round(float(score), 3),
             }
-            for first_account, first_id, first_at, follower_account, follower_id, follower_at, score in rows
+            for first_account, first_id, first_at, first_text, follower_account, follower_id, follower_at, follower_text, score in rows
         ]})

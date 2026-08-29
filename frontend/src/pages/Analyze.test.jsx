@@ -221,7 +221,7 @@ describe("Analyze topics", () => {
     const user = userEvent.setup();
     renderAnalyze();
     await user.click(await screen.findByRole("button", { name: "#starship" }));
-    expect(mockNavigate).toHaveBeenCalledWith("/feed?q=starship&window=");
+    expect(mockNavigate).toHaveBeenCalledWith("/feed?q=starship&window=24h");
   });
 
   it("shows an empty state rather than a bare axis", async () => {
