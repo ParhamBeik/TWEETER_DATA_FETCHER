@@ -91,7 +91,12 @@ def _run_and_ingest(module: str, args: list[str], subsystem: str, target: str) -
         failed = True
         raise
     finally:
-        runner.finalize_run(result.run, ingested_tweets=count, task_failed=failed)
+        runner.finalize_run(
+            result.run,
+            ingested_tweets=count,
+            new_tweets=getattr(count, "new", None),
+            task_failed=failed,
+        )
         if subsystem == "live":
             sync_quarantine_from_live_state()
         runner.cleanup(result.root)
@@ -110,6 +115,7 @@ def _run_cycle(
         module, args, subsystem, searches=searches, target=target, task_id=_task_id()
     )
     count = 0
+    new_count = 0
     failed = False
     try:
         if subsystem == "search":
@@ -120,10 +126,12 @@ def _run_cycle(
             if len(searches or []) == 1:
                 FetchRun.objects.filter(pk=result.run.pk).update(search=searches[0])
             for search in searches or []:
-                count += ingest_search_hits(
+                ingested = ingest_search_hits(
                     search,
                     runner.iter_search_tweets(result.root, search.slug, search.product),
                 )
+                count += ingested
+                new_count += ingested.new
                 # Stamped on every attempt, not only a completed one. This is what
                 # dispatch_due_searches schedules from, so leaving it unset after a
                 # partial run would re-queue that search on every dispatcher tick
@@ -135,12 +143,15 @@ def _run_cycle(
             count = ingest_tweets(
                 runner.iter_processed_tweets(result.root, subsystem), subsystem
             )
+            new_count = count.new
         return count
     except Exception:
         failed = True
         raise
     finally:
-        runner.finalize_run(result.run, ingested_tweets=count, task_failed=failed)
+        runner.finalize_run(
+            result.run, ingested_tweets=count, new_tweets=new_count, task_failed=failed
+        )
         if subsystem == "live":
             sync_quarantine_from_live_state()
         if on_complete is not None:

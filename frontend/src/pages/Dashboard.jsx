@@ -143,16 +143,34 @@ export default function Dashboard() {
 
       <Panel>
         <PanelBody className="grid grid-cols-2 gap-y-4 md:grid-cols-5">
+          {/* The delta is only meaningful when there is a previous period to
+              compare against. On a 13-day-old deployment the 90d view read
+              "+60K vs the previous equal period", which was just the whole
+              number wearing a growth badge. */}
           <Stat
             label="Captured this window"
             value={compact(totals.captured ?? 0)}
-            delta={totals.captured_delta}
-            hint="vs the previous equal period"
+            delta={totals.has_previous === false ? undefined : totals.captured_delta}
+            hint={
+              totals.has_previous === false
+                ? "no earlier period to compare"
+                : "vs the previous equal period"
+            }
           />
+          {/* Archive total counts every row; the feed only reaches accounts
+              still tracked. Advertising one number hid ~6K posts no screen
+              could open. */}
           <Stat
             label="Archive total"
             value={compact(totals.archive_total ?? 0)}
-            hint={historySpan}
+            hint={
+              totals.archive_tracked != null
+                && totals.archive_tracked !== totals.archive_total
+                ? `${compact(totals.archive_tracked)} tracked · ${compact(
+                    (totals.archive_total ?? 0) - totals.archive_tracked,
+                  )} retained · ${historySpan}`
+                : historySpan
+            }
           />
           <Stat
             label="Search results held"
@@ -181,7 +199,7 @@ export default function Dashboard() {
         <PanelHead
           label="Collection flow"
           title="Who is doing the collecting"
-          lede="Posts captured per bucket, split by the collector that saw them first. This is where you can tell whether the archive walk, the live poll or saved searches are carrying the load."
+          lede="Posts captured per bucket, split by the collector that saw them first. Saved-search hits are counted here too, and they expire after 30 days — the archive walk and live poll are what grow the permanent archive."
         />
         <PanelBody>
           <Chart show={captured.rows.length} empty="Nothing captured in this window yet.">
@@ -328,8 +346,13 @@ export default function Dashboard() {
                       <Badge tone={RUN_TONE[row.last_run.status]}>
                         {row.last_run.status.replace("_", " ")}
                       </Badge>
+                      {/* New rows, not rows re-seen. This said "+51 posts" for
+                          an archive walk that added nothing, directly
+                          contradicting the collection-flow chart above it. */}
                       <span className="font-mono tabular">
-                        +{compact(row.last_run.ingested_tweets)} posts
+                        {(row.last_run.new_tweets ?? row.last_run.ingested_tweets)
+                          ? `+${compact(row.last_run.new_tweets ?? row.last_run.ingested_tweets)} new`
+                          : "nothing new"}
                       </span>
                       <span>{relativeTime(row.last_run.started_at)}</span>
                       <span className="truncate font-mono text-fg-dim">

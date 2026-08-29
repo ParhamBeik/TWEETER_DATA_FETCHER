@@ -47,6 +47,8 @@ export default function Ops() {
   const [subsystem, setSubsystem] = useState("");
   const [session, setSession] = useState(null);
   const [sessionJson, setSessionJson] = useState("");
+  const [next, setNext] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   async function load() {
     try {
@@ -55,12 +57,34 @@ export default function Ops() {
         api("/session/"),
       ]);
       setRuns(data.results || []);
+      setNext(data.next || null);
       setSession(health);
       // This view re-polls every 10s. Without clearing, a single transient blip
       // pinned an error banner to the page for the rest of the session.
       setError("");
     } catch (e) {
       setError(e.message);
+    }
+  }
+
+  /**
+   * Append the next page of history.
+   *
+   * The list is 30 runs per page and the page never followed `next`, so every
+   * run older than the last 30 was unreachable -- while the dashboard reported
+   * thousands in the same window.
+   */
+  async function loadMore() {
+    if (!next || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await api(next.replace(/^.*\/api/, ""));
+      setRuns((current) => [...current, ...(data.results || [])]);
+      setNext(data.next || null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -214,7 +238,10 @@ export default function Ops() {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <Panel className="h-max overflow-hidden">
-          <PanelHead label={`${runs.length} runs`} className="px-3 py-2" />
+          <PanelHead
+            label={next ? `${runs.length} runs · more available` : `${runs.length} runs`}
+            className="px-3 py-2"
+          />
           {runs.length === 0 ? (
             <p className="p-3 text-xs text-fg-muted">No fetch runs yet.</p>
           ) : (
@@ -249,8 +276,10 @@ export default function Ops() {
                           <span className="font-mono text-fg-dim">{run.target || "all"}</span>
                         </span>
                         <span className="shrink-0 font-mono text-2xs tabular text-fg-muted">
-                          {run.summary?.ingested_tweets
-                            ? `+${compact(run.summary.ingested_tweets)}`
+                          {/* New rows, not rows touched: a re-poll that
+                              re-stored what it already had showed "+40". */}
+                          {(run.summary?.new_tweets ?? run.summary?.ingested_tweets)
+                            ? `+${compact(run.summary.new_tweets ?? run.summary.ingested_tweets)}`
                             : "—"}
                         </span>
                       </span>
@@ -272,6 +301,19 @@ export default function Ops() {
                 );
               })}
             </ul>
+          )}
+          {next && (
+            <div className="border-t border-line p-2">
+              <Button
+                size="sm"
+                variant="quiet"
+                className="w-full"
+                disabled={loadingMore}
+                onClick={loadMore}
+              >
+                {loadingMore ? "Loading…" : "Load older runs"}
+              </Button>
+            </div>
           )}
         </Panel>
 

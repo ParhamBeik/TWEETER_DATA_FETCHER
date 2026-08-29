@@ -26,11 +26,16 @@ const STATE_LABEL = {
 /** One saved query in the rail: what it is, and what it is doing right now. */
 function QueryRow({ search, active, onSelect }) {
   const state = search.schedule?.state || "idle";
-  const due = search.schedule?.is_due
-    ? "due now"
-    : search.schedule?.next_due_at
-      ? `next in ${duration(search.schedule.seconds_until_due)}`
-      : "not run yet";
+  // A paused query has no next run, so it must not show a countdown. It was
+  // rendering "next in 0s" (and, for one, "next in 23h 59m") beside the word
+  // Paused -- two claims that cannot both be true.
+  const due = state === "paused"
+    ? "not scheduled"
+    : search.schedule?.is_due
+      ? "due now"
+      : search.schedule?.next_due_at
+        ? `next in ${duration(search.schedule.seconds_until_due)}`
+        : "not run yet";
   return (
     <li>
       <button
@@ -117,7 +122,15 @@ export default function SearchWorkspace() {
         setNext(data.next || null);
         setError("");
       } catch (e) {
-        if (activeId.current === searchId) setError(e.message);
+        // A deleted or mistyped id surfaced DRF's own "No Search matches the
+        // given query.", which reads like a bug report rather than an answer.
+        if (activeId.current === searchId) {
+          setError(
+            /No Search matches/i.test(e.message)
+              ? "That saved query no longer exists — it may have been deleted."
+              : e.message,
+          );
+        }
       } finally {
         if (activeId.current === searchId) setLoading(false);
       }

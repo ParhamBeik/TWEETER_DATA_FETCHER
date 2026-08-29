@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from io import StringIO
 
+from fetcher.processing import TZ as FEED_TZ
+
 from django.db import connection
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Count, Exists, OuterRef, Q
 from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
 from django.utils import timezone
@@ -66,6 +68,25 @@ POST_TYPES = {"tweet": "Tweet", "reply": "Reply", "retweet": "Retweet", "quote":
 # Sugar over since/until so the console can offer one-click windows.
 FEED_WINDOWS = {"1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720}
 
+# Calendar windows, resolved against the Tehran day the collector already counts
+# in (fetcher/processing.TZ). "Today" used to be an alias for a rolling 24h,
+# which meant that at 00:30 Tehran the feed labelled "Today" was almost entirely
+# yesterday. These snap to real boundaries so the label is the truth.
+FEED_CALENDAR_WINDOWS = ("today", "week", "month")
+
+
+def _calendar_start(window: str):
+    """Start of the current Tehran day/week/month, as a UTC-aware datetime."""
+    local = timezone.now().astimezone(FEED_TZ)
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    if window == "today":
+        start = midnight
+    elif window == "week":
+        start = midnight - timedelta(days=midnight.weekday())
+    else:
+        start = midnight.replace(day=1)
+    return start.astimezone(dt_timezone.utc)
+
 
 def feed_queryset(params):
     """The tracked-account stream: everything the UserTweets collector captured.
@@ -80,7 +101,14 @@ def feed_queryset(params):
         TwitterUser.objects.filter(tracking=True).values_list("handle", "priority")
     )
     handle_to_priority = {handle: priority for handle, priority in tracked}
-    qs = Tweet.objects.filter(account__in=list(handle_to_priority))
+    # Posts whose account has since been untracked are still archived (Tweet has
+    # no TTL) but used to be unreachable from every screen while still being
+    # counted in "archive total". Default stays tracked-only so the feed keeps
+    # meaning "the timelines you follow"; ?include_untracked=1 opens the rest.
+    if str(params.get("include_untracked") or "") in {"1", "true", "yes"}:
+        qs = Tweet.objects.all()
+    else:
+        qs = Tweet.objects.filter(account__in=list(handle_to_priority))
     # Repeatable ?account=, matching the analytics endpoints. params.get() would
     # silently keep only the last value, so a two-account selection returned one
     # account's posts.
@@ -100,6 +128,8 @@ def feed_queryset(params):
     window = str(params.get("window") or "").lower()
     if window in FEED_WINDOWS:
         qs = qs.filter(created_at__gte=timezone.now() - timedelta(hours=FEED_WINDOWS[window]))
+    elif window in FEED_CALENDAR_WINDOWS:
+        qs = qs.filter(created_at__gte=_calendar_start(window))
     tier = params.get("tier")
     if tier:
         try:
@@ -125,22 +155,28 @@ def feed_queryset(params):
                 qs = qs.filter(ingested_at__lte=run.finished_at)
     query = (params.get("q") or "").strip()
     if query:
-        if connection.vendor == "postgresql":
-            from django.contrib.postgres.search import SearchVector
-
-            qs = qs.annotate(_search=SearchVector("text")).filter(_search=query)
-        else:
-            qs = qs.filter(text__icontains=query)
+        # Substring, not full-text. `to_tsvector` matching meant "the", "and" and
+        # "a" returned an empty archive (they are English stop words) while
+        # "bitco" could never find "Bitcoin", because a lexeme is not a prefix.
+        # A search box should behave like Ctrl+F. Matching on text_clean rather
+        # than text means a search for "R&D" is not defeated by the stored
+        # "R&amp;D"; the trgm index from migration 0017 keeps it fast, and
+        # icontains spells the same on SQLite so tests exercise real semantics.
+        qs = qs.filter(text_clean__icontains=query)
     # No .distinct() any more: the union with search results was the only thing
     # that could produce a duplicate row, and distinct() over a deferred JSONB
     # payload is expensive on a table this size.
     qs = with_feed_ts(qs.select_related("author").defer("payload"))
-    if str(params.get("sort") or "").lower() == "top":
-        # Secondary key is feed_ts, not id: ties on engagement should break by
-        # recency, and the offset paginator needs a fully deterministic order.
+    sort = str(params.get("sort") or "").lower()
+    # Secondary key is feed_ts, not id: ties should break by recency, and the
+    # offset paginator needs a fully deterministic order.
+    if sort == "top":
         return qs.annotate(engagement=engagement_expression()).order_by(
             "-engagement", "-feed_ts", "-id"
         )
+    if sort == "views":
+        # Reach, asked as its own question rather than folded into engagement.
+        return qs.order_by("-views", "-feed_ts", "-id")
     return qs.order_by("-feed_ts", "-id")
 
 
@@ -154,15 +190,16 @@ class FeedView(ListAPIView):
 
     @property
     def pagination_class(self):
-        """Cursor paging for `latest`, offset paging for `top`.
+        """Cursor paging for `latest`, offset paging for `top` and `views`.
 
         A cursor encodes the ordering field's value, so it needs a unique,
-        monotonic column. Engagement is neither -- thousands of tweets share a
-        score of 0. The time window on a `top` query bounds the result set, so
-        offset paging is safe here in a way it would not be on the whole archive.
+        monotonic column. Engagement and views are neither -- thousands of
+        tweets share a score of 0. The time window on a ranked query bounds the
+        result set, so offset paging is safe here in a way it would not be on
+        the whole archive.
         """
         sort = str(self.request.query_params.get("sort") or "").lower()
-        return FeedOffsetPagination if sort == "top" else StandardCursorPagination
+        return FeedOffsetPagination if sort in {"top", "views"} else StandardCursorPagination
 
 
 class AccountTimelineView(ListAPIView):
@@ -177,6 +214,11 @@ class AccountTimelineView(ListAPIView):
         ).order_by("-feed_ts", "-id")
 
 
+# Bounds for the two ways of looking past the tracked roster.
+ACCOUNT_SEARCH_LIMIT = 50
+ACCOUNT_BROWSE_LIMIT = 200
+
+
 class AccountViewSet(viewsets.ModelViewSet):
     """Operator account list: tiers, tracking, quarantine, on-demand fetch."""
 
@@ -189,7 +231,35 @@ class AccountViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        return TwitterUser.objects.all().order_by("priority", "handle")
+        """Tracked accounts by default; the rest only when explicitly asked for.
+
+        TwitterUser holds every author the collector has ever parsed -- 2.4k rows,
+        of which ~64 are tracked. Returning all of them unpaginated meant a 1.2MB
+        response on every page load and a roster page rendering 2409 rows and
+        7000 tier buttons, with no way to find an account except scrolling.
+
+        Stays a plain list rather than a paginated envelope: the roster is small
+        once it is actually the roster, and the feed's account picker consumes
+        this endpoint too.
+        """
+        qs = TwitterUser.objects.all().order_by("priority", "handle")
+        params = self.request.query_params
+        search = (params.get("q") or "").strip().lstrip("@")
+        tracking = str(params.get("tracking") or "").lower()
+        if search:
+            # Searching is how you find an untracked account to start tracking,
+            # so it deliberately spans the whole table -- but bounded.
+            qs = qs.filter(
+                Q(handle__icontains=search) | Q(display_name__icontains=search)
+            )
+            if tracking in {"1", "true", "tracked"}:
+                qs = qs.filter(tracking=True)
+            return qs[:ACCOUNT_SEARCH_LIMIT]
+        if tracking in {"all", "any"}:
+            return qs[:ACCOUNT_BROWSE_LIMIT]
+        if tracking in {"0", "false", "untracked"}:
+            return qs.filter(tracking=False)[:ACCOUNT_BROWSE_LIMIT]
+        return qs.filter(tracking=True)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -460,46 +530,57 @@ class ExportView(APIView):
     def perform_content_negotiation(self, request, force=False):
         return JSONRenderer(), "json"
 
+    # Every engagement column the row carries, not just the three the ranking
+    # happens to use -- an export that silently drops replies and quotes makes
+    # offline analysis disagree with the console for no visible reason.
+    COLUMNS = (
+        "tweet_id", "account", "created_at", "type",
+        "likes", "retweets", "replies", "quotes", "bookmarks", "views",
+        "text", "url",
+    )
+
     def get(self, request):
         fmt = str(request.query_params.get("format") or "jsonl").lower()
         if fmt not in {"jsonl", "csv"}:
             return Response({"detail": "format must be jsonl or csv"}, status=400)
+        # Defaults to what the operator is looking at on screen. `raw` returns
+        # X's verbatim string, entities and duplicate links intact.
+        raw_text = str(request.query_params.get("text") or "clean").lower() == "raw"
         qs = feed_queryset(request.query_params)
+
+        def record(tweet):
+            return {
+                "tweet_id": tweet.tweet_id,
+                "account": tweet.account,
+                "created_at": tweet.created_at.isoformat() if tweet.created_at else None,
+                "type": tweet.type,
+                "likes": tweet.likes,
+                "retweets": tweet.retweets,
+                "replies": tweet.replies,
+                "quotes": tweet.quotes,
+                "bookmarks": tweet.bookmarks,
+                "views": tweet.views,
+                "text": tweet.text if raw_text else (tweet.text_clean or tweet.text),
+                "url": tweet.url,
+            }
 
         def rows():
             if fmt == "csv":
                 buffer = StringIO()
                 writer = csv.writer(buffer)
-                writer.writerow(["tweet_id", "account", "created_at", "likes", "retweets", "views", "text", "url"])
+                writer.writerow(self.COLUMNS)
                 yield buffer.getvalue()
                 buffer.seek(0)
                 buffer.truncate(0)
                 for tweet in qs.iterator(chunk_size=200):
-                    writer.writerow([
-                        tweet.tweet_id,
-                        tweet.account,
-                        tweet.created_at.isoformat() if tweet.created_at else "",
-                        tweet.likes,
-                        tweet.retweets,
-                        tweet.views,
-                        tweet.text,
-                        tweet.url,
-                    ])
+                    values = record(tweet)
+                    writer.writerow([values[column] if values[column] is not None else "" for column in self.COLUMNS])
                     yield buffer.getvalue()
                     buffer.seek(0)
                     buffer.truncate(0)
                 return
             for tweet in qs.iterator(chunk_size=200):
-                yield json.dumps({
-                    "tweet_id": tweet.tweet_id,
-                    "account": tweet.account,
-                    "created_at": tweet.created_at.isoformat() if tweet.created_at else None,
-                    "likes": tweet.likes,
-                    "retweets": tweet.retweets,
-                    "views": tweet.views,
-                    "text": tweet.text,
-                    "url": tweet.url,
-                }, ensure_ascii=False) + "\n"
+                yield json.dumps(record(tweet), ensure_ascii=False) + "\n"
 
         content_type = "text/csv" if fmt == "csv" else "application/x-ndjson"
         filename = f"tweets.{fmt}"

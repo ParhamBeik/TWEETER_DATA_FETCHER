@@ -7,6 +7,7 @@ from email.utils import parsedate_to_datetime
 from typing import Iterable
 
 from tweets.models import Search, SearchHit, SearchTweet, Tweet, TweetMetric, TwitterUser
+from tweets.textclean import clean_text
 
 from . import metric_gates
 
@@ -27,6 +28,7 @@ _TWEET_UPDATE_FIELDS = [
     "account",
     "author",
     "text",
+    "text_clean",
     "url",
     "type",
     "created_at",
@@ -177,6 +179,7 @@ def _row_fields(item: dict, authors_by_handle: dict[str, TwitterUser]) -> dict |
         "account": account,
         "author": authors_by_handle.get(account),
         "text": item.get("text") or "",
+        "text_clean": clean_text(item.get("text")),
         "url": item.get("url") or "",
         "type": item.get("type") or "Tweet",
         # Leave NULL when the timestamp is unparseable. Stamping now() would sort
@@ -278,10 +281,32 @@ def upsert_tweet(item: dict, subsystem: str = "") -> Tweet | None:
     return saved
 
 
-def ingest_tweets(items, subsystem: str = "") -> int:
+class IngestCount(int):
+    """How many rows were upserted, carrying how many of them were new.
+
+    An int subclass rather than a tuple or dataclass so every existing caller --
+    `count += ingest(...)`, `finalize_run(ingested_tweets=count)`, the tests'
+    `== 3` -- keeps working unchanged, while the one number they were all
+    missing rides along.
+
+    That number matters: a search run that re-sees the same 40 hits it stored an
+    hour ago was reporting "40 results stored" every 30 minutes forever, which is
+    precisely the "a run that did nothing must not look healthy" rule the project
+    already applies to run status.
+    """
+
+    new: int = 0
+
+    def __new__(cls, seen: int, new: int = 0):
+        value = super().__new__(cls, seen)
+        value.new = int(new)
+        return value
+
+
+def ingest_tweets(items, subsystem: str = "") -> IngestCount:
     batch = [item for item in items if isinstance(item, dict)]
     if not batch:
-        return 0
+        return IngestCount(0, 0)
     authors = _upsert_authors(batch)
     rows: list[Tweet] = []
     seen: set[str] = set()
@@ -292,7 +317,7 @@ def ingest_tweets(items, subsystem: str = "") -> int:
         seen.add(row.dedup_key)
         rows.append(row)
     if not rows:
-        return 0
+        return IngestCount(0, 0)
     previous = {
         t.dedup_key: t
         for t in Tweet.objects.filter(dedup_key__in=[r.dedup_key for r in rows]).only(
@@ -311,7 +336,8 @@ def ingest_tweets(items, subsystem: str = "") -> int:
         len(batch), len(rows), len(batch) - len(rows),
     )
     _log_metric_violations(rows)
-    return len(batch)
+    # `previous` was already loaded to diff metrics, so the new-row count is free.
+    return IngestCount(len(batch), len(rows) - len(previous))
 
 
 def _log_metric_violations(rows: list[Tweet]) -> None:
@@ -364,7 +390,7 @@ def _record_metrics(rows: list[Tweet], previous: dict[str, Tweet]) -> None:
         TweetMetric.objects.bulk_create(snapshots)
 
 
-def ingest_search_hits(search: Search, items) -> int:
+def ingest_search_hits(search: Search, items) -> IngestCount:
     """Upsert SearchTimeline hits and link them to a search, in arrival order.
 
     Writes to SearchTweet/SearchHit, never to Tweet. The two collectors are kept
@@ -375,7 +401,7 @@ def ingest_search_hits(search: Search, items) -> int:
     """
     batch = [item for item in items if isinstance(item, dict)]
     if not batch:
-        return 0
+        return IngestCount(0, 0)
     authors = _upsert_authors(batch)
     rows: list[SearchTweet] = []
     ranks: dict[str, int] = {}
@@ -388,7 +414,15 @@ def ingest_search_hits(search: Search, items) -> int:
         ranks[row.dedup_key] = rank
         rows.append(row)
     if not rows:
-        return 0
+        return IngestCount(0, 0)
+    # Which of these this search had already linked, resolved before the upsert
+    # so "new" means new *to this query*, not new to the SearchTweet table -- two
+    # searches can legitimately match the same post.
+    already_linked = set(
+        SearchHit.objects.filter(
+            search=search, search_tweet__dedup_key__in=list(ranks)
+        ).values_list("search_tweet__dedup_key", flat=True)
+    )
     SearchTweet.objects.bulk_create(
         rows,
         update_conflicts=True,
@@ -417,4 +451,4 @@ def ingest_search_hits(search: Search, items) -> int:
     logger.info(
         "search %r: linked %d/%d fetched result(s)", search.name, len(links), len(batch),
     )
-    return len(links)
+    return IngestCount(len(links), sum(1 for key in ranks if key not in already_linked))

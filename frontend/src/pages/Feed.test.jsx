@@ -47,7 +47,7 @@ beforeEach(() => {
 describe("Feed initial render", () => {
   it("requests today's feed on mount", async () => {
     renderFeed();
-    await waitFor(() => expect(lastFeedPath()).toBe("/feed/?window=24h"));
+    await waitFor(() => expect(lastFeedPath()).toBe("/feed/?window=today"));
   });
 
   it("renders every tweet returned by the API", async () => {
@@ -92,12 +92,12 @@ describe("Feed sorting and windowing", () => {
     renderFeed("/feed?sort=top");
     await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
 
-    await user.click(screen.getByRole("button", { name: "Week" }));
+    await user.click(screen.getByRole("button", { name: "This week" }));
 
     await waitFor(() => {
       const path = lastFeedPath();
       expect(path).toContain("sort=top");
-      expect(path).toContain("window=7d");
+      expect(path).toContain("window=week");
     });
   });
 
@@ -191,7 +191,7 @@ describe("Feed content filters", () => {
     await screen.findByText("old result");
 
     body = page([tweet("2", "new result")]);
-    await user.click(screen.getByRole("button", { name: "Week" }));
+    await user.click(screen.getByRole("button", { name: "This week" }));
 
     expect(await screen.findByText("new result")).toBeInTheDocument();
     expect(screen.queryByText("old result")).toBeNull();
@@ -207,7 +207,7 @@ describe("Feed content filters", () => {
     await waitFor(() => expect(feedCalls().length).toBe(1));
 
     api.mockResolvedValue(page([tweet("2", "fresh result")]));
-    await user.click(screen.getByRole("button", { name: "Week" }));
+    await user.click(screen.getByRole("button", { name: "This week" }));
     await screen.findByText("fresh result");
 
     initial.release();
@@ -284,5 +284,68 @@ describe("Feed export", () => {
     await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
     expect(await screen.findByText(/Export failed — the API is unreachable/)).toBeInTheDocument();
+  });
+});
+
+// Regressions from the August 2026 QA pass. Each pins a behaviour that was
+// wrong on the live site, so it cannot quietly come back.
+describe("Feed QA regressions", () => {
+  it("offers reach as its own sort rather than folding views into engagement", async () => {
+    const user = userEvent.setup();
+    renderFeed();
+    await waitFor(() => expect(feedCalls().length).toBe(1));
+
+    await user.click(screen.getByRole("button", { name: "Most viewed" }));
+    await waitFor(() => expect(lastFeedPath()).toContain("sort=views"));
+
+    await user.click(screen.getByRole("button", { name: "Most engaged" }));
+    await waitFor(() => expect(lastFeedPath()).toContain("sort=top"));
+  });
+
+  it("searches as you type, without needing Enter", async () => {
+    const user = userEvent.setup();
+    renderFeed();
+    await waitFor(() => expect(feedCalls().length).toBe(1));
+
+    await user.type(screen.getByLabelText("Search archive"), "trump");
+    // Debounced: the request arrives on its own, with no submit.
+    await waitFor(() => expect(lastFeedPath()).toContain("q=trump"), { timeout: 2000 });
+  });
+
+  it("clears the query when the box is emptied", async () => {
+    const user = userEvent.setup();
+    renderFeed("/feed?q=trump");
+    await waitFor(() => expect(lastFeedPath()).toContain("q=trump"));
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await waitFor(() => expect(lastFeedPath()).not.toContain("q="));
+    expect(screen.getByLabelText("Search archive")).toHaveValue("");
+  });
+
+  it("asks for calendar windows, not rolling ones dressed up as days", async () => {
+    const user = userEvent.setup();
+    renderFeed();
+    await waitFor(() => expect(lastFeedPath()).toContain("window=today"));
+
+    await user.click(screen.getByRole("button", { name: "This month" }));
+    await waitFor(() => expect(lastFeedPath()).toContain("window=month"));
+  });
+
+  it("renders the cleaned text and lets the browser pick text direction", async () => {
+    api.mockImplementation((path) =>
+      Promise.resolve(
+        path.startsWith("/accounts/")
+          ? { results: [] }
+          : page([
+              {
+                ...tweet("1", "raw R&amp;D https://t.co/x https://t.co/x"),
+                text_clean: "raw R&D https://t.co/x",
+              },
+            ]),
+      ),
+    );
+    renderFeed();
+    const body = await screen.findByText("raw R&D https://t.co/x");
+    expect(body).toHaveAttribute("dir", "auto");
   });
 });

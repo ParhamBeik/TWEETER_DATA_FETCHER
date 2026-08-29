@@ -237,9 +237,33 @@ describe("TweetCard media", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  // video.twimg.com serves hotlinked MP4s (a range request answers 206), so the
-  // stored variant plays in place instead of bouncing the reader out to X.
-  it("plays video in place using the highest-bitrate MP4 X offers", () => {
+  // X answers every video.twimg.com request with 403 from any origin that is not
+  // x.com, so only a file the archiver stored locally is ever played.
+  it("plays the locally archived file, never X's CDN", () => {
+    renderCard({
+      url: "https://x.com/elonmusk/status/1",
+      media: [
+        {
+          id: "m1",
+          type: "video",
+          url: "/media/ab/poster.jpg",
+          src: "/media/ab/clip.mp4",
+          variants: [
+            { content_type: "application/x-mpegURL", url: "http://v/stream.m3u8" },
+            { content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" },
+          ],
+        },
+      ],
+    });
+    const video = document.querySelector("video");
+    expect(video).toHaveAttribute("poster", "/media/ab/poster.jpg");
+    expect(video).toHaveAttribute("src", "/media/ab/clip.mp4");
+    expect(video).toHaveAttribute("controls");
+  });
+
+  it("links out instead of offering a play button we cannot honour", () => {
+    // Variants exist, but none is archived. Hotlinking them 403s, so the card
+    // must not imply in-place playback.
     renderCard({
       url: "https://x.com/elonmusk/status/1",
       media: [
@@ -247,18 +271,16 @@ describe("TweetCard media", () => {
           id: "m1",
           type: "video",
           url: "http://img/poster.jpg",
-          variants: [
-            { content_type: "application/x-mpegURL", url: "http://v/stream.m3u8" },
-            { content_type: "video/mp4", bitrate: 632, url: "http://v/low.mp4" },
-            { content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" },
-          ],
+          variants: [{ content_type: "video/mp4", bitrate: 2176, url: "http://v/high.mp4" }],
         },
       ],
     });
-    const video = document.querySelector("video");
-    expect(video).toHaveAttribute("poster", "http://img/poster.jpg");
-    expect(video).toHaveAttribute("src", "http://v/high.mp4");
-    expect(video).toHaveAttribute("controls");
+    expect(document.querySelector("video")).toBeNull();
+    expect(screen.getByRole("link", { name: /Watch on X/ })).toHaveAttribute(
+      "href",
+      "https://x.com/elonmusk/status/1",
+    );
+    expect(screen.queryByText("\u25b6")).toBeNull();
   });
 
   it("falls back to the X link when the video itself fails to load", () => {
@@ -272,7 +294,7 @@ describe("TweetCard media", () => {
           id: "m1",
           type: "video",
           url: "http://img/poster.jpg",
-          variants: [{ content_type: "video/mp4", bitrate: 2176, url: "http://v/gone.mp4" }],
+          src: "/media/ab/gone.mp4",
         },
       ],
     });
@@ -311,7 +333,7 @@ describe("TweetCard media", () => {
           id: "m1",
           type: "animated_gif",
           url: "http://img/poster.jpg",
-          variants: [{ content_type: "video/mp4", bitrate: 0, url: "http://v/gif.mp4" }],
+          src: "/media/ab/gif.mp4",
         },
       ],
     });
@@ -321,9 +343,9 @@ describe("TweetCard media", () => {
     expect(screen.getByText("GIF")).toBeInTheDocument();
   });
 
-  it("labels an animated GIF as such when it has no playable variant", () => {
+  it("labels an animated GIF as such when it has no archived file", () => {
     renderCard({ media: [{ id: "m1", type: "animated_gif", url: "http://img/poster.jpg" }] });
-    expect(screen.getByText("GIF")).toBeInTheDocument();
+    expect(screen.getByText(/GIF/)).toBeInTheDocument();
   });
 
   it("caps the media grid at four and counts the remainder", () => {

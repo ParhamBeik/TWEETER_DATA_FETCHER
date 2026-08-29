@@ -226,7 +226,9 @@ describe("Dashboard collection attribution", () => {
 describe("Dashboard pipeline panel", () => {
   it("shows the last run and the countdown to the next one", async () => {
     renderPulse();
-    expect(await screen.findByText("+42 posts")).toBeInTheDocument();
+    // "+N new", not rows re-seen: an archive walk that stored nothing was
+    // reporting "+51 posts" while the chart beside it showed zero for it.
+    expect(await screen.findByText("+42 new")).toBeInTheDocument();
     expect(screen.getByText("next in 10m 0s")).toBeInTheDocument();
   });
 

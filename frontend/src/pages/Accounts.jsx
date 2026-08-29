@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { api } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
@@ -34,11 +35,16 @@ export default function Accounts() {
   // Distinguishes "still fetching the roster" from "the roster is genuinely
   // empty"; without it the table flashed "No tracked accounts yet" on every load.
   const [rosterLoaded, setRosterLoaded] = useState(false);
+  const [rosterQuery, setRosterQuery] = useState("");
   const activeHandle = useRef(null);
 
-  async function loadAccounts() {
+  async function loadAccounts(query = rosterQuery) {
+    const search = query.trim();
     try {
-      const [data, metrics] = await Promise.all([api("/accounts/"), api("/analytics/accounts/")]);
+      const [data, metrics] = await Promise.all([
+        api(`/accounts/${search ? `?q=${encodeURIComponent(search)}` : ""}`),
+        api("/analytics/accounts/"),
+      ]);
       setAccounts(Array.isArray(data) ? data : data.results || []);
       setAnalytics(Object.fromEntries((metrics.results || []).map((row) => [row.account, row])));
     } catch (e) {
@@ -49,8 +55,9 @@ export default function Accounts() {
   }
 
   useEffect(() => {
-    loadAccounts();
-  }, []);
+    const timer = setTimeout(() => loadAccounts(rosterQuery), rosterQuery ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [rosterQuery]);
 
   async function addAccount(e) {
     e.preventDefault();
@@ -180,7 +187,34 @@ export default function Accounts() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <Panel className="min-w-0">
-          <PanelHead label={`${accounts.length} accounts`} className="px-4 py-2" />
+          {/* The roster is the 64 accounts being collected, not the 2,409
+              authors the parser has ever seen. Searching reaches the rest,
+              which is how you find one to start tracking. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+            <PanelHead
+              label={`${accounts.length} ${rosterQuery ? "matching" : "tracked"} accounts`}
+              className="p-0"
+            />
+            <div className="relative">
+              <Input
+                aria-label="Search all accounts"
+                placeholder="Search all accounts…"
+                value={rosterQuery}
+                className="h-8 w-56 pr-8 text-sm"
+                onChange={(e) => setRosterQuery(e.target.value)}
+              />
+              {rosterQuery && (
+                <button
+                  type="button"
+                  aria-label="Clear account search"
+                  onClick={() => setRosterQuery("")}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1.5 text-fg-dim hover:text-fg"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
           <PanelBody className="overflow-x-auto">
             <table className="w-full min-w-[46rem]">
               <thead>
@@ -287,7 +321,12 @@ export default function Accounts() {
               </tbody>
             </table>
             {!rosterLoaded && <p className="mt-3 text-xs text-fg-muted">Loading accounts…</p>}
-            {rosterLoaded && accounts.length === 0 && (
+            {rosterLoaded && accounts.length === 0 && rosterQuery && (
+              <Empty className="mt-3" title={`No account matches "${rosterQuery}"`}>
+                Search covers every author the collector has ever seen, tracked or not.
+              </Empty>
+            )}
+            {rosterLoaded && accounts.length === 0 && !rosterQuery && (
               <Empty className="mt-3" title="No tracked accounts yet">
                 Add a handle above to start collecting its timeline.
               </Empty>

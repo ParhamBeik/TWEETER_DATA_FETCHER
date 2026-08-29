@@ -54,7 +54,7 @@ function rateLabel(row) {
   return `${(1 / multiple).toFixed(1)}× below its usual rate`;
 }
 
-function TopicRow({ row, onOpen, onHide, canHide }) {
+function TopicRow({ row, onOpen, onHide, canHide, showKind, rank }) {
   const label = row.kind === "hashtag" ? `#${row.topic}` : row.topic;
   return (
     <tr className="group border-b border-line last:border-b-0">
@@ -66,14 +66,27 @@ function TopicRow({ row, onOpen, onHide, canHide }) {
         >
           {label}
         </button>
-        <span className="ml-2 font-mono text-2xs uppercase tracking-wider text-fg-dim">
-          {row.kind}
-        </span>
+        {/* Only worth saying when the table actually mixes the two. With the
+            Phrases filter on, every row carried an identical "PHRASE" badge --
+            and it read as a claim that single words were phrases. */}
+        {showKind && (
+          <span className="ml-2 font-mono text-2xs uppercase tracking-wider text-fg-dim">
+            {row.kind}
+          </span>
+        )}
       </td>
       <td className="py-2 pr-3 text-right font-mono text-sm tabular">{compact(row.docs)}</td>
       <td className="py-2 pr-3 text-right font-mono text-sm tabular text-fg-muted">
         {compact(row.authors)}
       </td>
+      {/* The column the table is actually sorted by. Without it the only
+          visible ranking number was the rate multiplier, which runs
+          3.1x, 18.7x, 2.4x, 15.2x down the page and looks like no order. */}
+      {rank !== "volume" && (
+        <td className="py-2 pr-3 text-right font-mono text-sm tabular text-fg-muted">
+          {typeof row.score === "number" ? row.score.toFixed(2) : "—"}
+        </td>
+      )}
       <td className="py-2 pr-3 text-xs text-fg-muted">{rateLabel(row)}</td>
       <td className="py-2 text-right">
         {canHide && (
@@ -131,8 +144,13 @@ function Topics({ data, params, onReload, navigate }) {
             </div>
           ) : rows.length === 0 ? (
             <Empty title="Nothing stands out in this window">
-              Either the archive is quiet, or every term is running at its usual rate. Widen the
-              time range to compare against a longer baseline.
+              {/* Hashtags are rare in this archive -- around one post in sixty
+                  uses one -- so an empty hashtag table is the normal answer, not
+                  a broken panel. Saying which question came back empty is the
+                  difference between "no signal" and "no feature". */}
+              {dimension === "hashtags"
+                ? "No hashtag cleared the bar here. These accounts rarely use them, so this dimension is often empty — try Phrases, a longer range, or Both."
+                : "Either the archive is quiet, or every term is running at its usual rate. Widen the time range to compare against a longer baseline."}
             </Empty>
           ) : (
             <table className="w-full">
@@ -150,6 +168,15 @@ function Topics({ data, params, onReload, navigate }) {
                   <th scope="col" className="pb-2 pr-3 text-right eyebrow font-normal">
                     Accounts
                   </th>
+                  {rank !== "volume" && (
+                    <th
+                      scope="col"
+                      className="pb-2 pr-3 text-right eyebrow font-normal"
+                      title="How unusual this term's rate is, accounting for sample size. This is the sort order."
+                    >
+                      Surge
+                    </th>
+                  )}
                   <th scope="col" className="pb-2 pr-3 eyebrow font-normal">
                     Against baseline
                   </th>
@@ -161,6 +188,8 @@ function Topics({ data, params, onReload, navigate }) {
                   <TopicRow
                     key={`${row.kind}:${row.topic}`}
                     row={row}
+                    rank={rank}
+                    showKind={dimension === "both"}
                     canHide={isStaff}
                     onHide={hide}
                     onOpen={(topic) =>
@@ -256,7 +285,19 @@ function Narratives({ data }) {
       <p className="text-sm text-fg-muted">
         Near-identical posts from different accounts, within a propagation window of each other.
       </p>
-      {!data && <Skeleton className="h-24" />}
+      {/* This query compares posts against each other pairwise and takes real
+          seconds. A single thin skeleton read as "nothing here", so it says how
+          long it expects to be. */}
+      {!data && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-fg-dim">
+            Comparing posts against each other — this takes a few seconds.
+          </p>
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+        </div>
+      )}
       {data && !results.length && (
         <Empty title="No repeated claims found">
           Nothing in this window was posted near-identically by two different accounts.
@@ -303,7 +344,7 @@ function Accounts({ data }) {
       <PanelHead
         label="Accounts"
         title="Who is posting, and who is landing"
-        lede="Tracked accounts in this window, ranked by average engagement per post rather than by volume — a prolific account is not the same as an effective one."
+        lede="Tracked accounts in this window, ranked by average engagement per post rather than by volume — a prolific account is not the same as an effective one. Engagement counts likes, reposts, replies and quotes; views are reach and are listed separately."
       />
       <PanelBody>
         {!data ? (
@@ -383,6 +424,11 @@ export default function Analyze() {
       setData(result);
       setError("");
     } catch (e) {
+      // Drop the rows as well as showing the error. Keeping them meant a failed
+      // 7d narratives request left the previous 24h results on screen under a
+      // "7d" button -- the reader was looking at a different window than the one
+      // the controls claimed, with nothing saying so.
+      setData(null);
       setError(e.message);
     }
   }, [tab, range, bucket, selected, dimension, rank]);

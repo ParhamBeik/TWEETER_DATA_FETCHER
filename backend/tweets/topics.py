@@ -29,20 +29,38 @@ from dataclasses import dataclass
 # A term has to appear in this many distinct posts, from this many distinct
 # accounts, before it is a topic rather than one person's turn of phrase. The
 # author floor is the cheap defence against a single chatty account inventing a
-# trend by itself.
-MIN_DOCS = 3
-MIN_AUTHORS = 2
+# trend by itself. Raised from 3/2: at those floors a term in 7 posts from 3
+# accounts was being published as "8.2x its usual rate", which is a number the
+# sample size cannot support.
+MIN_DOCS = 5
+MIN_AUTHORS = 3
+
+# Hashtags are an explicit authorial signal, not a term mined out of prose, so
+# they need less corroboration to be worth showing. They are also rare here --
+# about 1.7% of this archive uses one -- so the phrase floors would leave the
+# hashtag dimension permanently empty rather than selective.
+KIND_FLOORS = {"hashtag": (2, 2)}
 
 # Anything in more than this share of documents is structural filler in whatever
 # language it happens to be. Derived from the corpus, so it needs no word list
 # and covers every language the archive collects -- which is the whole reason the
 # hand-typed English list could never work here.
-MAX_DOC_RATIO = 0.25
+#
+# Was 0.25, which let almost everything through: "says" in 61 of 891 posts is
+# 6.8%, so filler cleared the bar by a factor of four and the panel filled with
+# month/king/chair/big/long/comes. A term carried by more than one post in
+# twenty is the corpus talking, not a topic.
+MAX_DOC_RATIO = 0.05
 
 # Drop the shorter term when a longer one accounts for this much of its usage.
 # "gold" appearing in 40 posts of which 34 also say "gold price" is not a topic
 # in its own right.
-CONTAINMENT = 0.8
+#
+# Was 0.8, which was too strict to merge the case that actually shows up: one Fed
+# story surfaced as five rows (fed, chair, warsh, kevin warsh, fed chair) because
+# "kevin warsh" covered 22 of "warsh"'s 35 posts and 22 < 0.8*35. At 0.5 the
+# bigram absorbs its fragments and the story appears once.
+CONTAINMENT = 0.5
 
 # Smoothing for the log-odds. Without it a term absent from the previous window
 # divides by zero, and every brand-new term would tie at infinity regardless of
@@ -152,7 +170,8 @@ def rank_terms(
     for row in candidates:
         if row.term.lower() in blocked:
             continue
-        if row.docs < MIN_DOCS or row.authors < MIN_AUTHORS:
+        min_docs, min_authors = KIND_FLOORS.get(row.kind, (MIN_DOCS, MIN_AUTHORS))
+        if row.docs < min_docs or row.authors < min_authors:
             continue
         # Structural filler, judged against both windows so a term is not
         # exempted just because it happens to be quiet right now.
@@ -202,21 +221,57 @@ def _self_check() -> None:
     # The bigram survives and takes the unigram it explains with it.
     assert topics == ["gold price"], topics
 
-    # Volume ordering still available, and still support-filtered.
+    # Volume ordering still available, and still support-filtered. Totals are
+    # large enough that "alpha" is a real term rather than structural filler --
+    # at MAX_DOC_RATIO it is the ratio, not the raw count, that decides.
+    pair = [TermStats("alpha", "phrase", 30, 9, 29), TermStats("beta", "phrase", 8, 4, 1)]
     volume = rank_terms(
-        [TermStats("alpha", "phrase", 30, 9, 29), TermStats("beta", "phrase", 8, 4, 1)],
-        total_docs=500,
-        previous_total_docs=500,
-        order="volume",
+        pair, total_docs=2000, previous_total_docs=2000, order="volume"
     )
     assert [row["topic"] for row in volume] == ["alpha", "beta"], volume
     # ...but surging ordering puts the term that actually moved first.
-    surging = rank_terms(
-        [TermStats("alpha", "phrase", 30, 9, 29), TermStats("beta", "phrase", 8, 4, 1)],
-        total_docs=500,
-        previous_total_docs=500,
-    )
+    surging = rank_terms(pair, total_docs=2000, previous_total_docs=2000)
     assert [row["topic"] for row in surging] == ["beta", "alpha"], surging
+
+    # The filler rule is a rate, and it is strict enough to catch real filler:
+    # "says" in 61 of 891 posts is 6.8% of the corpus, which is the corpus
+    # talking. It must not reach the chart no matter how it scores.
+    assert not rank_terms(
+        [TermStats("says", "phrase", 61, 15, 40)],
+        total_docs=891,
+        previous_total_docs=1000,
+    ), "filler at 6.8% of documents must be dropped"
+
+    # Support floors, both of them: 4 posts is too thin regardless of spread,
+    # and 2 accounts is too few regardless of volume.
+    assert not rank_terms(
+        [TermStats("debut", "phrase", 4, 4, 1)], total_docs=891, previous_total_docs=1000
+    ), "below MIN_DOCS must be dropped"
+    assert not rank_terms(
+        [TermStats("chip", "phrase", 10, 2, 1)], total_docs=891, previous_total_docs=1000
+    ), "below MIN_AUTHORS must be dropped"
+
+    # Hashtags clear a lower bar than mined phrases: the same support that is too
+    # thin for a phrase is a deliberate label when someone typed it.
+    thin = dict(docs=3, authors=2, previous_docs=0)
+    assert not rank_terms(
+        [TermStats("thin", "phrase", **thin)], total_docs=891, previous_total_docs=1000
+    ), "a 3-post phrase is still below the phrase floor"
+    assert rank_terms(
+        [TermStats("thin", "hashtag", **thin)], total_docs=891, previous_total_docs=1000
+    ), "the same support should qualify as a hashtag"
+
+    # One story, one row: a bigram absorbs the unigram it explains even when the
+    # unigram has noticeably more documents ("warsh" 35 vs "kevin warsh" 22).
+    fed = rank_terms(
+        [
+            TermStats("warsh", "phrase", 35, 9, 2),
+            TermStats("kevin warsh", "phrase", 22, 8, 1),
+        ],
+        total_docs=2000,
+        previous_total_docs=2000,
+    )
+    assert [row["topic"] for row in fed] == ["kevin warsh"], fed
 
     # A unigram with support the bigram cannot explain stays: 12 of 40 posts is
     # not "gold is really just gold price".

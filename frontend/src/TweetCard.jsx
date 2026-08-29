@@ -48,15 +48,18 @@ function MediaImage({ item, alt }) {
   );
 }
 
-/** Best playable MP4 for a video item: highest bitrate X offers, or none. */
-function bestVariant(item) {
-  const mp4s = (item.variants || []).filter(
-    (variant) => variant.url && variant.content_type === "video/mp4",
-  );
-  if (!mp4s.length) return null;
-  // Bitrate is absent on the stream manifest and on some GIF variants; treating
-  // that as 0 keeps those as the last resort rather than accidentally the pick.
-  return mp4s.reduce((best, v) => ((v.bitrate || 0) > (best.bitrate || 0) ? v : best));
+/**
+ * The URL to actually play, which is only ever a file we archived ourselves.
+ *
+ * X's `video.twimg.com` variants are deliberately not used as a fallback. The
+ * earlier note here claimed they hotlink fine; they do not -- X answers every
+ * one of them with 403 from any origin that is not x.com. Trying anyway gave a
+ * play button that could never play, and re-requested each rejected file on
+ * every render. Until the archiver has stored the mp4 (fetching/media.py), the
+ * honest control is a link to X.
+ */
+function playableSource(item) {
+  return typeof item.src === "string" && item.src ? item.src : null;
 }
 
 const CELL = "media-cell relative overflow-hidden rounded-sm border border-paper-line bg-ink-900";
@@ -64,19 +67,15 @@ const NOTE =
   "absolute bottom-1.5 left-1.5 rounded-xs bg-ink-900/85 px-1.5 py-0.5 font-mono text-2xs text-fg-muted";
 
 /**
- * A video that plays in place, falling back to a link out.
- *
- * The poster frame comes from pbs.twimg.com and the stream from
- * video.twimg.com; both hotlink fine (verified: the MP4 answers a range request
- * with 206). If either is blocked or gone, the reader still gets a real link
- * rather than a dead black slab.
+ * A video that plays in place when we hold the file, and links out when we do
+ * not -- with no play button in that case, because there is nothing to play.
  */
 function MediaVideo({ item, label, permalinkUrl, style }) {
   const [failed, setFailed] = useState(false);
-  const variant = bestVariant(item);
+  const source = playableSource(item);
   const isGif = item.type === "animated_gif";
 
-  if (failed || !variant) {
+  if (failed || !source) {
     return (
       <a
         className={cn(CELL, "media-video block")}
@@ -87,13 +86,10 @@ function MediaVideo({ item, label, permalinkUrl, style }) {
         aria-label={`Watch on X: ${label}`}
       >
         {item.url && <MediaImage item={item} alt={label} />}
-        <span
-          className="absolute inset-0 grid place-items-center text-2xl text-fg/90"
-          aria-hidden="true"
-        >
-          ▶
-        </span>
-        <span className={NOTE}>{isGif ? "GIF" : "Watch on X"}</span>
+        {/* No ▶ overlay here: it promised in-place playback that this branch
+            cannot deliver, which is what made the dead player feel broken
+            rather than simply "not archived". */}
+        <span className={NOTE}>{isGif ? "GIF · watch on X" : "Watch on X"}</span>
       </a>
     );
   }
@@ -118,7 +114,7 @@ function MediaVideo({ item, label, permalinkUrl, style }) {
         // media element enters NETWORK_NO_SOURCE *without* firing error at all.
         // With a child element this handler never runs, so a 403 or a deleted
         // asset would leave a stuck player and no way out to X.
-        src={variant.url}
+        src={source}
         onError={() => setFailed(true)}
       />
       {isGif && <span className={NOTE}>GIF</span>}
@@ -231,7 +227,11 @@ function EmbeddedTweet({ tweet, onOpen }) {
           </time>
         )}
       </div>
-      {tweet.text && <p className="mt-1.5 font-sans text-sm text-fg-muted">{tweet.text}</p>}
+      {(tweet.text_clean || tweet.text) && (
+        <p dir="auto" className="mt-1.5 font-sans text-sm text-fg-muted">
+          {tweet.text_clean || tweet.text}
+        </p>
+      )}
       <Media items={tweet.media || []} onOpen={onOpen} permalinkUrl={url} />
       {url && (
         <a
@@ -297,7 +297,12 @@ export default function TweetCard({ tweet }) {
   const metrics = reposted?.metrics
     ? { ...tweet, ...reposted.metrics, velocity: tweet.velocity }
     : tweet;
-  const text = reposted ? reposted.text : tweet.text;
+  // text_clean is the same string with X's HTML entities decoded and its
+  // duplicated t.co collapsed; `text` stays the verbatim archive and is the
+  // fallback for rows the backfill has not reached.
+  const text = reposted
+    ? reposted.text_clean || reposted.text
+    : tweet.text_clean || tweet.text;
   const postedAt = reposted?.created_at || tweet.created_at;
   const url = permalink(tweet);
   const isSelfThread =
@@ -370,7 +375,13 @@ export default function TweetCard({ tweet }) {
             </div>
           )}
           {text && (
-            <p className="mt-1 whitespace-pre-wrap break-words font-sans text-md leading-relaxed">
+            // dir="auto" lets the browser pick direction from the first strong
+            // character. This archive tracks Persian and Arabic accounts heavily
+            // and every one of their posts was being laid out left-to-right.
+            <p
+              dir="auto"
+              className="mt-1 whitespace-pre-wrap break-words font-sans text-md leading-relaxed"
+            >
               {text}
             </p>
           )}

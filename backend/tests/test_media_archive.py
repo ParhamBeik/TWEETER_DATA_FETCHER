@@ -33,19 +33,53 @@ def test_only_https_twimg_hosts_are_allowed():
 
 
 def test_photo_urls_walk_quoted_and_reposted_blobs():
+    """Photos from every nesting level, plus a video's poster frame.
+
+    Video used to be skipped here on the theory that it could play from X's CDN.
+    It cannot -- X answers those requests with 403 -- so the poster and the
+    chosen mp4 variant are both archived now.
+    """
     extras = {
         "media": [
             {"type": "photo", "url": "https://pbs.twimg.com/a.jpg"},
-            {"type": "video", "url": "https://pbs.twimg.com/v.mp4"},
+            {"type": "video", "url": "https://pbs.twimg.com/poster.jpg"},
         ],
         "quoted_tweet": {"media": [{"type": "photo", "url": "https://pbs.twimg.com/q.jpg"}]},
         "retweeted_tweet": {"media": [{"type": "photo", "url": "https://pbs.twimg.com/r.jpg"}]},
     }
     assert photo_urls_from_extras(extras) == [
         "https://pbs.twimg.com/a.jpg",
+        "https://pbs.twimg.com/poster.jpg",
         "https://pbs.twimg.com/q.jpg",
         "https://pbs.twimg.com/r.jpg",
     ]
+
+
+def test_video_variant_is_archived_and_played_locally():
+    """A video with mp4 variants yields a playable local `src`."""
+    item = {
+        "type": "video",
+        "url": "https://pbs.twimg.com/poster.jpg",
+        "variants": [
+            {"url": "https://video.twimg.com/x.m3u8", "content_type": "application/x-mpegURL"},
+            {"url": "https://video.twimg.com/mid.mp4", "content_type": "video/mp4", "bitrate": 832000},
+            {"url": "https://video.twimg.com/max.mp4", "content_type": "video/mp4", "bitrate": 9000000},
+        ],
+    }
+    urls = photo_urls_from_extras({"media": [item]})
+    assert "https://video.twimg.com/mid.mp4" in urls
+    # The 9Mbps master is deliberately not archived.
+    assert "https://video.twimg.com/max.mp4" not in urls
+
+    out = rewrite_media_blob(
+        {"media": [item]},
+        {
+            "https://video.twimg.com/mid.mp4": "/media/ab/cd.mp4",
+            "https://pbs.twimg.com/poster.jpg": "/media/ef/gh.jpg",
+        },
+    )
+    assert out["media"][0]["src"] == "/media/ab/cd.mp4"
+    assert out["media"][0]["url"] == "/media/ef/gh.jpg"
 
 
 def test_rewrite_swaps_only_photos_we_have():
