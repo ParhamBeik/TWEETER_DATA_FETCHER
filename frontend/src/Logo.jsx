@@ -1,10 +1,8 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/cn";
 
-// Same construction as Holdings' three ascending bars: three rounded rects,
-// currentColor, opacity steps, readable at 16px. The geometry is the inverse —
-// depth, not growth. Top bar is the live poll (shallow, full weight); each
-// layer below is one page further back in the archive walk.
+// Four vertical telemetry frequency bars: rising to peak signal spike, then tapering.
+// Uses currentColor and stepped opacities (0.4, 0.75, 1.0, 0.55), razor-sharp at 16px.
 export default function Logo({ size = 24, title = "Signal Archive", decorative = false }) {
   return (
     <svg
@@ -17,9 +15,10 @@ export default function Logo({ size = 24, title = "Signal Archive", decorative =
       aria-hidden={decorative ? true : undefined}
       aria-label={decorative ? undefined : title}
     >
-      <rect x="5" y="6" width="10" height="6" rx="1.5" fill="currentColor" />
-      <rect x="5" y="13" width="16" height="6" rx="1.5" fill="currentColor" opacity="0.7" />
-      <rect x="5" y="20" width="22" height="6" rx="1.5" fill="currentColor" opacity="0.45" />
+      <rect x="4" y="16" width="4.5" height="10" rx="1.5" fill="currentColor" opacity="0.4" />
+      <rect x="11" y="9" width="4.5" height="17" rx="1.5" fill="currentColor" opacity="0.75" />
+      <rect x="18" y="5" width="4.5" height="21" rx="1.5" fill="currentColor" />
+      <rect x="25" y="12" width="4.5" height="14" rx="1.5" fill="currentColor" opacity="0.55" />
     </svg>
   );
 }
