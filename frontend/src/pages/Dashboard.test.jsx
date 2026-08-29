@@ -177,8 +177,8 @@ describe("Dashboard stat tiles", () => {
       }),
     });
     renderPulse();
-    expect(await screen.findByText("19/64")).toBeInTheDocument();
-    expect(screen.getAllByText(/45 stopped at X's serving depth/).length).toBeGreaterThan(0);
+    expect(await screen.findByText("64/64")).toBeInTheDocument();
+    expect(screen.getAllByText(/19 complete · 45 at X limit/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/of the backfill is finished/)).not.toBeInTheDocument();
   });
 

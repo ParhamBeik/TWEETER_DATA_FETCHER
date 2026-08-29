@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from datetime import timedelta, timezone as dt_timezone
 from io import StringIO
@@ -82,7 +83,11 @@ def _calendar_start(window: str):
     if window == "today":
         start = midnight
     elif window == "week":
-        start = midnight - timedelta(days=midnight.weekday())
+        # Tehran / Iranian calendar week begins on Saturday (Shanbeh).
+        # Python weekday(): Mon=0..Sat=5, Sun=6.
+        # (weekday + 2) % 7 gives days since Saturday (Sat=0, Sun=1, ..., Fri=6).
+        days_since_saturday = (midnight.weekday() + 2) % 7
+        start = midnight - timedelta(days=days_since_saturday)
     else:
         start = midnight.replace(day=1)
     return start.astimezone(dt_timezone.utc)
@@ -440,9 +445,18 @@ class SearchViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         raw_query = serializer.validated_data["raw_query"]
         name = serializer.validated_data.get("name") or raw_query[:60]
+        base_slug = slugify(name, allow_unicode=True)[:180]
+        if not base_slug:
+            base_slug = f"search-{hashlib.sha256(raw_query.encode()).hexdigest()[:8]}"
+        slug = base_slug
+        product = serializer.validated_data.get("product") or "Top"
+        counter = 1
+        while Search.objects.filter(slug=slug, product=product).exists():
+            slug = f"{base_slug[:170]}-{counter}"
+            counter += 1
         search = serializer.save(
             name=name,
-            slug=slugify(name)[:200] or "search",
+            slug=slug,
         )
         from fetching.tasks import run_search
 
@@ -583,7 +597,17 @@ class ExportView(APIView):
                 yield json.dumps(record(tweet), ensure_ascii=False) + "\n"
 
         content_type = "text/csv" if fmt == "csv" else "application/x-ndjson"
-        filename = f"tweets.{fmt}"
+        today_str = timezone.now().strftime("%Y-%m-%d")
+        accounts = normalize_handles(
+            request.query_params.getlist("account") if hasattr(request.query_params, "getlist") else [request.query_params.get("account")]
+        )
+        if accounts:
+            tag = "_".join(accounts[:2])
+            if len(accounts) > 2:
+                tag += f"_plus_{len(accounts) - 2}"
+            filename = f"tweets_{tag}_{today_str}.{fmt}"
+        else:
+            filename = f"tweets_{today_str}.{fmt}"
         response = StreamingHttpResponse(rows(), content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response

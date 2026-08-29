@@ -212,3 +212,97 @@ def test_velocity_reports_engagement_gained_not_absolute_totals(client):
     assert [row["tweet_id"] for row in body["results"]] == ["climbing"]
     assert body["results"][0]["velocity"] == 890
     assert sum(row["gained"] for row in body["series"]) == 890
+
+
+@pytest.mark.django_db
+def test_accounts_analytics_excludes_retweets(client):
+    from django.utils import timezone
+    from tweets.models import Tweet
+
+    TwitterUser.objects.create(handle="alice", tracking=True)
+    # Alice original tweet with 10 likes
+    Tweet.objects.create(
+        dedup_key="alice:101",
+        tweet_id="101",
+        account="alice",
+        type="Tweet",
+        likes=10,
+        retweets=0,
+        replies=0,
+        quotes=0,
+        created_at=timezone.now(),
+    )
+    # Alice retweet of a viral post with 50,000 likes
+    Tweet.objects.create(
+        dedup_key="alice:102",
+        tweet_id="102",
+        account="alice",
+        type="Retweet",
+        likes=50000,
+        retweets=5000,
+        replies=0,
+        quotes=0,
+        created_at=timezone.now(),
+    )
+
+    response = client.get("/api/analytics/accounts/?range=24h")
+    assert response.status_code == 200
+    rows = response.data["results"]
+    assert len(rows) == 1
+    assert rows[0]["account"] == "alice"
+    assert rows[0]["posts"] == 1  # Retweet excluded
+    assert rows[0]["average_engagement"] == 10.0  # Not inflated to 25,000+
+
+
+@pytest.mark.django_db
+def test_overview_respects_until_boundary(client):
+    from django.utils import timezone
+    from tweets.models import Tweet
+
+    now = timezone.now()
+    # Tweet from 5 days ago
+    Tweet.objects.create(
+        dedup_key="jack:201",
+        tweet_id="201", account="jack", type="Tweet",
+        created_at=now - timedelta(days=5),
+    )
+    # Tweet from 1 day ago
+    Tweet.objects.create(
+        dedup_key="jack:202",
+        tweet_id="202", account="jack", type="Tweet",
+        created_at=now - timedelta(days=1),
+    )
+
+    # Window from 6 days ago until 3 days ago
+    since = (now - timedelta(days=6)).isoformat()
+    until = (now - timedelta(days=3)).isoformat()
+
+    response = client.get(f"/api/stats/overview/?since={since}&until={until}")
+    assert response.status_code == 200
+    assert response.data["tweets"] == 2
+    assert response.data["tweets_in_window"] == 1  # Only tweet 201 falls in window
+
+
+@pytest.mark.django_db
+def test_calendar_start_week_starts_on_saturday():
+    from tweets.views import _calendar_start
+
+    start = _calendar_start("week")
+    # Saturday in python weekday() is 5
+    from fetcher.processing import TZ as FEED_TZ
+    local_start = start.astimezone(FEED_TZ)
+    assert local_start.weekday() == 5  # Saturday
+    assert local_start.hour == 0
+    assert local_start.minute == 0
+
+
+@pytest.mark.django_db
+def test_case_insensitive_login(client):
+    User.objects.create_user(username="ParhamBeik", password="secretpassword123")
+    anon = APIClient()
+
+    # Login with lower case
+    response = anon.post("/api/auth/login/", {"username": "parhambeik", "password": "secretpassword123"})
+    assert response.status_code == 200
+    assert response.data["user"]["username"] == "ParhamBeik"
+

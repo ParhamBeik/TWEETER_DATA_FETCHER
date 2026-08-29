@@ -49,7 +49,9 @@ const RANKINGS = [
  */
 function rateLabel(row) {
   if (!row.baseline_share) return "new this window";
+  if (!row.share) return "quiet this window";
   const multiple = row.share / row.baseline_share;
+  if (!Number.isFinite(multiple) || multiple <= 0) return "quiet this window";
   if (multiple >= 1) return `${multiple.toFixed(1)}× its usual rate`;
   return `${(1 / multiple).toFixed(1)}× below its usual rate`;
 }
@@ -105,7 +107,7 @@ function TopicRow({ row, onOpen, onHide, canHide, showKind, rank }) {
   );
 }
 
-function Topics({ data, params, onReload, navigate }) {
+function Topics({ data, params, onReload, navigate, range }) {
   const { isStaff } = useAuth();
   const [dimension, setDimension] = params.dimension;
   const [rank, setRank] = params.rank;
@@ -193,7 +195,7 @@ function Topics({ data, params, onReload, navigate }) {
                     canHide={isStaff}
                     onHide={hide}
                     onOpen={(topic) =>
-                      navigate(`/feed?q=${encodeURIComponent(topic)}&window=`)
+                      navigate(`/feed?q=${encodeURIComponent(topic)}&window=${encodeURIComponent(range || "24h")}`)
                     }
                   />
                 ))}
@@ -224,7 +226,7 @@ function Velocity({ data, bucket }) {
         <PanelHead
           label="Velocity"
           title="Engagement gained over time"
-          lede="Likes, reposts and views added per bucket across posts we were already watching — not the totals those posts carry."
+          lede="Likes and reposts added per bucket across posts we were already watching — not the totals those posts carry."
         />
         <PanelBody>
           {series.length ? (
@@ -327,6 +329,11 @@ function Narratives({ data }) {
                   <p className="text-xs text-fg-dim" title={absoluteTime(side.created_at)}>
                     {relativeTime(side.created_at)}
                   </p>
+                  {side.text && (
+                    <p className="mt-2 text-xs leading-relaxed text-fg-muted line-clamp-4 whitespace-pre-wrap break-words">
+                      {side.text}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -481,6 +488,7 @@ export default function Analyze() {
             data={data}
             navigate={navigate}
             onReload={load}
+            range={range}
             params={{ dimension: [dimension, setDimension], rank: [rank, setRank] }}
           />
         </TabPanel>

@@ -107,8 +107,9 @@ export default function Dashboard() {
   const bySubsystem = totals.by_subsystem || {};
 
   const archive = pipeline?.archive || {};
+  const totalWalked = (archive.complete || 0) + (archive.depth_limited || 0);
   const archivePercent = archive.tracked
-    ? Math.round((archive.complete / archive.tracked) * 100)
+    ? Math.round((totalWalked / archive.tracked) * 100)
     : 0;
 
   const successRate = (() => {
@@ -179,10 +180,10 @@ export default function Dashboard() {
           />
           <Stat
             label="Accounts archived"
-            value={archive.tracked ? `${archive.complete}/${archive.tracked}` : "—"}
+            value={archive.tracked ? `${totalWalked}/${archive.tracked}` : "—"}
             hint={
               archive.depth_limited
-                ? `${archive.depth_limited} stopped at X's serving depth`
+                ? `${archive.complete} complete · ${archive.depth_limited} at X limit`
                 : `${archivePercent}% of the backfill is finished`
             }
           />
