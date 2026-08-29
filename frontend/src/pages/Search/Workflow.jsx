@@ -31,6 +31,9 @@ function runDuration(run) {
 function Run({ run }) {
   const summary = run.summary || {};
   const pages = summary.pages_by_endpoint?.SearchTimeline ?? summary.pages ?? null;
+  const seenCount = summary.ingested_tweets || 0;
+  // Runs recorded before new_tweets existed only know the seen count.
+  const newCount = summary.new_tweets ?? seenCount;
   const failures = Object.entries(run.failure_ledger || {});
   const tone = RUN_TONE[run.status] || "idle";
   return (
@@ -49,8 +52,18 @@ function Run({ run }) {
         )}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-xs tabular text-fg-muted">
-        <span>{compact(summary.ingested_tweets || 0)} results stored</span>
-        {pages !== null && <span>{compact(pages)} pages fetched</span>}
+        {/* "Stored" means new to this query. A repoll that re-sees the same 40
+            hits it already holds reported "40 results stored" every half hour,
+            which made a run that added nothing look like a productive one. */}
+        <span className={newCount === 0 ? "text-fg-dim" : undefined}>
+          {newCount === 0 ? "nothing new" : `${compact(newCount)} new`}
+          {seenCount !== newCount && ` · ${compact(seenCount)} seen`}
+        </span>
+        {pages !== null && (
+          <span>
+            {compact(pages)} {pages === 1 ? "page" : "pages"} fetched
+          </span>
+        )}
       </div>
       {summary.stop_reason && (
         <p className="mt-1 text-xs text-fg-dim">{outcomeLabel(summary.stop_reason)}</p>
@@ -98,11 +111,15 @@ export default function Workflow({ search, onRunNow, running }) {
   }, [search.id, running]);
 
   const state = schedule?.state || "idle";
-  const nextDue = schedule?.is_due
-    ? "Due now"
-    : schedule?.next_due_at
-      ? `in ${duration(schedule.seconds_until_due)}`
-      : "After the first run";
+  // Paused means there is no next run. Showing a countdown next to "Paused"
+  // claimed the opposite.
+  const nextDue = state === "paused"
+    ? "Paused — resume to schedule"
+    : schedule?.is_due
+      ? "Due now"
+      : schedule?.next_due_at
+        ? `in ${duration(schedule.seconds_until_due)}`
+        : "After the first run";
 
   return (
     <div className="flex flex-col gap-4">
@@ -129,7 +146,11 @@ export default function Workflow({ search, onRunNow, running }) {
           <Readout
             label="Next run"
             value={nextDue}
-            hint={schedule?.next_due_at ? absoluteTime(schedule.next_due_at) : undefined}
+            hint={
+              state !== "paused" && schedule?.next_due_at
+                ? absoluteTime(schedule.next_due_at)
+                : undefined
+            }
           />
           <Readout
             label="Last run"

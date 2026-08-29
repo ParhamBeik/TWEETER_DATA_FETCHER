@@ -52,7 +52,7 @@ const run = (over = {}) => ({
   status: "completed",
   started_at: new Date(Date.now() - 300000).toISOString(),
   finished_at: new Date(Date.now() - 240000).toISOString(),
-  summary: { ingested_tweets: 12, pages_by_endpoint: { SearchTimeline: 3 }, stop_reason: "success_search_window_crossed" },
+  summary: { ingested_tweets: 12, new_tweets: 5, pages_by_endpoint: { SearchTimeline: 3 }, stop_reason: "success_search_window_crossed" },
   failure_ledger: {},
   ...over,
 });
@@ -193,7 +193,10 @@ describe("the workflow tab", () => {
     renderWorkspace();
     await user.click(await screen.findByRole("tab", { name: "Workflow" }));
 
-    expect(await screen.findByText("12 results stored")).toBeInTheDocument();
+    // "Stored" now means new to this query, with what the run merely re-saw
+    // beside it -- a repoll that added nothing used to claim it stored 40.
+    expect(await screen.findByText(/5 new/)).toBeInTheDocument();
+    expect(screen.getByText(/12 seen/)).toBeInTheDocument();
     expect(screen.getByText("3 pages fetched")).toBeInTheDocument();
   });
 

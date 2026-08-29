@@ -53,7 +53,9 @@ class AccountOpsSerializer(TwitterUserSerializer):
 # minus source_subsystem, so the console's TweetCard renders either one without
 # knowing which collector it came from.
 _SHARED_TWEET_FIELDS = [
-    "id", "tweet_id", "account", "text", "url", "type", "created_at",
+    # `text` stays verbatim so the API remains a faithful record of what X
+    # served; `text_clean` is what the console renders and what search matches.
+    "id", "tweet_id", "account", "text", "text_clean", "url", "type", "created_at",
     "author", "likes", "retweets", "replies", "quotes", "bookmarks", "views",
     "source_language", "entities", "media", "card", "reply_to",
     "quoted_tweet", "retweeted_tweet", "possibly_sensitive",
@@ -65,8 +67,30 @@ class BaseTweetSerializer(serializers.ModelSerializer):
     """Media/card/quote unpacking shared by Tweet and SearchTweet."""
 
     author = TwitterUserSerializer(read_only=True)
+    entities = serializers.SerializerMethodField()
     media = serializers.SerializerMethodField()
     card = serializers.SerializerMethodField()
+
+    def get_entities(self, obj):
+        """Stored entities, with X's repeated link entries collapsed.
+
+        X frequently sends the same t.co twice in `entities.urls` (once for the
+        author's link, once for the card it generated), which rendered the same
+        expanded URL twice under every Reuters post. Same reasoning as
+        text_clean: the column keeps what arrived, the API presents it once.
+        """
+        entities = obj.entities if isinstance(getattr(obj, "entities", None), dict) else {}
+        urls = entities.get("urls")
+        if not isinstance(urls, list):
+            return entities
+        seen, unique = set(), []
+        for item in urls:
+            key = item.get("short") if isinstance(item, dict) else str(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(item)
+        return {**entities, "urls": unique}
     reply_to = serializers.SerializerMethodField()
     quoted_tweet = serializers.SerializerMethodField()
     retweeted_tweet = serializers.SerializerMethodField()
@@ -137,6 +161,18 @@ class SearchTweetSerializer(BaseTweetSerializer):
         return "search"
 
 
+def _new_tweets(run) -> int:
+    """Rows this run added, falling back to rows it touched for older runs.
+
+    Runs recorded before `new_tweets` existed only know how many rows they
+    upserted, so they keep reporting that rather than claiming zero.
+    """
+    summary = run.summary or {}
+    if "new_tweets" in summary:
+        return int(summary.get("new_tweets") or 0)
+    return int(summary.get("ingested_tweets") or 0)
+
+
 class SearchSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=False, allow_blank=True)
     hit_count = serializers.SerializerMethodField()
@@ -173,6 +209,7 @@ class SearchSerializer(serializers.ModelSerializer):
             "started_at": run.started_at,
             "finished_at": run.finished_at,
             "ingested_tweets": int((run.summary or {}).get("ingested_tweets") or 0),
+            "new_tweets": _new_tweets(run),
         }
 
 

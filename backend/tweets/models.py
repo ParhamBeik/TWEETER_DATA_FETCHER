@@ -55,6 +55,11 @@ class Tweet(models.Model):
     )
 
     text = models.TextField(blank=True, default="")
+    # Verbatim `text` is the archive; `text_clean` is the readable derivation of
+    # it (HTML entities decoded, X's repeated t.co collapsed -- see
+    # tweets/textclean.py). The feed, search and topic mining read this one so
+    # they are not matching against "&amp;"; exports can offer either.
+    text_clean = models.TextField(blank=True, default="")
     url = models.URLField(max_length=500, blank=True, default="")
     type = models.CharField(max_length=20, default="Tweet")
 
@@ -165,6 +170,11 @@ class SearchTweet(models.Model):
     )
 
     text = models.TextField(blank=True, default="")
+    # Verbatim `text` is the archive; `text_clean` is the readable derivation of
+    # it (HTML entities decoded, X's repeated t.co collapsed -- see
+    # tweets/textclean.py). The feed, search and topic mining read this one so
+    # they are not matching against "&amp;"; exports can offer either.
+    text_clean = models.TextField(blank=True, default="")
     url = models.URLField(max_length=500, blank=True, default="")
     type = models.CharField(max_length=20, default="Tweet")
 

@@ -38,14 +38,26 @@ export default function QueryDialog({ open, onOpenChange, search, onSubmit, savi
   const [form, setForm] = useState(() => (search ? { ...BLANK, ...search } : BLANK));
   const [builder, setBuilder] = useState(BLANK_BUILDER);
   const [error, setError] = useState("");
+  // Once the query has been hand-written, the builder stops overwriting it.
+  // It used to recompose on every keystroke in any field, so a hand-typed
+  // operator -- the exact thing the hint invites -- was silently destroyed the
+  // moment you touched anything else. Editing an existing search counts as
+  // hand-written, because that query was authored somewhere else.
+  const [rawTouched, setRawTouched] = useState(Boolean(search));
 
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
 
   function applyBuilder(patch) {
     const next = { ...builder, ...patch };
     setBuilder(next);
-    set({ raw_query: buildQuery(next) });
+    if (!rawTouched) set({ raw_query: buildQuery(next) });
   }
+
+  // since:/until: that cross over can never match anything, and the form
+  // happily accepted it and started a scheduled job that would always be empty.
+  const datesInverted = Boolean(
+    builder.since && builder.until && builder.since > builder.until,
+  );
 
   async function submit(event) {
     event.preventDefault();
@@ -76,9 +88,13 @@ export default function QueryDialog({ open, onOpenChange, search, onSubmit, savi
         }
       >
         <form onSubmit={submit} className="flex flex-col gap-5">
-          {!editing && (
-            <fieldset className="flex flex-col gap-3 rounded-sm border border-line p-3">
-              <legend className="eyebrow px-1">Build the query</legend>
+          {/* Available when editing too. It used to be creation-only, so a query
+              assembled with the helpers could never be adjusted with them again --
+              only rewritten by hand. Editing starts with the builder detached
+              (rawTouched), so opening this cannot clobber the saved query; the
+              button below is the explicit opt-in. */}
+          <fieldset className="flex flex-col gap-3 rounded-sm border border-line p-3">
+            <legend className="eyebrow px-1">Build the query</legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Words or phrases">
                   {(props) => (
@@ -127,6 +143,7 @@ export default function QueryDialog({ open, onOpenChange, search, onSubmit, savi
                     <Input
                       {...props}
                       type="date"
+                      max={builder.until || undefined}
                       value={builder.since}
                       onChange={(e) => applyBuilder({ since: e.target.value })}
                     />
@@ -137,18 +154,42 @@ export default function QueryDialog({ open, onOpenChange, search, onSubmit, savi
                     <Input
                       {...props}
                       type="date"
+                      min={builder.since || undefined}
                       value={builder.until}
                       onChange={(e) => applyBuilder({ until: e.target.value })}
                     />
                   )}
                 </Field>
               </div>
-            </fieldset>
-          )}
+              {rawTouched && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="quiet"
+                    disabled={!buildQuery(builder).trim()}
+                    onClick={() => {
+                      set({ raw_query: buildQuery(builder) });
+                      setRawTouched(false);
+                    }}
+                  >
+                    Replace query with these fields
+                  </Button>
+                  <span className="text-xs text-fg-dim">
+                    The query below is hand-written, so these fields are not applied
+                    automatically.
+                  </span>
+                </div>
+              )}
+          </fieldset>
 
           <Field
             label="Query sent to X"
-            hint="Edit this directly to use any operator the fields above do not cover."
+            hint={
+              rawTouched
+                ? "Edited by hand — the fields above no longer overwrite it."
+                : "Edit this directly to use any operator the fields above do not cover."
+            }
           >
             {(props) => (
               <Textarea
@@ -157,7 +198,10 @@ export default function QueryDialog({ open, onOpenChange, search, onSubmit, savi
                 rows={2}
                 placeholder="(Iran OR Gold) lang:en min_faves:1000"
                 value={form.raw_query}
-                onChange={(e) => set({ raw_query: e.target.value })}
+                onChange={(e) => {
+                  setRawTouched(true);
+                  set({ raw_query: e.target.value });
+                }}
               />
             )}
           </Field>
@@ -233,13 +277,23 @@ export default function QueryDialog({ open, onOpenChange, search, onSubmit, savi
             </Field>
           </div>
 
+          {datesInverted && (
+            <ErrorNote>
+              "Posted after" is later than "Posted before", so this query can never match
+              anything. Swap the dates or clear one.
+            </ErrorNote>
+          )}
           {error && <ErrorNote>{error}</ErrorNote>}
 
           <DialogFooter>
             <Button variant="quiet" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={saving || !form.raw_query.trim()}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={saving || !form.raw_query.trim() || datesInverted}
+            >
               {editing ? "Save changes" : "Create and run"}
             </Button>
           </DialogFooter>

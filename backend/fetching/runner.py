@@ -594,9 +594,22 @@ def cleanup(root: Path) -> None:
     shutil.rmtree(root, ignore_errors=True)
 
 
-def finalize_run(run: FetchRun, *, ingested_tweets: int = 0, task_failed: bool = False) -> None:
+def finalize_run(
+    run: FetchRun,
+    *,
+    ingested_tweets: int = 0,
+    new_tweets: int | None = None,
+    task_failed: bool = False,
+) -> None:
     summary = dict(run.summary or {})
     summary["ingested_tweets"] = int(ingested_tweets)
+    # How many of those rows the archive had never seen. Without it a repoll that
+    # re-stored the same 40 hits reported "40 results stored", indistinguishable
+    # from a run that actually found 40 things. Defaults to the ingested count
+    # only when the caller genuinely cannot tell them apart.
+    summary["new_tweets"] = int(
+        ingested_tweets if new_tweets is None else new_tweets
+    )
     run.summary = summary
     if task_failed:
         run.status = "failed"

@@ -165,3 +165,16 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The feed's filter rail is a <details> so a phone shows one row instead of
+   ~830px of controls before the first post. On desktop there is room for all of
+   it, so the disclosure disappears and the panel is forced open -- the UA hides
+   a closed details' children, and this is what overrides that. */
+@media (min-width: 1024px) {
+  details.feed-filters > summary {
+    display: none;
+  }
+  details.feed-filters > .feed-filters-body {
+    display: flex !important;
+  }
+}

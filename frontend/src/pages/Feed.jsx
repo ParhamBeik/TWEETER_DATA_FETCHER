@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUp, Download, Image } from "lucide-react";
+import { ArrowUp, Download, Image, X } from "lucide-react";
 import { api, authorizedFetch } from "../api";
 import { AccountPicker, Segmented, ToggleChips, useAccounts } from "../filters";
 import InfiniteSentinel from "../InfiniteSentinel";
@@ -10,16 +10,23 @@ import { Chip, Empty, ErrorNote } from "@/ui/controls";
 import { Input, Select } from "@/ui/field";
 import { PageHead } from "@/ui/panel";
 
+// Engagement and reach are separate questions and get separate buttons. They
+// used to be one "Most engaged" sort that summed likes+reposts+views, and since
+// views are a hundred times larger than anything else it only ever ranked reach.
 const SORTS = [
   { value: "latest", label: "Latest" },
   { value: "top", label: "Most engaged" },
+  { value: "views", label: "Most viewed" },
 ];
 
+// Calendar boundaries, resolved Tehran-side by the API. These labels used to be
+// aliases for rolling windows, so at 00:30 "Today" was almost entirely
+// yesterday. "1h" stays rolling because that is what the word means.
 const WINDOWS = [
   { value: "1h", label: "1h" },
-  { value: "24h", label: "Today" },
-  { value: "7d", label: "Week" },
-  { value: "30d", label: "Month" },
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
   { value: "", label: "All time" },
 ];
 
@@ -32,7 +39,7 @@ const POST_TYPES = [
 
 const DEFAULTS = {
   sort: "latest",
-  window: "24h",
+  window: "today",
   q: "",
   types: [],
   accounts: [],
@@ -142,6 +149,21 @@ export default function Feed() {
     return () => clearInterval(timer);
   }, [key, filters.sort]);
 
+  // Typing searches on its own after a pause. Without this the box only
+  // responded to Enter, with nothing on screen saying so, and clearing it left
+  // the previous results in place.
+  useEffect(() => {
+    if (draftQuery === filters.q) return undefined;
+    const timer = setTimeout(() => update({ q: draftQuery }), 350);
+    return () => clearTimeout(timer);
+  }, [draftQuery, filters.q]);
+
+  // A filter change from elsewhere (back button, cleared chip) has to be
+  // reflected in the box, or the two disagree about what is being searched.
+  useEffect(() => {
+    setDraftQuery(filters.q);
+  }, [filters.q]);
+
   function update(patch) {
     const nextFilters = { ...filters, ...patch };
     const params = new URLSearchParams();
@@ -245,8 +267,24 @@ export default function Feed() {
         {/* Sticky rail rather than a bar across the top: the filters stay
             reachable through a long scroll, and the reading column keeps a
             measure that does not stretch to the window. */}
-        <aside className="order-1 flex flex-col gap-4 lg:sticky lg:top-4 lg:order-2 lg:h-max">
+        {/* A details element on purpose: on a phone the full control stack is
+            ~830px, so the first post used to start below the fold. Collapsed it
+            is one row; on desktop the CSS in index.css hides the summary and
+            forces the panel open, so nothing changes there. */}
+        <details
+          open
+          className="feed-filters order-1 lg:sticky lg:top-4 lg:order-2 lg:h-max"
+        >
+          <summary className="mb-3 cursor-pointer list-none rounded-sm border border-line px-3 py-2 text-sm text-fg-muted lg:hidden">
+            Filters and sort
+          </summary>
+          <div className="feed-filters-body flex flex-col gap-4">
+          {/* Debounced, so typing searches on its own. Enter-only meant a
+              typed query did nothing until you guessed to press it, and
+              emptying the box left the old results on screen. */}
           <form
+            className="relative"
+            role="search"
             onSubmit={(e) => {
               e.preventDefault();
               update({ q: draftQuery });
@@ -256,8 +294,23 @@ export default function Feed() {
               aria-label="Search archive"
               placeholder="Search the archive"
               value={draftQuery}
+              className={draftQuery ? "pr-9" : undefined}
               onChange={(e) => setDraftQuery(e.target.value)}
             />
+            {draftQuery ? (
+              <button
+                type="button"
+                aria-label="Clear search"
+                title="Clear search"
+                onClick={() => {
+                  setDraftQuery("");
+                  update({ q: "" });
+                }}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1.5 text-muted transition-colors hover:text-ink"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </form>
 
           <div className="flex flex-col gap-1.5">
@@ -321,7 +374,8 @@ export default function Feed() {
               ))}
             </Select>
           </div>
-        </aside>
+          </div>
+        </details>
       </div>
     </section>
   );

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.conf import settings
-from django.db import connection
+from django.db import connection, transaction, OperationalError
 from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, Q, Sum
 from django.db.models.functions import Trunc
 from django.utils import timezone
@@ -30,20 +30,29 @@ from fetching.management.commands.fetch_report import parse_since
 from tweets import topics
 from tweets.models import FetchRun, KeyValueState, Search, SearchTweet, Tweet, TwitterUser
 from tweets.permissions import IsStaff
-from tweets.serializers import TweetSerializer
+from tweets.serializers import TweetSerializer, _new_tweets
 
 # Single source of truth for "engagement": kept as field names so both the ORM
 # expression below and the raw-SQL views can build the same formula from it.
-ENGAGEMENT_FIELDS = ("likes", "retweets", "views")
+#
+# Views are deliberately NOT in here. An impression is not an interaction, and
+# views run 100-1000x larger than every other metric, so summing them in makes
+# "most engaged" a synonym for "most viewed" and buries a 48k-like post under a
+# 47k-like one that happened to be shown more. Reach is its own question and has
+# its own sort (`sort=views`); this is the deliberate-action number.
+ENGAGEMENT_FIELDS = ("likes", "retweets", "replies", "quotes")
+# tweets_tweetmetric only snapshots likes/retweets/views, so velocity -- which
+# differences consecutive snapshots -- can only speak for the fields it stores.
+METRIC_ENGAGEMENT_FIELDS = ("likes", "retweets")
 
 
-def _engagement_sql(prefix: str = "") -> str:
+def _engagement_sql(prefix: str = "", fields: tuple[str, ...] = ENGAGEMENT_FIELDS) -> str:
     """The engagement formula as SQL, table-qualified when a query joins.
 
     tweets_tweet and tweets_tweetmetric both carry likes/retweets/views, so an
     unqualified sum is ambiguous the moment the two are joined.
     """
-    return " + ".join(f"{prefix}{field}" for field in ENGAGEMENT_FIELDS)
+    return " + ".join(f"{prefix}{field}" for field in fields)
 
 # The archive can outlive any window we chart, but a 90-day hourly scan is the
 # point where these queries stop being interactive. Cap rather than let a
@@ -281,14 +290,27 @@ class IngestionView(APIView):
         hits = _for_accounts(SearchTweet.objects.all(), handles)
 
         previous = Window(since=window.previous_since, until=window.since, bucket=window.bucket)
-        captured = (
-            _in_window(tweets, window, "ingested_at").count()
-            + _in_window(hits, window, "ingested_at").count()
-        )
+        # Kept apart as well as summed. These are two different stores with two
+        # different retentions -- archive tweets are permanent, search hits expire
+        # after 30 days -- so a single "captured" number could read 60K over 90
+        # days against an archive total of 53K, which looks impossible.
+        captured_archive = _in_window(tweets, window, "ingested_at").count()
+        captured_search = _in_window(hits, window, "ingested_at").count()
+        captured = captured_archive + captured_search
         captured_before = (
             _in_window(tweets, previous, "ingested_at").count()
             + _in_window(hits, previous, "ingested_at").count()
         )
+        # Whether there is a previous period to compare against at all. Without
+        # this the 90d view reported "+60K vs the previous equal period" when the
+        # deployment was 13 days old -- the delta was the whole value, dressed up
+        # as growth.
+        first_ingest = (
+            Tweet.objects.order_by("ingested_at")
+            .values_list("ingested_at", flat=True)
+            .first()
+        )
+        has_previous = bool(first_ingest and first_ingest <= previous.since)
 
         runs = FetchRun.objects.filter(
             started_at__gte=window.since, started_at__lte=window.until
@@ -323,12 +345,24 @@ class IngestionView(APIView):
             "requests": _request_spend(window),
             "totals": {
                 "captured": captured,
+                "captured_archive": captured_archive,
+                "captured_search": captured_search,
                 "captured_previous": captured_before,
                 "captured_delta": captured - captured_before,
+                # False means "we did not exist for all of the previous period",
+                # and the console must not render a delta from it.
+                "has_previous": has_previous,
                 "by_subsystem": by_subsystem,
                 # The tracked-account archive only. Search hits are a rolling
                 # 30-day view of the firehose, not part of what we have archived.
                 "archive_total": Tweet.objects.count(),
+                # Of that total, how much the feed can actually reach. Posts whose
+                # account was later untracked stay archived but fall outside the
+                # feed's tracked-account filter, so a single headline number
+                # advertised 6K posts no screen could open.
+                "archive_tracked": Tweet.objects.filter(
+                    account__in=TwitterUser.objects.filter(tracking=True).values("handle")
+                ).count(),
                 "search_total": SearchTweet.objects.count(),
                 "oldest_tweet": (
                     Tweet.objects.filter(created_at__isnull=False)
@@ -338,6 +372,14 @@ class IngestionView(APIView):
                 ),
             },
         })
+
+
+# Endpoints the collectors actually call. `UserTweetsAndReplies` still exists in
+# the transport layer (query ids, browser allow-list, status handling) but no
+# pipeline requests it -- `4_union` from UserTweets is the only processed output.
+# Reporting its untouched 500/500 budget and a permanent "HEALTHY" told the
+# operator a collector was working that has never run.
+REPORTED_ENDPOINTS = ("UserTweets", "SearchTimeline", "UserByScreenName", "TweetDetail")
 
 
 def _rate_limits() -> list[dict]:
@@ -354,7 +396,7 @@ def _rate_limits() -> list[dict]:
     for row in rows:
         data = row.data if isinstance(row.data, dict) else {}
         for endpoint, state in data.items():
-            if not isinstance(state, dict):
+            if not isinstance(state, dict) or endpoint not in REPORTED_ENDPOINTS:
                 continue
             reset = int(state.get("reset") or 0)
             current = limits.get(endpoint)
@@ -378,7 +420,11 @@ def _endpoint_health() -> dict[str, str]:
         namespace="request_state", name__endswith="endpoint_health.json"
     ):
         if isinstance(row.data, dict):
-            health.update({str(k): str(v) for k, v in row.data.items()})
+            health.update({
+                str(k): str(v)
+                for k, v in row.data.items()
+                if k in REPORTED_ENDPOINTS
+            })
     return health
 
 
@@ -410,6 +456,10 @@ class PipelineView(APIView):
                     "started_at": last.started_at,
                     "finished_at": last.finished_at,
                     "ingested_tweets": int((last.summary or {}).get("ingested_tweets") or 0),
+                    # The dashboard's "+N posts" line. It said "+51 posts" for an
+                    # archive walk that had added nothing, directly contradicting
+                    # the collection-flow chart beside it.
+                    "new_tweets": _new_tweets(last),
                 } if last else None,
                 "next_due_in_seconds": (
                     max(0, int((due_at - now).total_seconds())) if due_at else 0
@@ -464,7 +514,7 @@ class VelocityView(APIView):
             return Response({"results": [], "series": []})
         kind = BUCKET_KINDS[window.bucket]
         account_filter = "AND t.account = ANY(%s)" if handles else ""
-        engagement = _engagement_sql("m.")
+        engagement = _engagement_sql("m.", METRIC_ENGAGEMENT_FIELDS)
         params = [window.since, window.until]
         if handles:
             params.append(handles)
@@ -648,7 +698,11 @@ def _phrase_topics(window: Window, handles: list[str]) -> list[topics.TermStats]
         cursor.execute(
             f"""
             WITH scoped AS (
-                SELECT id, account, created_at, text
+                -- text_clean, so the tokenizer is not mining "amp" out of every
+                -- "&amp;" X escaped. Falls back to text for rows the backfill
+                -- has not reached.
+                SELECT id, account, created_at,
+                       COALESCE(NULLIF(text_clean, ''), text) AS text
                 FROM tweets_tweet
                 WHERE created_at >= %s AND created_at <= %s
                   -- A repost is the original's text verbatim. Leaving them in
@@ -816,45 +870,90 @@ class AccountsAnalyticsView(APIView):
         ]})
 
 
+# A self-join over the tweet table is quadratic, so the honest lever is how many
+# rows it is allowed to see. 1200 candidates is ~700k pairs, which the prefilters
+# below cut to a small fraction and Postgres answers in about a second.
+NARRATIVE_CANDIDATE_CAP = 1200
+# Hard ceiling enforced by the database. This query used to run unbounded, blow
+# past gunicorn's request timeout on any range over 24h, and take the worker down
+# with it -- one click could kill a worker, and retrying killed the next one.
+# Failing loudly in 15s is strictly better than a dead worker.
+NARRATIVE_TIMEOUT_MS = 15_000
+
+
 class NarrativesView(APIView):
-    """Flag near-duplicate tweets posted within a propagation window of each other."""
+    """Flag near-duplicate tweets from *different* accounts, posted close together."""
 
     def get(self, request):
         window = window_from(request)
         propagation_hours = _int_param(request, "window_hours", 24, 1, 168)
         similarity_threshold = _float_param(request, "similarity", 0.55, 0.1, 1.0)
         min_length = _int_param(request, "min_length", 40, 1, 500)
+        limit = _int_param(request, "limit", 100, 1, 500)
+        candidate_cap = _int_param(
+            request, "candidates", NARRATIVE_CANDIDATE_CAP, 100, 5000
+        )
         if connection.vendor != "postgresql":
             return Response({"results": []})
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT first.account, first.tweet_id, first.created_at,
-                       follower.account, follower.tweet_id, follower.created_at,
-                       similarity(lower(first.text), lower(follower.text)) AS similarity
-                FROM tweets_tweet first
-                JOIN tweets_tweet follower
-                  ON first.id < follower.id
-                 AND first.created_at <= follower.created_at
-                 AND follower.created_at <= first.created_at + (%s || ' hours')::interval
-                 AND similarity(lower(first.text), lower(follower.text)) >= %s
-                WHERE first.created_at >= %s
-                  AND first.created_at <= %s
-                  AND length(first.text) >= %s
-                  AND length(follower.text) >= %s
-                ORDER BY first.created_at, similarity DESC
-                LIMIT 100
-                """,
-                [
-                    propagation_hours,
-                    similarity_threshold,
-                    window.since,
-                    window.until,
-                    min_length,
-                    min_length,
-                ],
+        handles = accounts_from(request)
+        account_filter = "AND account = ANY(%s)" if handles else ""
+        params = [window.since, window.until, min_length]
+        if handles:
+            params.append(handles)
+        params += [candidate_cap, propagation_hours, similarity_threshold, limit]
+        try:
+            # SET LOCAL is scoped to a transaction, so the atomic block is what
+            # makes the timeout real rather than a no-op under autocommit.
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.execute("SET LOCAL statement_timeout = %s", [NARRATIVE_TIMEOUT_MS])
+                cursor.execute(
+                    f"""
+                    WITH candidates AS (
+                        SELECT id, account, tweet_id, created_at,
+                               lower(COALESCE(NULLIF(text_clean, ''), text)) AS body,
+                               length(COALESCE(NULLIF(text_clean, ''), text)) AS len
+                        FROM tweets_tweet
+                        WHERE created_at >= %s
+                          AND created_at <= %s
+                          AND length(text) >= %s
+                          {account_filter}
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                    )
+                    SELECT first.account, first.tweet_id, first.created_at,
+                           follower.account, follower.tweet_id, follower.created_at,
+                           similarity(first.body, follower.body) AS score
+                    FROM candidates first
+                    JOIN candidates follower
+                      ON follower.id <> first.id
+                     -- The whole point of the panel: propagation BETWEEN accounts.
+                     -- Without this, 90% of results were one newsroom's own
+                     -- reruns of its own headline matching itself.
+                     AND follower.account <> first.account
+                     AND first.created_at <= follower.created_at
+                     AND follower.created_at <= first.created_at + (%s || ' hours')::interval
+                     -- Cheap prefilter: trigram similarity cannot clear the
+                     -- threshold when the lengths are wildly different, and
+                     -- length comparison costs nothing next to similarity().
+                     AND follower.len BETWEEN first.len / 2 AND first.len * 2
+                     AND similarity(first.body, follower.body) >= %s
+                    ORDER BY score DESC, first.created_at DESC
+                    LIMIT %s
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+        except OperationalError:
+            return Response(
+                {
+                    "detail": (
+                        "Narrative detection timed out for this range. Try a shorter "
+                        "range, a higher similarity, or fewer accounts."
+                    ),
+                    "results": [],
+                },
+                status=503,
             )
-            rows = cursor.fetchall()
         return Response({"results": [
             {
                 "first": {"account": first_account, "tweet_id": first_id, "created_at": first_at},
