@@ -157,6 +157,18 @@ describe("Feed content filters", () => {
     await waitFor(() => expect(lastFeedPath()).toContain("has_media=1"));
   });
 
+  it("can reach posts from accounts that are no longer tracked", async () => {
+    // They stay archived and stay inside "archive total", so without this the
+    // headline counted rows no screen could open.
+    const user = userEvent.setup();
+    renderFeed();
+    await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole("button", { name: /Include untracked/ }));
+
+    await waitFor(() => expect(lastFeedPath()).toContain("include_untracked=1"));
+  });
+
   it("encodes the text query into the feed request", async () => {
     const user = userEvent.setup();
     renderFeed();

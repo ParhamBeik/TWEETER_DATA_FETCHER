@@ -180,6 +180,32 @@ describe("expired access token", () => {
     expect(refreshCalls).toHaveLength(1);
   });
 
+  it("refreshes before the first request of a cold page load", async () => {
+    // After a reload the access token is gone (memory only) but the refresh
+    // token is not. Sending regardless spent a request that could only 401,
+    // and every cold load logged a console error before recovering.
+    localStorage.setItem("tsaas_refresh", "refresh-1");
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ access: "fresh", refresh: "refresh-2" }))
+      .mockResolvedValueOnce(jsonResponse({ results: [] }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(api("/feed/")).resolves.toEqual({ results: [] });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0][0]).toBe("/api/auth/refresh/");
+    expect(fetchSpy.mock.calls[1][1].headers.Authorization).toBe("Bearer fresh");
+  });
+
+  it("still sends unauthenticated when there is nothing to refresh with", async () => {
+    const fetchSpy = mockFetch(jsonResponse({ results: [] }));
+
+    await api("/feed/");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+
   it("does not retry when the caller opted out", async () => {
     // A failed login is about these credentials, not an expired session.
     setTokens({ access: "stale", refresh: "refresh-1" });

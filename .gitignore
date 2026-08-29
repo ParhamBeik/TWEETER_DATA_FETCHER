@@ -31,3 +31,5 @@ graphify-out/
 
 # Engine scratch output when a test builds a StorageManager without a temp root
 backend/data/
+data/
+

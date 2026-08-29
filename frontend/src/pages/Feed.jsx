@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUp, Download, Image, X } from "lucide-react";
+import { Archive, ArrowUp, Download, Image, X } from "lucide-react";
 import { api, authorizedFetch } from "../api";
 import { AccountPicker, Segmented, ToggleChips, useAccounts } from "../filters";
 import InfiniteSentinel from "../InfiniteSentinel";
@@ -45,6 +45,10 @@ const DEFAULTS = {
   accounts: [],
   tier: "",
   has_media: false,
+  // Posts from accounts that were tracked once and are not any more. They stay
+  // archived and stay counted in "archive total", so without this they were
+  // 6,159 rows the headline claimed and no screen could reach.
+  include_untracked: false,
 };
 
 /** Read the whole filter state out of the URL, so a view is shareable. */
@@ -57,6 +61,7 @@ function readFilters(params) {
     accounts: params.getAll("account"),
     tier: params.get("tier") || "",
     has_media: params.get("has_media") === "1",
+    include_untracked: params.get("include_untracked") === "1",
   };
 }
 
@@ -68,6 +73,7 @@ function feedQuery(filters) {
   if (filters.types.length) params.set("types", filters.types.join(","));
   if (filters.tier) params.set("tier", filters.tier);
   if (filters.has_media) params.set("has_media", "1");
+  if (filters.include_untracked) params.set("include_untracked", "1");
   for (const handle of filters.accounts) params.append("account", handle);
   return params;
 }
@@ -173,6 +179,7 @@ export default function Feed() {
     if (nextFilters.types.length) params.set("types", nextFilters.types.join(","));
     if (nextFilters.tier) params.set("tier", nextFilters.tier);
     if (nextFilters.has_media) params.set("has_media", "1");
+    if (nextFilters.include_untracked) params.set("include_untracked", "1");
     for (const handle of nextFilters.accounts) params.append("account", handle);
     setSearchParams(params, { replace: true });
   }
@@ -373,6 +380,14 @@ export default function Feed() {
                 </option>
               ))}
             </Select>
+            <Chip
+              pressed={filters.include_untracked}
+              className="mt-1 self-start"
+              onClick={() => update({ include_untracked: !filters.include_untracked })}
+            >
+              <Archive className="mr-1 inline size-3" aria-hidden="true" />
+              Include untracked
+            </Chip>
           </div>
           </div>
         </details>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Brand } from "@/Logo";
 import { cn } from "@/lib/cn";
 
 // Shared chrome for the two auth pages, so sign-in and sign-up cannot drift
@@ -10,6 +11,7 @@ import { cn } from "@/lib/cn";
 export default function AuthLayout({ eyebrow, title, subtitle, error, children, footer }) {
   return (
     <section className="flex flex-col gap-6">
+      <Brand />
       <div>
         <p className="eyebrow">{eyebrow}</p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">{title}</h1>
