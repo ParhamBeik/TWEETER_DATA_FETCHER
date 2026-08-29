@@ -106,6 +106,11 @@ describe("authenticated operators", () => {
     expect(await screen.findByText("feed page")).toBeInTheDocument();
   });
 
+  it("puts the archive mark on the home link", async () => {
+    renderApp("/feed");
+    expect(await screen.findByRole("link", { name: "Signal Archive" })).toBeInTheDocument();
+  });
+
   it.each([
     ["/pulse", "dashboard page"],
     ["/cycles", "ops page"],

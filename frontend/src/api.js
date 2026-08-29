@@ -101,6 +101,7 @@ export async function authorizedFetch(url, init = {}) {
     ...init,
     headers: { ...(init.headers || {}), ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
   });
+  if (!accessToken && getRefreshToken()) await refreshSession();
   let res = await fetch(url, withAuth());
   if (res.status === 401 && getRefreshToken() && (await refreshSession())) {
     res = await fetch(url, withAuth());
@@ -109,6 +110,11 @@ export async function authorizedFetch(url, init = {}) {
 }
 
 export async function api(path, { method = "GET", body, retry = true } = {}) {
+  // A page load starts with no access token -- it is memory-only by design --
+  // so sending straight away spends a request that is certain to 401 and logs a
+  // console error on every cold load. Trade the refresh token in first; the
+  // shared promise means several parallel calls still cause one refresh.
+  if (!accessToken && retry && getRefreshToken()) await refreshSession();
   let res = await send(path, { method, body });
 
   if (res.status === 401 && retry && getRefreshToken()) {

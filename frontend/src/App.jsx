@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "./auth";
 import BudgetRail from "./BudgetRail";
+import { Brand } from "./Logo";
 import { cn } from "@/lib/cn";
 import { Button } from "@/ui/button";
 import Feed from "./pages/Feed";
@@ -84,9 +85,7 @@ function NavItem({ to, label, icon: Icon, hint, onNavigate }) {
 function Sidebar({ isStaff, user, signOut, onNavigate, className }) {
   return (
     <div className={cn("flex h-full flex-col gap-6 border-r border-line bg-ink-850 p-3", className)}>
-      <NavLink to="/feed" onClick={onNavigate} className="flex items-baseline gap-2 px-2 pt-1">
-        <span className="text-md font-bold tracking-tight">Signal Archive</span>
-      </NavLink>
+      <Brand to="/feed" onClick={onNavigate} className="px-2 pt-1" />
 
       <nav className="flex flex-col gap-0.5" aria-label="Sections">
         {NAV.map((item) => (
@@ -182,7 +181,7 @@ export default function App() {
           >
             {menuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
           </Button>
-          <span className="text-sm font-bold tracking-tight">Signal Archive</span>
+          <Brand compact />
         </div>
 
         <BudgetRail />
