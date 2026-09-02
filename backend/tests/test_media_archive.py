@@ -15,6 +15,7 @@ from rest_framework.test import APIClient
 from fetching.ingest import upsert_tweet
 from fetching.media import (
     archive_batch,
+    avatar_urls,
     is_allowed_photo_url,
     lookup_local_urls,
     photo_urls_from_extras,
@@ -237,3 +238,23 @@ def test_an_unarchived_avatar_still_falls_back_to_x(settings, tmp_path):
     row = client.get("/api/feed/").data["results"][0]
 
     assert row["author"]["avatar_url"] == remote
+
+
+@pytest.mark.django_db
+def test_avatars_are_archived_for_tracked_accounts_only(settings, tmp_path):
+    """TwitterUser also holds every incidental author ever quoted or replied to.
+
+    Archiving those would be thousands of downloads for faces that appear on no
+    page of the console.
+    """
+    settings.MEDIA_ROOT = tmp_path
+    TwitterUser.objects.create(
+        handle="jack", tracking=True,
+        avatar_url="https://pbs.twimg.com/profile_images/1/tracked_normal.jpg",
+    )
+    TwitterUser.objects.create(
+        handle="bystander", tracking=False,
+        avatar_url="https://pbs.twimg.com/profile_images/2/incidental_normal.jpg",
+    )
+
+    assert avatar_urls() == ["https://pbs.twimg.com/profile_images/1/tracked_normal.jpg"]
