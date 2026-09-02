@@ -294,6 +294,68 @@ describe("Analyze narratives", () => {
     expect(await screen.findByText(/82% similar/)).toBeInTheDocument();
   });
 
+  it("keeps the newest range when responses finish out of order", async () => {
+    const user = userEvent.setup();
+    renderAnalyze();
+    await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
+
+    let releaseOld;
+    let releaseNew;
+    api.mockImplementation((path) => {
+      if (path.startsWith("/accounts/")) return Promise.resolve({ results: [] });
+      if (path.includes("range=7d")) {
+        return new Promise((resolve) => {
+          releaseOld = () =>
+            resolve({
+              results: [
+                {
+                  first: { account: "old", tweet_id: "7", created_at: new Date().toISOString() },
+                  follower: {
+                    account: "old-two",
+                    tweet_id: "8",
+                    created_at: new Date().toISOString(),
+                  },
+                  similarity: 0.71,
+                },
+              ],
+            });
+        });
+      }
+      if (path.includes("range=30d")) {
+        return new Promise((resolve) => {
+          releaseNew = () =>
+            resolve({
+              results: [
+                {
+                  first: { account: "new", tweet_id: "30", created_at: new Date().toISOString() },
+                  follower: {
+                    account: "new-two",
+                    tweet_id: "31",
+                    created_at: new Date().toISOString(),
+                  },
+                  similarity: 0.93,
+                },
+              ],
+            });
+        });
+      }
+      return Promise.resolve(narratives);
+    });
+
+    await user.click(screen.getByRole("tab", { name: "Narratives" }));
+    await user.click(screen.getByRole("button", { name: "7d" }));
+    await waitFor(() => expect(typeof releaseOld).toBe("function"));
+
+    await user.click(screen.getByRole("button", { name: "30d" }));
+    await waitFor(() => expect(typeof releaseNew).toBe("function"));
+
+    releaseNew();
+    expect(await screen.findByText(/93% similar/)).toBeInTheDocument();
+    releaseOld();
+    await waitFor(() => expect(screen.queryByText(/71% similar/)).toBeNull());
+    expect(screen.getByText(/93% similar/)).toBeInTheDocument();
+  });
+
   it("links both sides of a narrative to the original posts", async () => {
     const user = userEvent.setup();
     renderAnalyze();
