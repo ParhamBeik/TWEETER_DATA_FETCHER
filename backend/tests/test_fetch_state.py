@@ -174,6 +174,34 @@ def test_write_config_merges_session_overrides_over_the_seed_template(monkeypatc
 
 
 @pytest.mark.django_db
+def test_session_health_only_counts_pools_for_endpoints_we_call():
+    """A pasted session carries ids for endpoints no collector requests.
+
+    Listing those advertised a collector that has never run -- the same false
+    "healthy" signal the budget rail and endpoint health used to give.
+    """
+    from fetching.session import session_health
+    from tweets.models import XSession
+
+    XSession.objects.create(
+        name="default",
+        cookies={"auth_token": "a"},
+        headers={"authorization": "Bearer B"},
+        config_overrides={
+            "real_transaction_ids_by_endpoint": {
+                "UserTweets": ["tx1", "tx2"],
+                "UserTweetsAndReplies": ["tx3"],
+            }
+        },
+        active=True,
+    )
+
+    pools = session_health()["transaction_id_pools"]
+
+    assert pools == {"UserTweets": 2}
+
+
+@pytest.mark.django_db
 def test_run_artifacts_persist_raw_pages_state_ledger_and_retention():
     root = Path(tempfile.mkdtemp(prefix="tdf_artifacts_"))
     raw = root / "data" / "historical_live" / "raw" / "UserTweets" / "jack" / "batch"

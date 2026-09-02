@@ -28,6 +28,9 @@ const jsonResponse = (body, { status = 200, ok = true } = {}) => ({
 beforeEach(() => {
   clearTokens();
   localStorage.clear();
+  // Stubs persist across tests, so reset them here rather than leaking one
+  // test's fake navigator into the next one's refresh path.
+  vi.unstubAllGlobals();
   vi.stubGlobal("location", { assign: vi.fn(), pathname: "/feed" });
 });
 
@@ -178,6 +181,34 @@ describe("expired access token", () => {
 
     const refreshCalls = fetchSpy.mock.calls.filter(([url]) => String(url).includes("/auth/refresh/"));
     expect(refreshCalls).toHaveLength(1);
+  });
+
+  it("serialises the refresh across tabs and re-reads the rotated token", async () => {
+    // The lock is what stops a second tab from presenting a token the first tab
+    // has already spent -- the 401 that followed used to end both sessions.
+    localStorage.setItem("tsaas_refresh", "refresh-1");
+    const order = [];
+    vi.stubGlobal("navigator", {
+      locks: {
+        request: async (name, fn) => {
+          order.push(`lock:${name}`);
+          return fn();
+        },
+      },
+    });
+    const fetchSpy = vi.fn(async (url, init) => {
+      if (String(url).includes("/auth/refresh/")) {
+        order.push(`refresh:${JSON.parse(init.body).refresh}`);
+        return jsonResponse({ access: "fresh", refresh: "refresh-2" });
+      }
+      return jsonResponse({ results: [] });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await api("/feed/");
+
+    expect(order).toEqual(["lock:tsaas-refresh", "refresh:refresh-1"]);
+    expect(getRefreshToken()).toBe("refresh-2");
   });
 
   it("refreshes before the first request of a cold page load", async () => {

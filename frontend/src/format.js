@@ -81,8 +81,22 @@ export function statusLink(handle, tweetId) {
 }
 
 /** Absolute timestamp for a tooltip/`title`, local to the reader. */
+// A fixed format rather than the browser's locale. "9/2/2026" is 9 February to
+// most of the world and 2 September to the rest, and the windows these
+// timestamps sit next to are Tehran calendar days -- an ambiguous date next to a
+// day-bounded number is a reading error waiting to happen. The month name and a
+// 24-hour clock cannot be misread; the time zone stays the reader's own.
+const ABSOLUTE = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 export function absoluteTime(value) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? "" : ABSOLUTE.format(date);
 }

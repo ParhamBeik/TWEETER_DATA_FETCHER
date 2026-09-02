@@ -4,7 +4,7 @@ import { api } from "../api";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
 import { cn } from "@/lib/cn";
-import { compact, duration } from "../format";
+import { absoluteTime, compact, duration } from "../format";
 import { Button } from "@/ui/button";
 import { Empty, ErrorNote } from "@/ui/controls";
 import { Input, Select } from "@/ui/field";
@@ -14,7 +14,7 @@ import { Badge, TONE } from "@/ui/status";
 const TIERS = [1, 2, 3, 4, 5, 6, 7];
 
 function formatWhen(value) {
-  return value ? new Date(value).toLocaleString() : "never";
+  return value ? absoluteTime(value) : "never";
 }
 
 const TH = "pb-2 pr-3 text-left eyebrow font-normal";

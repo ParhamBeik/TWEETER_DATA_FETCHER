@@ -1,6 +1,7 @@
 """Validation and safe status helpers for the shared X session."""
 from __future__ import annotations
 
+from tweets.analytics import REPORTED_ENDPOINTS
 from tweets.models import FetchRun, XSession
 
 
@@ -77,8 +78,14 @@ def session_health() -> dict:
         "cookie_names": sorted(session.cookies) if session else [],
         "header_names": sorted(session.headers) if session else [],
         # Counts only -- a captured tx-id is a session credential, never returned.
+        # Filtered to the endpoints the collectors actually call: a pasted session
+        # carries ids for endpoints no pipeline requests, and listing those here
+        # advertised a collector that has never run, which is the same thing the
+        # budget rail and endpoint health used to do.
         "transaction_id_pools": {
-            key: len(value) for key, value in sorted(tx_pools.items()) if isinstance(value, list)
+            key: len(value)
+            for key, value in sorted(tx_pools.items())
+            if isinstance(value, list) and key in REPORTED_ENDPOINTS
         },
         "updated_at": session.updated_at if session else None,
         "last_auth_required_at": last_auth_failure.started_at if last_auth_failure else None,

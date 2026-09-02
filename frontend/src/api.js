@@ -42,7 +42,10 @@ export function hasSession() {
   return Boolean(accessToken || getRefreshToken());
 }
 
-async function requestRefresh() {
+async function rotateRefreshToken() {
+  // Read inside the lock, not before it: a tab that queued behind another one
+  // must present the token that tab just stored, never the spent one it was
+  // holding when it started waiting.
   const refresh = getRefreshToken();
   if (!refresh) return false;
   try {
@@ -58,6 +61,19 @@ async function requestRefresh() {
   } catch {
     return false;
   }
+}
+
+// `refreshInFlight` only serialises refreshes inside one tab. The refresh token
+// is shared through localStorage and the server blacklists it on rotation, so
+// two tabs refreshing at the same moment meant the slower one presented a spent
+// token, took a 401, and signed the user out -- and because ending a session
+// clears that shared storage, it signed the other tab out too. Opening the app
+// in a second tab was enough to lose the session in both.
+async function requestRefresh() {
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request("tsaas-refresh", rotateRefreshToken);
+  }
+  return rotateRefreshToken();
 }
 
 export function refreshSession() {

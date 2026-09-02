@@ -112,15 +112,30 @@ export default function Dashboard() {
     ? Math.round((totalWalked / archive.tracked) * 100)
     : 0;
 
-  const successRate = (() => {
+  // "Partial" is its own thing: a saved search that reached the end of what X
+  // will serve finishes partial, and so does a run that genuinely broke off. A
+  // bare percentage counting only "completed" therefore reads as a failing
+  // pipeline when most of the shortfall is X's ceiling, so the tile names the
+  // split instead of leaving one number to be misread.
+  const runCounts = (() => {
     const rows = ingestion?.run_totals || [];
+    const by = (status) =>
+      rows.filter((row) => row.status === status).reduce((sum, row) => sum + row.count, 0);
     const total = rows.reduce((sum, row) => sum + row.count, 0);
-    if (!total) return null;
-    const good = rows
-      .filter((row) => row.status === "completed")
-      .reduce((sum, row) => sum + row.count, 0);
-    return Math.round((good / total) * 100);
+    return { total, completed: by("completed"), partial: by("partial") };
   })();
+  const successRate = runCounts.total
+    ? Math.round((runCounts.completed / runCounts.total) * 100)
+    : null;
+  const runBreakdown = runCounts.total
+    ? [
+        `${compact(runCounts.completed)} complete`,
+        runCounts.partial ? `${compact(runCounts.partial)} partial` : null,
+        `of ${compact(runCounts.total)} runs`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "no runs in window";
 
   const oldest = totals.oldest_tweet;
   const historySpan = oldest
@@ -188,10 +203,18 @@ export default function Dashboard() {
             }
           />
           <Stat
-            label="Run success rate"
+            label="Runs completed"
             value={successRate == null ? "—" : `${successRate}%`}
-            hint={`${(ingestion?.run_totals || []).reduce((s, r) => s + r.count, 0)} runs in window`}
-            tone={successRate != null && successRate < 60 ? "warn" : ""}
+            hint={runBreakdown}
+            // Only a real failure earns the warning colour. Partial runs were
+            // painting the tile red for hitting a limit X imposes on everyone.
+            tone={
+              successRate != null &&
+              runCounts.total - runCounts.completed - runCounts.partial >
+                runCounts.total * 0.1
+                ? "warn"
+                : ""
+            }
           />
         </PanelBody>
       </Panel>

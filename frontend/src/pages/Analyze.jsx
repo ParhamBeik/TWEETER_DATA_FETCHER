@@ -280,8 +280,14 @@ function Velocity({ data, bucket }) {
   );
 }
 
-function Narratives({ data }) {
-  const results = (data?.results || []).filter((item) => item?.first && item?.follower);
+function Narratives({ data, stale }) {
+  // `stale` means these rows answer the window the user just left. The pairwise
+  // query runs for the better part of ten seconds, so without this the old
+  // results sat under the new range button the whole time with nothing saying
+  // they were about to be replaced -- the same "reading the wrong window"
+  // problem as the error case, only quieter.
+  const showing = stale ? null : data;
+  const results = (showing?.results || []).filter((item) => item?.first && item?.follower);
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-fg-muted">
@@ -290,7 +296,7 @@ function Narratives({ data }) {
       {/* This query compares posts against each other pairwise and takes real
           seconds. A single thin skeleton read as "nothing here", so it says how
           long it expects to be. */}
-      {!data && (
+      {!showing && (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-fg-dim">
             Comparing posts against each other — this takes a few seconds.
@@ -300,7 +306,7 @@ function Narratives({ data }) {
           <Skeleton className="h-20" />
         </div>
       )}
-      {data && !results.length && (
+      {showing && !results.length && (
         <Empty title="No repeated claims found">
           Nothing in this window was posted near-identically by two different accounts.
         </Empty>
@@ -407,6 +413,18 @@ function Accounts({ data }) {
   );
 }
 
+/** The exact request a set of controls asks for. Comparing it against the request
+ *  the rows on screen actually came from is what makes "you are looking at the
+ *  window you just left" detectable while a slow panel refetches. */
+function panelKey({ tab, range, bucket, selected, dimension, rank }) {
+  const params = windowParams({ range, bucket, accounts: selected });
+  if (tab === "topics") {
+    params.set("dimension", dimension);
+    params.set("rank", rank);
+  }
+  return `${tab}?${params}`;
+}
+
 export default function Analyze() {
   const navigate = useNavigate();
   const accounts = useAccounts();
@@ -418,9 +436,11 @@ export default function Analyze() {
   const [rank, setRank] = useState("surging");
   const [live, setLive] = useState(true);
   const [data, setData] = useState(null);
+  const [loadedKey, setLoadedKey] = useState(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
+    const key = panelKey({ tab, range, bucket, selected, dimension, rank });
     const params = windowParams({ range, bucket, accounts: selected });
     if (tab === "topics") {
       params.set("dimension", dimension);
@@ -429,6 +449,7 @@ export default function Analyze() {
     try {
       const result = await api(`/analytics/${tab}/?${params}`);
       setData(result);
+      setLoadedKey(key);
       setError("");
     } catch (e) {
       // Drop the rows as well as showing the error. Keeping them meant a failed
@@ -436,6 +457,7 @@ export default function Analyze() {
       // "7d" button -- the reader was looking at a different window than the one
       // the controls claimed, with nothing saying so.
       setData(null);
+      setLoadedKey(null);
       setError(e.message);
     }
   }, [tab, range, bucket, selected, dimension, rank]);
@@ -446,8 +468,11 @@ export default function Analyze() {
   // the whole app.
   const switchTab = (next) => {
     setData(null);
+    setLoadedKey(null);
     setTab(next);
   };
+
+  const stale = loadedKey !== panelKey({ tab, range, bucket, selected, dimension, rank });
 
   useLiveRefresh(load, [tab, range, bucket, selected, dimension, rank], { live });
 
@@ -496,7 +521,7 @@ export default function Analyze() {
           <Velocity data={data} bucket={bucket} />
         </TabPanel>
         <TabPanel value="narratives" className="pt-4">
-          <Narratives data={data} />
+          <Narratives data={data} stale={stale} />
         </TabPanel>
         <TabPanel value="accounts" className="pt-4">
           <Accounts data={data} />
