@@ -275,13 +275,13 @@ export default function Feed() {
             reachable through a long scroll, and the reading column keeps a
             measure that does not stretch to the window. */}
         {/* A details element on purpose: on a phone the full control stack is
-            ~830px, so the first post used to start below the fold. Collapsed it
+            ~480px, so the first post used to start below the fold. Collapsed it
             is one row; on desktop the CSS in index.css hides the summary and
-            forces the panel open, so nothing changes there. */}
-        <details
-          open
-          className="feed-filters order-1 lg:sticky lg:top-4 lg:order-2 lg:h-max"
-        >
+            forces the panel open, so nothing changes there.
+            No `open` attribute: setting it collapsed the phone case back open
+            again and put the first post 885px down, which is the whole thing
+            this element exists to prevent. Desktop is handled entirely in CSS. */}
+        <details className="feed-filters order-1 lg:sticky lg:top-4 lg:order-2 lg:h-max">
           <summary className="mb-3 cursor-pointer list-none rounded-sm border border-line px-3 py-2 text-sm text-fg-muted lg:hidden">
             Filters and sort
           </summary>

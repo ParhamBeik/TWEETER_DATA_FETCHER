@@ -267,6 +267,33 @@ describe("Analyze narratives", () => {
     expect(screen.queryByText("#starship")).toBeNull();
   });
 
+  it("stops showing the old window's pairs while a new range is still running", async () => {
+    // The pairwise query takes the better part of ten seconds. Leaving the
+    // previous range's rows up meanwhile put results under a range button that
+    // did not produce them, with nothing on screen saying so.
+    const user = userEvent.setup();
+    renderAnalyze();
+    await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("tab", { name: "Narratives" }));
+    expect(await screen.findByText(/82% similar/)).toBeInTheDocument();
+
+    let release;
+    api.mockImplementation((path) =>
+      path.startsWith("/accounts/")
+        ? Promise.resolve({ results: [] })
+        : new Promise((resolve) => {
+            release = () => resolve(narratives);
+          }),
+    );
+    await user.click(screen.getByRole("button", { name: "30d" }));
+
+    await waitFor(() => expect(screen.queryByText(/82% similar/)).toBeNull());
+    expect(screen.getByText(/takes a few seconds/)).toBeInTheDocument();
+
+    release();
+    expect(await screen.findByText(/82% similar/)).toBeInTheDocument();
+  });
+
   it("links both sides of a narrative to the original posts", async () => {
     const user = userEvent.setup();
     renderAnalyze();

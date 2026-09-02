@@ -245,6 +245,31 @@ describe("polling resilience", () => {
     await waitFor(() => expect(screen.queryByText("Service unavailable")).toBeNull());
   });
 
+  // Regression: the 10s poll re-reads only the newest page and used to replace
+  // the whole list with it, so older pages vanished seconds after the reader
+  // pulled them and "Load older runs" looked like a dead button.
+  it("keeps older pages when the poll refreshes the newest one", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    api.mockImplementation(async (path) => {
+      if (path === "/session/") return session();
+      if (path.includes("cursor=")) return { results: [run({ run_id: "old-1" })], next: null };
+      if (path.startsWith("/runs/?") || path === "/runs/") {
+        return { results: [run({ run_id: "new-1" })], next: "/api/runs/?cursor=abc" };
+      }
+      return {};
+    });
+    render(<Ops />);
+    await screen.findByText(/1 runs · more available/i);
+
+    await user.click(screen.getByRole("button", { name: /Load older runs/i }));
+    await screen.findByText(/2 runs/i);
+
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+
+    // The freshly polled page is still there, and so is the older one.
+    await waitFor(() => expect(screen.getByText(/2 runs/i)).toBeInTheDocument());
+  });
+
   it("stops polling once unmounted", async () => {
     routeApi();
     const { unmount } = render(<Ops />);

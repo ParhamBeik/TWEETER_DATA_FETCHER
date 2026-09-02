@@ -188,6 +188,22 @@ describe("Dashboard stat tiles", () => {
     expect(await screen.findByText("80%")).toBeInTheDocument();
   });
 
+  // A saved search that reached the end of what X will serve finishes "partial".
+  // Reporting one bare percentage made that look like a broken pipeline.
+  it("names the completed/partial split rather than leaving one number to guess at", async () => {
+    mockEndpoints({
+      flow: ingestion({
+        run_totals: [
+          { subsystem: "search", status: "completed", count: 6 },
+          { subsystem: "search", status: "partial", count: 4 },
+        ],
+      }),
+    });
+    renderPulse();
+
+    expect(await screen.findByText(/6 complete · 4 partial · of 10 runs/)).toBeInTheDocument();
+  });
+
   it("falls back to an em dash before the endpoints resolve", () => {
     api.mockReturnValue(new Promise(() => {}));
     renderPulse();

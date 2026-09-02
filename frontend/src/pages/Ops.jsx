@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { cn } from "@/lib/cn";
 import { absoluteTime, compact } from "../format";
@@ -50,14 +50,27 @@ export default function Ops() {
   const [next, setNext] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  async function load() {
+  // Whether the reader has pulled pages older than the newest one. The poll only
+  // ever re-reads the newest page, so once they have, its `next` cursor points
+  // back at page two and must not overwrite where the list actually reaches.
+  const expanded = useRef(false);
+
+  async function load({ replace = false } = {}) {
     try {
       const [data, health] = await Promise.all([
         api(subsystem ? `/runs/?subsystem=${subsystem}` : "/runs/"),
         api("/session/"),
       ]);
-      setRuns(data.results || []);
-      setNext(data.next || null);
+      const fresh = data.results || [];
+      setRuns((current) => {
+        if (replace) return fresh;
+        // A plain overwrite here discarded every older page the reader had
+        // asked for, ten seconds after they asked -- so "Load older runs"
+        // looked like a button that did nothing.
+        const seen = new Set(fresh.map((run) => run.run_id));
+        return [...fresh, ...current.filter((run) => !seen.has(run.run_id))];
+      });
+      if (replace || !expanded.current) setNext(data.next || null);
       setSession(health);
       // This view re-polls every 10s. Without clearing, a single transient blip
       // pinned an error banner to the page for the rest of the session.
@@ -79,6 +92,7 @@ export default function Ops() {
     setLoadingMore(true);
     try {
       const data = await api(next.replace(/^.*\/api/, ""));
+      expanded.current = true;
       setRuns((current) => [...current, ...(data.results || [])]);
       setNext(data.next || null);
     } catch (e) {
@@ -89,7 +103,9 @@ export default function Ops() {
   }
 
   useEffect(() => {
-    load();
+    // A filter change is a different list, not more of this one.
+    expanded.current = false;
+    load({ replace: true });
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

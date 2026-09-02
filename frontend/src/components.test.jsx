@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import InfiniteSentinel from "./InfiniteSentinel";
 import { api } from "./api";
 import { pivotSeries } from "./charts";
-import { compact } from "./format";
+import { absoluteTime, compact } from "./format";
 
 // Unit tests for the two shared widgets. IntersectionObserver is stubbed per-test
 // so the sentinel's callback can be fired deterministically.
@@ -113,6 +113,24 @@ describe("compact", () => {
     expect(compact(-1500)).toBe("-1.5K");
     expect(compact(null)).toBe("0");
     expect(compact(undefined)).toBe("0");
+  });
+});
+
+describe("absoluteTime", () => {
+  it("names the month so the date cannot be read the other way round", () => {
+    // "9/2/2026" is 9 February to most readers and 2 September to the rest.
+    expect(absoluteTime("2026-09-02T13:24:28Z")).toMatch(/2 Sept? 2026/);
+    expect(absoluteTime("2026-09-02T13:24:28Z")).not.toMatch(/9\/2/);
+  });
+
+  it("uses a 24-hour clock", () => {
+    expect(absoluteTime("2026-09-02T13:24:28Z")).toMatch(/\b\d{2}:\d{2}\b/);
+    expect(absoluteTime("2026-09-02T13:24:28Z")).not.toMatch(/[AP]M/i);
+  });
+
+  it("returns an empty string rather than 'Invalid Date'", () => {
+    expect(absoluteTime(null)).toBe("");
+    expect(absoluteTime("not a date")).toBe("");
   });
 });
 
