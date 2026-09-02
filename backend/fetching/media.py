@@ -131,10 +131,16 @@ def avatar_urls() -> list[str]:
     page view. Keyed by URL like everything else here, which also handles
     rotation for free: a new profile picture is a new URL, so it is simply
     archived on the next pass and the old file ages out with its account.
+
+    Tracked accounts only. TwitterUser also holds every incidental author ever
+    seen in a quote or reply -- thousands of them against the few dozen tracked
+    -- and archiving that set would mean thousands of downloads for faces that
+    appear on no page of the console.
     """
     return [
         url
-        for url in TwitterUser.objects.exclude(avatar_url="")
+        for url in TwitterUser.objects.filter(tracking=True)
+        .exclude(avatar_url="")
         .values_list("avatar_url", flat=True)
         .distinct()
         if is_allowed_photo_url(url)
