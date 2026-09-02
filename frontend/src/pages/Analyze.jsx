@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CartesianGrid,
@@ -438,8 +438,13 @@ export default function Analyze() {
   const [data, setData] = useState(null);
   const [loadedKey, setLoadedKey] = useState(null);
   const [error, setError] = useState("");
+  // A slow analytics response must not overwrite a newer range/tab response.
+  // The API wrapper intentionally does not cancel requests, so the consumer
+  // owns this last-write-wins boundary.
+  const requestSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current;
     const key = panelKey({ tab, range, bucket, selected, dimension, rank });
     const params = windowParams({ range, bucket, accounts: selected });
     if (tab === "topics") {
@@ -448,10 +453,12 @@ export default function Analyze() {
     }
     try {
       const result = await api(`/analytics/${tab}/?${params}`);
+      if (request !== requestSeq.current) return;
       setData(result);
       setLoadedKey(key);
       setError("");
     } catch (e) {
+      if (request !== requestSeq.current) return;
       // Drop the rows as well as showing the error. Keeping them meant a failed
       // 7d narratives request left the previous 24h results on screen under a
       // "7d" button -- the reader was looking at a different window than the one

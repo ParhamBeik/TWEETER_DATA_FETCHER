@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Area,
@@ -77,20 +77,27 @@ export default function Dashboard() {
   const [ingestion, setIngestion] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [error, setError] = useState("");
+  // Filter changes can leave the previous pair of requests in flight. Only the
+  // newest response belongs on screen; aborting would require plumbing signals
+  // through every caller, while this preserves the existing API contract.
+  const requestSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++requestSeq.current;
     try {
       const params = windowParams({ range });
       const [flow, state] = await Promise.all([
         api(`/analytics/ingestion/?${params}`),
         api("/stats/pipeline/"),
       ]);
+      if (request !== requestSeq.current) return;
       setIngestion(flow);
       setPipeline(state);
       // This view re-polls; without clearing, one transient blip would pin an
       // error banner to the page for the rest of the session.
       setError("");
     } catch (e) {
+      if (request !== requestSeq.current) return;
       setError(e.message);
     }
   }, [range]);

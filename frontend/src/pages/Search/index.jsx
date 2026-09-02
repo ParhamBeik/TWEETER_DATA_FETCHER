@@ -85,16 +85,20 @@ export default function SearchWorkspace() {
   // A slower response for a previously selected query must not paint over the
   // one the operator is now looking at.
   const activeId = useRef(null);
+  const searchesRequestSeq = useRef(0);
 
   const selected = (searches || []).find((row) => String(row.id) === String(searchId)) || null;
 
   const loadSearches = useCallback(async () => {
+    const request = ++searchesRequestSeq.current;
     try {
       const data = await api("/searches/");
+      if (request !== searchesRequestSeq.current) return [];
       setSearches(data.results || data);
       setError("");
       return data.results || data;
     } catch (e) {
+      if (request !== searchesRequestSeq.current) return [];
       setError(e.message);
       setSearches([]);
       return [];

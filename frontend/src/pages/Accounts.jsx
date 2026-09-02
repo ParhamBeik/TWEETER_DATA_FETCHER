@@ -37,20 +37,26 @@ export default function Accounts() {
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [rosterQuery, setRosterQuery] = useState("");
   const activeHandle = useRef(null);
+  // Search responses can finish out of order. Keep the roster tied to the
+  // latest query rather than letting an older request repaint it.
+  const rosterRequestSeq = useRef(0);
 
   async function loadAccounts(query = rosterQuery) {
+    const request = ++rosterRequestSeq.current;
     const search = query.trim();
     try {
       const [data, metrics] = await Promise.all([
         api(`/accounts/${search ? `?q=${encodeURIComponent(search)}` : ""}`),
         api("/analytics/accounts/"),
       ]);
+      if (request !== rosterRequestSeq.current) return;
       setAccounts(Array.isArray(data) ? data : data.results || []);
       setAnalytics(Object.fromEntries((metrics.results || []).map((row) => [row.account, row])));
     } catch (e) {
+      if (request !== rosterRequestSeq.current) return;
       setError(e.message);
     } finally {
-      setRosterLoaded(true);
+      if (request === rosterRequestSeq.current) setRosterLoaded(true);
     }
   }
 

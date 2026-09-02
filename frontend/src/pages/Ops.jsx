@@ -54,13 +54,16 @@ export default function Ops() {
   // ever re-reads the newest page, so once they have, its `next` cursor points
   // back at page two and must not overwrite where the list actually reaches.
   const expanded = useRef(false);
+  const listGeneration = useRef(0);
 
   async function load({ replace = false } = {}) {
+    const generation = listGeneration.current;
     try {
       const [data, health] = await Promise.all([
         api(subsystem ? `/runs/?subsystem=${subsystem}` : "/runs/"),
         api("/session/"),
       ]);
+      if (generation !== listGeneration.current) return;
       const fresh = data.results || [];
       setRuns((current) => {
         if (replace) return fresh;
@@ -76,6 +79,7 @@ export default function Ops() {
       // pinned an error banner to the page for the rest of the session.
       setError("");
     } catch (e) {
+      if (generation !== listGeneration.current) return;
       setError(e.message);
     }
   }
@@ -89,9 +93,11 @@ export default function Ops() {
    */
   async function loadMore() {
     if (!next || loadingMore) return;
+    const generation = listGeneration.current;
     setLoadingMore(true);
     try {
       const data = await api(next.replace(/^.*\/api/, ""));
+      if (generation !== listGeneration.current) return;
       expanded.current = true;
       setRuns((current) => [...current, ...(data.results || [])]);
       setNext(data.next || null);
@@ -104,6 +110,7 @@ export default function Ops() {
 
   useEffect(() => {
     // A filter change is a different list, not more of this one.
+    listGeneration.current += 1;
     expanded.current = false;
     load({ replace: true });
     const timer = setInterval(load, 10000);
