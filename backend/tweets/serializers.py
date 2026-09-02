@@ -1,7 +1,12 @@
 from rest_framework import serializers
 
 from fetching.accounts import account_ops, live_state_map
-from fetching.media import lookup_local_urls, photo_urls_from_extras, rewrite_media_blob
+from fetching.media import (
+    avatar_urls,
+    lookup_local_urls,
+    photo_urls_from_extras,
+    rewrite_media_blob,
+)
 
 from .models import FetchRun, Search, SearchTweet, Tweet, TwitterUser
 
@@ -13,6 +18,27 @@ class TwitterUserSerializer(serializers.ModelSerializer):
             "id", "handle", "display_name", "avatar_url", "verified", "verified_type",
             "rest_id", "tracking", "priority", "quarantined", "quarantine_reason",
         ]
+
+    def _archived_avatars(self) -> dict:
+        """remote avatar URL → local path, resolved once per serializer instance.
+
+        One instance serves every author on a page, so this is one lookup for
+        the whole feed rather than one per post -- the difference between a
+        constant and an N+1.
+        """
+        cache = getattr(self, "_avatar_cache", None)
+        if cache is None:
+            cache = self._avatar_cache = lookup_local_urls(avatar_urls())
+        return cache
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Fall back to X's URL when the file is not archived yet, so a new
+        # account shows a picture from the first render rather than a gap.
+        local = self._archived_avatars().get(data.get("avatar_url"))
+        if local:
+            data["avatar_url"] = local
+        return data
 
 
 class AccountOpsSerializer(TwitterUserSerializer):
