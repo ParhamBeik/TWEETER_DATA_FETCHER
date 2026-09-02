@@ -44,7 +44,10 @@ export const SUBSYSTEM_LABEL = {
   live: "Live poll",
   historical: "Archive walk",
   search: "Saved search",
-  unknown: "Before tracking",
+  // Not a collector: rows stored before the pipeline recorded which one fetched
+  // them. "Before tracking" read as a fourth pipeline in a chart whose whole
+  // premise is which collector did the work.
+  unknown: "Not attributed",
 };
 
 // Chart chrome tracks the panel it is drawn on. Recharts wants real colour

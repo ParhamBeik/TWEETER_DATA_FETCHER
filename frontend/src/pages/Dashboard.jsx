@@ -229,7 +229,10 @@ export default function Dashboard() {
         <PanelHead
           label="Collection flow"
           title="Who is doing the collecting"
-          lede="Posts captured per bucket, split by the collector that saw them first. Saved-search hits are counted here too, and they expire after 30 days — the archive walk and live poll are what grow the permanent archive."
+          // "Not attributed" is not a collector, and calling the split "by the
+          // collector that saw them first" without saying so left the largest
+          // series on the 90d view looking like a fourth pipeline.
+          lede="Posts captured per bucket, split by the collector that saw them first. Saved-search hits are counted here too, and they expire after 30 days — the archive walk and live poll are what grow the permanent archive. Posts stored before the collector was recorded are grouped as “not attributed”."
         />
         <PanelBody>
           <Chart show={captured.rows.length} empty="Nothing captured in this window yet.">
