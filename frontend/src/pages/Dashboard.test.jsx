@@ -201,7 +201,7 @@ describe("Dashboard stat tiles", () => {
     });
     renderPulse();
 
-    expect(await screen.findByText(/6 complete · 4 partial · of 10 runs/)).toBeInTheDocument();
+    expect(await screen.findByText(/6 complete · 4 partial of 10 runs/)).toBeInTheDocument();
   });
 
   it("falls back to an em dash before the endpoints resolve", () => {

@@ -22,7 +22,7 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.utils import timezone
 
-from tweets.models import MediaAsset, Tweet
+from tweets.models import MediaAsset, Tweet, TwitterUser
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,26 @@ def photo_urls_from_extras(extras) -> list[str]:
     return urls
 
 
+def avatar_urls() -> list[str]:
+    """Every account profile picture worth keeping a copy of.
+
+    These are the bulk of the images on a feed page -- one per post author --
+    and they were the last thing still hot-linked from X. Beyond the durability
+    argument that applies to any archived media, an avatar loads on every render
+    of every card, so leaving them remote reported each reader to X on every
+    page view. Keyed by URL like everything else here, which also handles
+    rotation for free: a new profile picture is a new URL, so it is simply
+    archived on the next pass and the old file ages out with its account.
+    """
+    return [
+        url
+        for url in TwitterUser.objects.exclude(avatar_url="")
+        .values_list("avatar_url", flat=True)
+        .distinct()
+        if is_allowed_photo_url(url)
+    ]
+
+
 def relative_path_for(url: str) -> str:
     digest = hashlib.sha256(url.encode()).hexdigest()
     ext = Path(urlparse(url).path).suffix.lower()
@@ -202,6 +222,19 @@ def archive_batch(limit: int) -> int:
     }
     saved = 0
     tried: set[str] = set()
+    # Avatars first: there are a few dozen of them against tens of thousands of
+    # post images, they are the ones rendered on every card, and going last
+    # meant a permanent photo backlog would starve them forever.
+    for url in avatar_urls():
+        if url in ready or url in tried:
+            continue
+        tried.add(url)
+        if _store(url, root) is None:
+            continue
+        ready.add(url)
+        saved += 1
+        if saved >= limit:
+            return saved
     # Photos backfill across the whole archive, as they always have. Video is
     # forward-only: the back catalogue would be a large, unpredictable download
     # for clips X has mostly stopped serving anyway.

@@ -171,3 +171,69 @@ def test_lookup_skips_rows_whose_file_is_gone(settings, tmp_path):
         relative_path="ab/missing.jpg",
     )
     assert lookup_local_urls(["https://pbs.twimg.com/media/a.jpg"]) == {}
+
+
+@pytest.mark.django_db
+def test_archive_batch_stores_account_avatars(settings, tmp_path):
+    """Avatars are the images on every card, and were the last ones left on X."""
+    settings.MEDIA_ROOT = tmp_path
+    remote = "https://pbs.twimg.com/profile_images/1/abc_normal.jpg"
+    TwitterUser.objects.create(handle="jack", tracking=True, avatar_url=remote)
+
+    class _Resp(BytesIO):
+        headers = {"Content-Length": "4"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    with patch("fetching.media.urlopen", return_value=_Resp(b"jpeg")):
+        assert archive_batch(25) == 1
+
+    asset = MediaAsset.objects.get(remote_url=remote)
+    assert (Path(tmp_path) / asset.relative_path).read_bytes() == b"jpeg"
+
+
+@pytest.mark.django_db
+def test_the_feed_serves_an_archived_avatar_from_our_own_origin(settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+    settings.MEDIA_URL = "/media/"
+    remote = "https://pbs.twimg.com/profile_images/1/abc_normal.jpg"
+    relative = relative_path_for(remote)
+    dest = Path(tmp_path) / relative
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"jpeg")
+    MediaAsset.objects.create(remote_url=remote, relative_path=relative)
+    TwitterUser.objects.create(handle="jack", tracking=True, avatar_url=remote)
+    upsert_tweet({
+        "rest_id": "1", "author_id": "1", "account": "jack",
+        "text": "hello", "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+    })
+    user = User.objects.create_user(username="alice", password="pw", is_staff=True)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    row = client.get("/api/feed/").data["results"][0]
+
+    assert row["author"]["avatar_url"] == f"/media/{relative}"
+
+
+@pytest.mark.django_db
+def test_an_unarchived_avatar_still_falls_back_to_x(settings, tmp_path):
+    """A brand-new account shows a picture before the archiver has caught up."""
+    settings.MEDIA_ROOT = tmp_path
+    remote = "https://pbs.twimg.com/profile_images/2/def_normal.jpg"
+    TwitterUser.objects.create(handle="jack", tracking=True, avatar_url=remote)
+    upsert_tweet({
+        "rest_id": "1", "author_id": "1", "account": "jack",
+        "text": "hello", "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+    })
+    user = User.objects.create_user(username="alice", password="pw", is_staff=True)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    row = client.get("/api/feed/").data["results"][0]
+
+    assert row["author"]["avatar_url"] == remote

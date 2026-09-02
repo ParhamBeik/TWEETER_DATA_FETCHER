@@ -23,6 +23,7 @@ import {
   SUBSYSTEM_COLOR,
   SUBSYSTEM_LABEL,
   TOOLTIP_STYLE,
+  alignSeries,
   bucketLabel,
   pivotSeries,
 } from "../charts";
@@ -103,6 +104,12 @@ export default function Dashboard() {
     count: row.count,
   }));
   const spend = pivotSeries(ingestion?.requests || [], "endpoint", "requests");
+  // One range control above three panels has to mean one x-axis under all three.
+  const [capturedRows, postedRows, spendRows] = alignSeries([
+    captured.rows,
+    posted,
+    spend.rows,
+  ]);
   const totals = ingestion?.totals || {};
   const bySubsystem = totals.by_subsystem || {};
 
@@ -128,13 +135,12 @@ export default function Dashboard() {
     ? Math.round((runCounts.completed / runCounts.total) * 100)
     : null;
   const runBreakdown = runCounts.total
-    ? [
+    ? `${[
         `${compact(runCounts.completed)} complete`,
         runCounts.partial ? `${compact(runCounts.partial)} partial` : null,
-        `of ${compact(runCounts.total)} runs`,
       ]
         .filter(Boolean)
-        .join(" · ")
+        .join(" · ")} of ${compact(runCounts.total)} runs`
     : "no runs in window";
 
   const oldest = totals.oldest_tweet;
@@ -227,7 +233,7 @@ export default function Dashboard() {
         />
         <PanelBody>
           <Chart show={captured.rows.length} empty="Nothing captured in this window yet.">
-            <BarChart data={captured.rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <BarChart data={capturedRows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={LINE} vertical={false} />
               <XAxis dataKey="bucket" tickFormatter={axisTick} {...AXIS_PROPS} />
               <YAxis allowDecimals={false} width={48} {...AXIS_PROPS} />
@@ -276,7 +282,7 @@ export default function Dashboard() {
           />
           <PanelBody>
             <Chart show={posted.length} empty="No dated posts in this window.">
-              <AreaChart data={posted} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <AreaChart data={postedRows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={LINE} vertical={false} />
                 <XAxis dataKey="bucket" tickFormatter={axisTick} {...AXIS_PROPS} />
                 <YAxis allowDecimals={false} width={48} {...AXIS_PROPS} />
@@ -307,7 +313,7 @@ export default function Dashboard() {
           />
           <PanelBody>
             <Chart show={spend.rows.length} empty="No request telemetry in this window yet.">
-              <BarChart data={spend.rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <BarChart data={spendRows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={LINE} vertical={false} />
                 <XAxis dataKey="bucket" tickFormatter={axisTick} {...AXIS_PROPS} />
                 <YAxis allowDecimals={false} width={48} {...AXIS_PROPS} />

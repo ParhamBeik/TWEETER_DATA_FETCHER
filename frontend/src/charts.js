@@ -88,6 +88,33 @@ export function bucketLabel(iso, bucket) {
 }
 
 /**
+ * Put every chart on one screen onto the same bucket grid.
+ *
+ * Three panels under a single range control used to draw three different
+ * x-axes: collection telemetry begins when it was switched on, request
+ * telemetry later still, while coverage reads the whole archive. One "90d"
+ * click produced spans of 17, 8 and 90 days side by side, with nothing on the
+ * screen admitting it. Reindexing each panel onto the union of the buckets they
+ * do have makes the axes identical and renders a missing stretch as an empty
+ * stretch, which is the true statement.
+ *
+ * The grid is taken from the data rather than computed from the window, so it
+ * lands on whatever boundary the database truncated to -- no timezone or
+ * week-start arithmetic to get wrong. Padding rows carry the bucket and nothing
+ * else: an absent key draws no mark, where a zero would assert a measurement
+ * that was never taken.
+ */
+export function alignSeries(seriesList, key = "bucket") {
+  const grid = [...new Set(seriesList.flat().map((row) => row[key]))].sort(
+    (a, b) => new Date(a) - new Date(b),
+  );
+  return seriesList.map((rows) => {
+    const byBucket = new Map((rows || []).map((row) => [row[key], row]));
+    return grid.map((bucket) => byBucket.get(bucket) ?? { [key]: bucket });
+  });
+}
+
+/**
  * Pivot the API's long-format series (one row per bucket per key) into the
  * wide rows Recharts stacks, filling absent keys with 0 so a gap in one series
  * does not shift the stack.

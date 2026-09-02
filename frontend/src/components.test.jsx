@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import InfiniteSentinel from "./InfiniteSentinel";
 import { api } from "./api";
-import { pivotSeries } from "./charts";
+import { alignSeries, pivotSeries } from "./charts";
 import { absoluteTime, compact } from "./format";
 
 // Unit tests for the two shared widgets. IntersectionObserver is stubbed per-test
@@ -131,6 +131,36 @@ describe("absoluteTime", () => {
   it("returns an empty string rather than 'Invalid Date'", () => {
     expect(absoluteTime(null)).toBe("");
     expect(absoluteTime("not a date")).toBe("");
+  });
+});
+
+describe("alignSeries", () => {
+  // Three panels under one range control used to draw three different x-axes,
+  // because each series starts when its own telemetry started.
+  const long = [{ bucket: "2026-06-04" }, { bucket: "2026-08-16" }, { bucket: "2026-08-25" }];
+  const short = [{ bucket: "2026-08-25", requests: 7 }];
+
+  it("gives every series the same buckets in the same order", () => {
+    const [a, b] = alignSeries([long, short]);
+    expect(a.map((r) => r.bucket)).toEqual(b.map((r) => r.bucket));
+    expect(b.map((r) => r.bucket)).toEqual(["2026-06-04", "2026-08-16", "2026-08-25"]);
+  });
+
+  it("pads with the bucket alone, so a gap draws nothing rather than a zero", () => {
+    const [, b] = alignSeries([long, short]);
+    expect(b[0]).toEqual({ bucket: "2026-06-04" });
+    expect(b[2]).toEqual({ bucket: "2026-08-25", requests: 7 });
+  });
+
+  it("orders the grid by time, not by string", () => {
+    const [a] = alignSeries([
+      [{ bucket: "2026-09-02T00:00:00Z" }],
+      [{ bucket: "2026-08-30T00:00:00Z" }],
+    ]);
+    expect(a.map((r) => r.bucket)).toEqual([
+      "2026-08-30T00:00:00Z",
+      "2026-09-02T00:00:00Z",
+    ]);
   });
 });
 
