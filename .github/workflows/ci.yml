@@ -19,6 +19,25 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # The suite runs on SQLite locally with no services, which is deliberate and
+    # stays true. But every raw-SQL analytics view checks connection.vendor and
+    # returns early on SQLite, so a green SQLite run proves nothing about topic
+    # mining, velocity, narratives or request spend -- and nothing about the
+    # generated column or the trigram indexes either. CI runs the real database
+    # so those tests actually execute.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: twitter_saas_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -45,9 +64,17 @@ jobs:
           DJANGO_SETTINGS_MODULE: config.settings_test
 
       - name: Run the suite
-        # pytest.ini pins DJANGO_SETTINGS_MODULE=config.settings_test
-        # (SQLite + eager Celery), so no services are required.
+        # pytest.ini pins DJANGO_SETTINGS_MODULE=config.settings_test, which
+        # picks Postgres when TEST_POSTGRES_HOST is set and SQLite otherwise.
+        # Setting it here is what makes the vendor-gated analytics tests run
+        # instead of skipping.
         run: python -m pytest -q
+        env:
+          TEST_POSTGRES_HOST: localhost
+          TEST_POSTGRES_PORT: "5432"
+          TEST_POSTGRES_DB: twitter_saas_test
+          TEST_POSTGRES_USER: postgres
+          TEST_POSTGRES_PASSWORD: postgres
 
   frontend:
     name: Frontend (Vitest)

@@ -113,6 +113,10 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    # The one endpoint where an unlimited number of attempts is a real attack.
+    # Rate limiting rather than account lockout: a lockout is a denial of
+    # service anyone can inflict on you by failing on purpose with your username.
+    throttle_scope = "login"
 
     def post(self, request):
         raw_username = str(request.data.get("username") or "").strip()

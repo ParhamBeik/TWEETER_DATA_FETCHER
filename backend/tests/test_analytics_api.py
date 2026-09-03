@@ -145,37 +145,88 @@ postgres_only = pytest.mark.skipif(
 
 @pytest.mark.django_db
 @postgres_only
-def test_phrase_mining_finds_untagged_topics_and_keeps_word_order(client):
-    from fetching.ingest import ingest_tweets
+def test_phrase_mining_finds_untagged_topics_and_keeps_word_order():
+    """The grouping SQL, asserted directly rather than through the endpoint.
 
-    TwitterUser.objects.create(handle="jack", tracking=True)
+    Mining and ranking are deliberately separate here -- the SQL only counts
+    documents and distinct authors, and `tests/test_topics_scoring.py` covers
+    the scoring as a pure unit. Going through /analytics/topics/ meant this was
+    really asserting the support and filler thresholds, which a three-post
+    single-account fixture can never clear: every term in an all-identical
+    corpus is in 100% of documents, i.e. filler by definition.
+
+    It had never failed because it had never run: the view is skipped entirely
+    on the SQLite test database.
+    """
+    from datetime import datetime, timezone as dt_timezone
+
+    from fetching.ingest import ingest_tweets
+    from tweets.analytics import Window, _hashtag_topics, _phrase_topics
+
+    handles = ["jack", "maria", "sam"]
+    for handle in handles:
+        TwitterUser.objects.create(handle=handle, tracking=True)
     ingest_tweets([
         {
-            "rest_id": str(n), "author_id": "1", "account": "jack",
+            "rest_id": str(n), "author_id": str(n), "account": handles[n % len(handles)],
             "text": "the central bank raised interest rates again https://x.com/a @someone",
             "created_at": "Wed Oct 10 20:19:24 +0000 2018",
             "entities": {"hashtags": ["economy"]},
         }
-        for n in range(3)
+        for n in range(6)
+    ], "live")
+
+    window = Window(
+        since=datetime(2018, 1, 1, tzinfo=dt_timezone.utc),
+        until=datetime(2019, 1, 1, tzinfo=dt_timezone.utc),
+        bucket="day",
+    )
+    hashtags = {row.term: row for row in _hashtag_topics(window, [])}
+    phrases = {row.term: row for row in _phrase_topics(window, [])}
+
+    # Hashtags are counted from the entities column and carry their own kind.
+    assert hashtags["economy"].kind == "hashtag"
+    # Counted per document and per distinct author, never per occurrence.
+    assert hashtags["economy"].docs == 6
+    assert hashtags["economy"].authors == 3
+
+    # Untagged discussion is visible as single words...
+    assert "interest" in phrases
+    # ...and as bigrams in the order they were actually written. A tsvector
+    # would have sorted the lexemes and paired words that never co-occurred.
+    assert "interest rates" in phrases
+    assert "rates interest" not in phrases
+
+    # Stopwords, the URL and the @mention are stripped before tokenizing.
+    assert "the" not in phrases
+    assert not any("http" in term for term in phrases)
+    assert "someone" not in phrases
+
+
+@pytest.mark.django_db
+@postgres_only
+def test_topics_endpoint_drops_a_term_only_one_account_uses(client):
+    """The support rule, end to end: a term is a topic only if the corpus
+    corroborates it. Six posts from one handle is one person talking.
+    """
+    TwitterUser.objects.create(handle="solo", tracking=True)
+    from fetching.ingest import ingest_tweets
+
+    ingest_tweets([
+        {
+            "rest_id": str(n), "author_id": "1", "account": "solo",
+            "text": "quarterly earnings beat expectations across the board",
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+            "entities": {"hashtags": ["earnings"]},
+        }
+        for n in range(6)
     ], "live")
 
     body = client.get(
         "/api/analytics/topics/?dimension=both&since=2018-01-01T00:00:00Z"
         "&until=2019-01-01T00:00:00Z"
     ).data
-    topics = {row["topic"]: row for row in body["results"]}
-
-    # Hashtags still counted, and given their own kind.
-    assert topics["economy"]["kind"] == "hashtag"
-    # Untagged discussion is now visible as single words...
-    assert "interest" in topics
-    # ...and as bigrams in the order they were actually written.
-    assert "interest rates" in topics
-    assert "rates interest" not in topics
-    # Stopwords, the URL and the @mention are stripped.
-    assert "the" not in topics
-    assert not any("http" in topic for topic in topics)
-    assert "someone" not in topics
+    assert body["results"] == []
 
 
 @pytest.mark.django_db
