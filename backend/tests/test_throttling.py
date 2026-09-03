@@ -21,7 +21,7 @@ PASSWORD = "correct-horse-battery"
 
 # The production rates, restated here rather than imported so a change to them
 # has to be made deliberately in both places.
-RATES = {"anon": "60/min", "login": "5/min", "analytics": "30/min"}
+RATES = {"anon": "60/min", "login": "5/min", "analytics": "30/min", "exports": "10/hour"}
 
 
 @pytest.fixture
@@ -119,4 +119,52 @@ def test_the_expensive_analytics_views_are_metered_even_when_signed_in(throttled
     client.force_authenticate(user=user)
 
     codes = {client.get("/api/analytics/narratives/").status_code for _ in range(31)}
+    assert 429 in codes
+
+
+@pytest.mark.django_db
+def test_all_expensive_analytics_views_are_metered(throttled):
+    user = User.objects.create_user(username="analyst2", password=PASSWORD)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    for path in ["/api/analytics/ingestion/", "/api/analytics/accounts/"]:
+        cache.clear()
+        codes = {client.get(path).status_code for _ in range(31)}
+        assert 429 in codes, f"{path} was not throttled"
+
+
+@pytest.mark.django_db
+def test_spoofed_x_forwarded_for_cannot_bypass_throttle(throttled, settings):
+    settings.REST_FRAMEWORK["NUM_PROXIES"] = 1
+    User.objects.create_user(username="dave2", password=PASSWORD)
+    client = APIClient()
+
+    for i in range(5):
+        client.post(
+            "/api/auth/login/",
+            {"username": "dave2", "password": "wrong"},
+            format="json",
+            HTTP_X_FORWARDED_FOR=f"1.2.3.{i}, 10.0.0.1",
+        )
+
+    blocked = client.post(
+        "/api/auth/login/",
+        {"username": "dave2", "password": "wrong"},
+        format="json",
+        HTTP_X_FORWARDED_FOR="9.9.9.9, 10.0.0.1",
+    )
+    assert blocked.status_code == 429
+
+
+@pytest.mark.django_db
+def test_export_view_is_throttled(throttled):
+    user = User.objects.create_user(username="exporter", password=PASSWORD)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    codes = [
+        client.post("/api/export/", {"format": "jsonl"}, format="json").status_code
+        for _ in range(11)
+    ]
     assert 429 in codes

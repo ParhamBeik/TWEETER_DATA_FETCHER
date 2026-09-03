@@ -84,6 +84,7 @@ services:
     ports: ["8002:8000"]
     volumes:
       - media_data:/app/media
+      - static_data:/app/staticfiles
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/admin/login/ > /dev/null || exit 1"]
       interval: 10s
@@ -165,7 +166,9 @@ services:
     mem_limit: 64m
     volumes:
       - media_data:/usr/share/nginx/media:ro
+      - static_data:/usr/share/nginx/staticfiles:ro
 
 volumes:
   pgdata:
   media_data:
+  static_data:

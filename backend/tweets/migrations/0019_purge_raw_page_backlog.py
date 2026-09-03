@@ -47,6 +47,8 @@ def noop_reverse(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    atomic = False
+
     dependencies = [("tweets", "0018_tweetmetric_tweets_metric_captured_idx")]
 
-    operations = [migrations.RunPython(purge_raw_pages, noop_reverse)]
+    operations = [migrations.RunPython(purge_raw_pages, noop_reverse, atomic=False)]

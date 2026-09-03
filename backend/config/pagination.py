@@ -65,7 +65,7 @@ class FeedOffsetPagination(LimitOffsetPagination):
         # which is all the response actually needs, and far cheaper than
         # counting the archive to find out.
         rows = list(queryset[self.offset : self.offset + self.limit + 1])
-        self.has_next = len(rows) > self.limit
+        self.has_next = len(rows) > self.limit and (self.offset + self.limit <= self.max_offset)
         return rows[: self.limit]
 
     def get_next_link(self):

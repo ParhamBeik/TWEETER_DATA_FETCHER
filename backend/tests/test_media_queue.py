@@ -199,3 +199,21 @@ def test_seed_command_skips_what_is_already_archived():
 
     call_command("seed_media_queue")
     assert not PendingMedia.objects.exists()
+
+
+@pytest.mark.django_db
+def test_dead_avatar_is_bounded_by_max_attempts(settings, tmp_path):
+    settings.MEDIA_ROOT = tmp_path
+    avatar_url = "https://pbs.twimg.com/profile_images/1/avatar.jpg"
+    TwitterUser.objects.create(
+        handle="deadavatar",
+        tracking=True,
+        avatar_url=avatar_url,
+    )
+    with _fails():
+        for _ in range(MAX_ATTEMPTS):
+            archive_batch(1)
+    # After MAX_ATTEMPTS, it skips the dead avatar URL
+    with patch("fetching.media._store") as mock_store:
+        archive_batch(1)
+        mock_store.assert_not_called()

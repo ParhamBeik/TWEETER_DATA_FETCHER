@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+from django.db.models import F
 from django.utils import timezone
 
 from tweets.models import MediaAsset, PendingMedia, Tweet, TwitterUser
@@ -265,10 +266,23 @@ def archive_batch(limit: int) -> int:
         have = set(
             MediaAsset.objects.filter(remote_url__in=wanted).values_list("remote_url", flat=True)
         )
+        dead = set(
+            PendingMedia.objects.filter(
+                remote_url__in=wanted, attempts__gte=MAX_ATTEMPTS
+            ).values_list("remote_url", flat=True)
+        )
         for url in wanted:
-            if url in have or (root / relative_path_for(url)).is_file():
+            if url in have or url in dead or (root / relative_path_for(url)).is_file():
                 continue
             if _store(url, root) is None:
+                PendingMedia.objects.get_or_create(
+                    remote_url=url,
+                    defaults={"tweet_id": "avatar", "last_error": "avatar download failed"},
+                )
+                PendingMedia.objects.filter(remote_url=url).update(
+                    attempts=F("attempts") + 1,
+                    last_error="avatar download failed",
+                )
                 continue
             saved += 1
             if saved >= limit:

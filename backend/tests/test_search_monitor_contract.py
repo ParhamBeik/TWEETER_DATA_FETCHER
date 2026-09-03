@@ -335,3 +335,18 @@ def test_the_report_carries_what_the_runner_ingests(workspace):
     assert report["metadata"]["transport"] == "http"
     assert report["metadata"]["rolling_hours"] == 24
     assert report["metadata"]["window_start_utc"].endswith("Z")
+
+
+def test_parse_pages_handles_none_bootstrap_on_partial_deep_search(workspace):
+    monitor = build_monitor(workspace)
+    plan = monitor._plan_run({**SEARCH_DEF, "pagination_depth": 3})
+    fetched = {
+        "payloads": [_search_page("1", "Wed Oct 10 20:19:24 +0000 2026", cursor="cursor-1")],
+        "bootstrap": None,
+        "transport": "http",
+        "exhausted_reason": None,
+        "http_latency_ms": 10,
+        "page_output_paths": [],
+    }
+    parsed = monitor._parse_pages(plan, fetched)
+    assert parsed["exhausted_reason"] == "partial_browser_stalled"

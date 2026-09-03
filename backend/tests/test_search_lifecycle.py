@@ -299,3 +299,22 @@ def test_results_page_newest_first_and_never_duplicate_a_hit(staff_client):
     ]
 
     assert ids == ["new", "old"]
+
+
+@pytest.mark.django_db
+def test_django_admin_delete_triggers_teardown(rf):
+    from django.contrib.admin.sites import AdminSite
+    from tweets.admin import SearchAdmin
+
+    search = _search("admin_del")
+    _furnish(search)
+
+    admin_instance = SearchAdmin(Search, AdminSite())
+    request = rf.post("/admin/tweets/search/")
+    with patch("fetching.searches.revoke_queued_run") as revoke:
+        admin_instance.delete_model(request, search)
+        revoke.assert_called_once_with(search)
+
+    assert not Search.objects.filter(slug="admin_del").exists()
+    assert not EndpointState.objects.filter(account=endpoint_state_key(search)).exists()
+    assert not RawPage.objects.filter(account=raw_page_key(search)).exists()

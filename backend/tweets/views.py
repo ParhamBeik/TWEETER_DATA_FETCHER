@@ -583,6 +583,7 @@ class ExportView(APIView):
     """
 
     renderer_classes = [JSONRenderer]
+    throttle_scope = "exports"
 
     def perform_content_negotiation(self, request, force=False):
         return JSONRenderer(), "json"

@@ -73,7 +73,7 @@ ALLOW_REGISTRATION = True
 # legitimately -- and fail whichever one happened to run sixth.
 REST_FRAMEWORK = {  # noqa: F405
     **REST_FRAMEWORK,  # noqa: F405
-    "DEFAULT_THROTTLE_RATES": {"anon": None, "login": None, "analytics": None},
+    "DEFAULT_THROTTLE_RATES": {"anon": None, "login": None, "analytics": None, "exports": None},
 }
 
 import tempfile  # noqa: E402
