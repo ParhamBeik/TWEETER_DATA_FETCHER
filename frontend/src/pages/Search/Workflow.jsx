@@ -5,6 +5,9 @@ import { absoluteTime, compact, duration, relativeTime } from "@/format";
 import { Panel, PanelBody, PanelHead } from "@/ui/panel";
 import { Readout, Empty, Skeleton } from "@/ui/controls";
 import { Badge, RUN_TONE, SCHEDULE_TONE, Status, toneEdge } from "@/ui/status";
+import { usePoll } from "@/usePoll";
+
+const WORKFLOW_POLL_MS = 15000;
 
 // How a search run actually ends, in the operator's words rather than the
 // engine's. These strings come back verbatim in the run summary; leaving them
@@ -90,25 +93,16 @@ export default function Workflow({ search, onRunNow, running }) {
   const [schedule, setSchedule] = useState(search.schedule);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let active = true;
-    const load = () => {
-      api(`/searches/${search.id}/runs/`)
-        .then((data) => active && setRuns(data.results || []))
-        .catch((e) => active && setError(e.message));
-      api(`/searches/${search.id}/schedule/`)
-        .then((data) => active && setSchedule(data))
-        .catch(() => {});
-    };
-    load();
-    // The countdown and the queued/running state are the reason to be on this
-    // tab at all, so they refresh without asking.
-    const timer = setInterval(load, 15000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [search.id, running]);
+  // The countdown and the queued/running state are the reason to be on this
+  // tab at all, so they refresh without asking -- while it is on screen.
+  usePoll(() => {
+    api(`/searches/${search.id}/runs/`)
+      .then((data) => setRuns(data.results || []))
+      .catch((e) => setError(e.message));
+    api(`/searches/${search.id}/schedule/`)
+      .then((data) => setSchedule(data))
+      .catch(() => {});
+  }, WORKFLOW_POLL_MS);
 
   const state = schedule?.state || "idle";
   // Paused means there is no next run. Showing a countdown next to "Paused"
