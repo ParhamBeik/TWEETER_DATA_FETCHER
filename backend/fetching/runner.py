@@ -268,16 +268,12 @@ def _persist_raw_pages(root: Path, subsystem: str, run: FetchRun) -> int:
             count += _flush_raw_pages(pending)
             pending = []
     count += _flush_raw_pages(pending)
-    cutoff = timezone.now() - timedelta(days=7)
-    while True:
-        stale_ids = list(
-            RawPage.objects.filter(created_at__lt=cutoff)
-            .order_by("id")
-            .values_list("id", flat=True)[:500]
-        )
-        if not stale_ids:
-            break
-        RawPage.objects.filter(id__in=stale_ids).delete()
+    # No purge here any more. This used to run an uncapped delete loop at a
+    # hardcoded 7 days, inside every fetch run, on the fetch worker -- which both
+    # contradicted RAW_PAGE_RETENTION_DAYS (the setting was dead) and spent the
+    # run's wall-clock budget on maintenance. Retention is now solely
+    # fetching.tasks.purge_old_raw_pages: chunked, row-capped, on the control
+    # queue, and governed by that one setting.
     return count
 
 
@@ -366,9 +362,43 @@ def _collect_run_summary(root: Path, subsystem: str, return_code: int) -> tuple[
     }, failure_ledger, status
 
 
+# Statuses whose raw pages are worth keeping, once the measurement below has
+# told us what each one actually costs. Empty means "keep everything", which is
+# today's behaviour and the baseline the measurement is taken against.
+#
+# The candidate rule is {"failed", "auth_required"} -- the two states where the
+# bytes are the only way to see what X actually returned. "partial" is the open
+# question: this codebase deliberately records a run that did nothing as
+# partial, so it may be common enough that gating on it saves little.
+RAW_PAGE_KEEP_STATUSES: frozenset[str] = frozenset()
+
+
+def _count_raw_pages(root: Path, subsystem: str) -> int:
+    """How many pages this run *would* write, without writing them."""
+    sub = "historical_live" if subsystem in ("historical", "live") else subsystem
+    raw_root = root / "data" / sub / "raw"
+    if not raw_root.exists():
+        return 0
+    return sum(1 for _ in raw_root.rglob("page_*.json"))
+
+
 def _persist_artifacts(root: Path, subsystem: str, run: FetchRun, return_code: int) -> tuple[dict, dict, str]:
     summary, failure_ledger, status = _collect_run_summary(root, subsystem, return_code)
-    summary["raw_pages"] = _persist_raw_pages(root, subsystem, run)
+    keep = not RAW_PAGE_KEEP_STATUSES or status in RAW_PAGE_KEEP_STATUSES
+    pages = _persist_raw_pages(root, subsystem, run) if keep else 0
+    summary["raw_pages"] = pages
+    # The census, not the gate. Raw pages are ~91% of the database and nothing
+    # reads them, so they should only survive for runs worth debugging -- but
+    # which statuses those are is an empirical question. This line is what makes
+    # it answerable; grep a week of it, then set RAW_PAGE_KEEP_STATUSES above.
+    logger.info(
+        "raw_page_census subsystem=%s status=%s pages=%d kept=%s target=%s",
+        subsystem,
+        status,
+        pages if keep else _count_raw_pages(root, subsystem),
+        keep,
+        run.target or "all",
+    )
     summary["endpoint_states"] = _persist_endpoint_states(root, subsystem)
     return summary, failure_ledger, status
 

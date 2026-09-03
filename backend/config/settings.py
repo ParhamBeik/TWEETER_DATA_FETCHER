@@ -316,10 +316,25 @@ SEARCH_TWEET_TTL_DAYS = int(os.environ.get("SEARCH_TWEET_TTL_DAYS", "30"))
 FETCH_RUN_RETENTION_DAYS = int(os.environ.get("FETCH_RUN_RETENTION_DAYS", "90"))
 # Raw pages get a shorter clock than the runs that produced them: they are the
 # bulk of the database (~750 MB/day) and their usefulness decays much faster.
-RAW_PAGE_RETENTION_DAYS = int(os.environ.get("RAW_PAGE_RETENTION_DAYS", "30"))
+# TEMPORARY: 3, not 30, for as long as every run still writes every page.
+# fetching.runner logs a `raw_page_census` line per run; once a week of those
+# says which statuses are worth keeping, set RAW_PAGE_KEEP_STATUSES there and
+# restore this to 30. Three days bounds the table at ~2 GB in the meantime,
+# where 30 would let it return to ~22 GB while we are still measuring.
+# The default carries the temporary value on purpose: a production .env edit
+# that has to be remembered is one that gets forgotten.
+RAW_PAGE_RETENTION_DAYS = int(os.environ.get("RAW_PAGE_RETENTION_DAYS", "3"))
 # Ceiling per purge run. The first pass after deploy has a multi-GB backlog and
 # shares a worker with the search dispatcher; the remainder expires tomorrow.
 RAW_PAGE_PURGE_MAX_ROWS = int(os.environ.get("RAW_PAGE_PURGE_MAX_ROWS", "200000"))
+# Engagement snapshots. Matched to the analytics window ceiling
+# (analytics.MAX_WINDOW_HOURS is 90 days) rather than chosen independently: a
+# snapshot older than the longest window any endpoint will serve cannot appear
+# in a chart, so this deletes only rows no query could reach. Until now this
+# table had no clock at all -- ingest writes a row every time a re-poll sees a
+# changed like/repost/view count, and views tick constantly on a popular post.
+TWEET_METRIC_RETENTION_DAYS = int(os.environ.get("TWEET_METRIC_RETENTION_DAYS", "90"))
+TWEET_METRIC_PURGE_MAX_ROWS = int(os.environ.get("TWEET_METRIC_PURGE_MAX_ROWS", "500000"))
 # Signup is open by default. New accounts are read-only (see
 # tweets.permissions.IsStaffOrReadOnly); operating the fetcher and replacing the
 # shared X session require staff, granted from the Django admin.

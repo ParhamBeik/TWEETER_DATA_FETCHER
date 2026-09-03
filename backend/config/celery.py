@@ -39,6 +39,7 @@ app.conf.task_routes = {
     "fetching.tasks.purge_expired_search_tweets": {"queue": "control"},
     "fetching.tasks.purge_old_fetch_runs": {"queue": "control"},
     "fetching.tasks.purge_old_raw_pages": {"queue": "control"},
+    "fetching.tasks.purge_old_tweet_metrics": {"queue": "control"},
     "fetching.tasks.recompute_poll_intervals": {"queue": "control"},
     "fetching.tasks.archive_media": {"queue": "control"},
 }
@@ -90,6 +91,14 @@ def setup_periodic_tasks(sender, **_kwargs):
         schedule(86400.0),
         app.signature("fetching.tasks.purge_old_raw_pages"),
         name="purge-old-raw-pages",
+    )
+    # Engagement snapshots, on the same daily cadence. Their cutoff matches the
+    # 90-day ceiling analytics clamps every window to, so this can only delete
+    # rows no chart could have shown.
+    sender.add_periodic_task(
+        schedule(86400.0),
+        app.signature("fetching.tasks.purge_old_tweet_metrics"),
+        name="purge-old-tweet-metrics",
     )
     # Daily re-tiering: polling cadence follows each account's measured posting
     # rate, so it has to be recomputed as that rate drifts.

@@ -14,6 +14,7 @@ from fetching.tasks import (
     purge_expired_search_tweets,
     purge_old_fetch_runs,
     purge_old_raw_pages,
+    purge_old_tweet_metrics,
     repoll_searches,
 )
 from tweets.models import (
@@ -24,6 +25,7 @@ from tweets.models import (
     SearchHit,
     SearchTweet,
     Tweet,
+    TweetMetric,
     TwitterUser,
 )
 
@@ -133,6 +135,36 @@ def test_purge_old_raw_pages_deletes_only_expired_rows(settings):
     assert purge_old_raw_pages() == 1
     assert not RawPage.objects.filter(page_number=1).exists()
     assert RawPage.objects.filter(page_number=2).exists()
+
+
+@pytest.mark.django_db
+def test_purge_old_tweet_metrics_deletes_only_unreachable_rows(settings):
+    """The cutoff is derived, not chosen: analytics clamps every window to 90
+    days, so a snapshot older than that cannot appear in any chart. Anything
+    inside the window has to survive.
+    """
+    settings.TWEET_METRIC_RETENTION_DAYS = 90
+    tweet = upsert_tweet(
+        {
+            "rest_id": "1",
+            "author_id": "1",
+            "account": "jack",
+            "text": "t",
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        }
+    )
+    stale = TweetMetric.objects.create(tweet=tweet, likes=1, retweets=1, views=1)
+    TweetMetric.objects.filter(pk=stale.pk).update(
+        captured_at=timezone.now() - timedelta(days=91)
+    )
+    fresh = TweetMetric.objects.create(tweet=tweet, likes=2, retweets=2, views=2)
+    TweetMetric.objects.filter(pk=fresh.pk).update(
+        captured_at=timezone.now() - timedelta(days=89)
+    )
+
+    assert purge_old_tweet_metrics() == 1
+    assert not TweetMetric.objects.filter(pk=stale.pk).exists()
+    assert TweetMetric.objects.filter(pk=fresh.pk).exists()
 
 
 @pytest.mark.django_db

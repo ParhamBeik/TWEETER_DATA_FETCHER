@@ -11,7 +11,16 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from tweets.models import FetchRun, RawPage, Search, SearchHit, SearchTweet, Tweet, TwitterUser
+from tweets.models import (
+    FetchRun,
+    RawPage,
+    Search,
+    SearchHit,
+    SearchTweet,
+    Tweet,
+    TweetMetric,
+    TwitterUser,
+)
 
 from . import runner
 from .accounts import (
@@ -482,6 +491,38 @@ def purge_old_raw_pages() -> int:
         total += deleted
     if total:
         logger.info("purge_old_raw_pages: deleted %d raw page(s)", total)
+    return total
+
+
+@shared_task(name="fetching.tasks.purge_old_tweet_metrics")
+def purge_old_tweet_metrics() -> int:
+    """Expire engagement snapshots older than any window we will serve.
+
+    This table had no clock at all. Ingest writes a row whenever a re-poll sees
+    a changed like, repost or view count, and views move constantly on a popular
+    post, so it grows roughly with (tweets x polls) forever -- and it is the
+    table the velocity charts scan.
+
+    The cutoff is not an independent judgement: analytics clamps every window to
+    MAX_WINDOW_HOURS (90 days), so a snapshot older than that cannot appear in
+    any chart. This deletes only rows no endpoint can reach.
+
+    Chunked and capped for the same reason purge_old_raw_pages is: one unbounded
+    DELETE over millions of rows holds a long transaction and bloats WAL on a
+    small container, and the first pass after deploy has a backlog to clear.
+    """
+    cutoff = timezone.now() - timedelta(days=settings.TWEET_METRIC_RETENTION_DAYS)
+    total = 0
+    while total < settings.TWEET_METRIC_PURGE_MAX_ROWS:
+        ids = list(
+            TweetMetric.objects.filter(captured_at__lt=cutoff).values_list("pk", flat=True)[:5000]
+        )
+        if not ids:
+            break
+        deleted, _ = TweetMetric.objects.filter(pk__in=ids).delete()
+        total += deleted
+    if total:
+        logger.info("purge_old_tweet_metrics: deleted %d snapshot(s)", total)
     return total
 
 
