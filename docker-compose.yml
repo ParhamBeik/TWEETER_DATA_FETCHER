@@ -89,8 +89,8 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/admin/login/ > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 10
+      start_period: 120s
     mem_limit: 448m
 
   # Live/historical/search each get their own -P solo --concurrency=1 worker and
