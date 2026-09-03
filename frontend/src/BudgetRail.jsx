@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/api";
+import { usePoll } from "@/usePoll";
 import { cn } from "@/lib/cn";
 import { duration } from "@/format";
 import { Status, TONE } from "@/ui/status";
@@ -17,6 +18,11 @@ import { Status, TONE } from "@/ui/status";
  * Ticks rather than a percentage bar: this is a countable allowance, and seeing
  * fourteen segments left reads faster than "28%".
  */
+
+// The underlying quota resets on a 15-minute cycle, so polling every 20s was
+// asking a question far more often than its answer could change -- on every
+// page, in every open tab.
+const RAIL_POLL_MS = 60000;
 
 const TICKS = 20;
 // Below this share of an endpoint's allowance, a collector is about to start
@@ -78,23 +84,14 @@ export default function BudgetRail() {
   const [pipeline, setPipeline] = useState(null);
   const [reachable, setReachable] = useState(true);
 
-  useEffect(() => {
-    let active = true;
-    const load = () =>
-      api("/stats/pipeline/")
-        .then((data) => {
-          if (!active) return;
-          setPipeline(data);
-          setReachable(true);
-        })
-        .catch(() => active && setReachable(false));
-    load();
-    const timer = setInterval(load, 20000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, []);
+  usePoll(() => {
+    api("/stats/pipeline/")
+      .then((data) => {
+        setPipeline(data);
+        setReachable(true);
+      })
+      .catch(() => setReachable(false));
+  }, RAIL_POLL_MS);
 
   const limits = (pipeline?.rate_limits || []).filter((row) => row.limit > 0);
   const running = pipeline?.running || [];

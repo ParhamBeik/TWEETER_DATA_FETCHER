@@ -7,6 +7,10 @@ import { Empty, ErrorNote } from "@/ui/controls";
 import { Select, Textarea } from "@/ui/field";
 import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";
 import { Badge, RUN_TONE, Status, TONE, toneEdge } from "@/ui/status";
+import { usePoll } from "@/usePoll";
+
+// Run status is the point of this page, so it stays the fastest poller.
+const RUNS_POLL_MS = 10000;
 
 // The two cookies X actually authenticates with; everything else is ad/telemetry noise.
 const REQUIRED_COOKIES = ["auth_token", "ct0"];
@@ -127,10 +131,13 @@ export default function Ops() {
     listGeneration.current += 1;
     expanded.current = false;
     load({ replace: true });
-    const timer = setInterval(load, 10000);
-    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subsystem]);
+
+  // Refreshes only while the tab is visible, and once on returning to it.
+  // `leading: false` because the effect above already loads on mount and on
+  // every filter change; the hook's own first call would double both.
+  usePoll(load, RUNS_POLL_MS, { leading: false });
 
   async function trigger(name) {
     setError("");

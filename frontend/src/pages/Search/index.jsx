@@ -15,6 +15,9 @@ import { Tab, TabList, TabPanel, Tabs } from "@/ui/tabs";
 import DeleteDialog from "./DeleteDialog";
 import QueryDialog from "./QueryDialog";
 import Workflow from "./Workflow";
+import { usePoll } from "@/usePoll";
+
+const SEARCHES_POLL_MS = 20000;
 
 const STATE_LABEL = {
   running: "Fetching",
@@ -110,12 +113,9 @@ export default function SearchWorkspace() {
     }
   }, []);
 
-  useEffect(() => {
-    loadSearches();
-    // The rail shows live state per query, so it has to keep up on its own.
-    const timer = setInterval(loadSearches, 20000);
-    return () => clearInterval(timer);
-  }, [loadSearches]);
+  // The rail shows live state per query, so it has to keep up on its own --
+  // but only while someone is looking at it.
+  usePoll(loadSearches, SEARCHES_POLL_MS);
 
   const loadResults = useCallback(
     async (url) => {

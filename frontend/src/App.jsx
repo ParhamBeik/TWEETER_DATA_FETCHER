@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
   Activity,
@@ -22,8 +22,29 @@ import Accounts from "./pages/Accounts";
 import Ops from "./pages/Ops";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import Dashboard from "./pages/Dashboard";
-import Analyze from "./pages/Analyze";
+import { Skeleton } from "@/ui/controls";
+
+// Only these two pull in recharts, and it is the single largest thing in the
+// bundle -- eager, it downloaded on the login screen for a chart nobody had
+// asked for yet. Both pages already render Skeletons while their data loads, so
+// the split shows the loading language they use anyway rather than inventing one.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Analyze = lazy(() => import("./pages/Analyze"));
+
+/** Matches the stat-tile rows both lazy pages open with. */
+function PageFallback() {
+  return (
+    <div className="flex flex-col gap-5">
+      <Skeleton className="h-16" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Skeleton className="h-20" />
+        <Skeleton className="h-20" />
+        <Skeleton className="h-20" />
+      </div>
+      <Skeleton className="h-64" />
+    </div>
+  );
+}
 
 // Order is the operator's order of attention: what came in, what you asked for,
 // then how the machine is doing. The dashboard used to be the landing page,
@@ -187,6 +208,10 @@ export default function App() {
         <BudgetRail />
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6">
+          {/* One boundary around the whole route table: only the two lazy
+              routes can suspend, and each already replaces this with its own
+              skeletons as soon as its chunk lands. */}
+          <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Navigate to="/feed" replace />} />
             <Route path="/pulse" element={<Navigate to="/dashboard" replace />} />
@@ -249,6 +274,7 @@ export default function App() {
             />
             <Route path="*" element={<Navigate to="/feed" replace />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </div>
