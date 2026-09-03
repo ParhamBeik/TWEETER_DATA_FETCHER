@@ -42,7 +42,7 @@ COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
 # worse than a red one. `--wait` blocks on the healthchecks already declared in
 # docker-compose.yml (gunicorn, all four celery containers, postgres, redis)
 # rather than reimplementing them here.
-if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
+if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300; then
   echo "FATAL: services did not become healthy" >&2
   "${COMPOSE[@]}" ps
   "${COMPOSE[@]}" logs --tail 50 web >&2
