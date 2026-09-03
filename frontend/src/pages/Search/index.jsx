@@ -89,16 +89,21 @@ export default function SearchWorkspace() {
 
   const selected = (searches || []).find((row) => String(row.id) === String(searchId)) || null;
 
+  // Returns the rail as the server just described it, or `null` when a newer
+  // request superseded this one. `null` and `[]` are not interchangeable here:
+  // callers navigate on the result, and reporting "no saved queries" for a
+  // response we merely chose to ignore would strand the operator on the empty
+  // workspace while their other queries still exist.
   const loadSearches = useCallback(async () => {
     const request = ++searchesRequestSeq.current;
     try {
       const data = await api("/searches/");
-      if (request !== searchesRequestSeq.current) return [];
+      if (request !== searchesRequestSeq.current) return null;
       setSearches(data.results || data);
       setError("");
       return data.results || data;
     } catch (e) {
-      if (request !== searchesRequestSeq.current) return [];
+      if (request !== searchesRequestSeq.current) return null;
       setError(e.message);
       setSearches([]);
       return [];
@@ -186,10 +191,17 @@ export default function SearchWorkspace() {
   }
 
   async function removeSearch() {
-    const removed = await api(`/searches/${selected.id}/`, { method: "DELETE" });
-    const remaining = await loadSearches();
+    const deleted = selected;
+    const removed = await api(`/searches/${deleted.id}/`, { method: "DELETE" });
+    // Fall back to the list we already hold when the 20s rail poll superseded
+    // this refresh, and filter the deleted row out either way -- a refresh that
+    // raced the DELETE can still describe it as present.
+    const refreshed = await loadSearches();
+    const remaining = (refreshed ?? searches ?? []).filter(
+      (row) => String(row.id) !== String(deleted.id),
+    );
     setNotice(
-      `Deleted "${selected.name}" — ${compact(removed.hits || 0)} result(s), ` +
+      `Deleted "${deleted.name}" — ${compact(removed.hits || 0)} result(s), ` +
         `${removed.fetch_runs || 0} run(s) and its schedule are gone.`,
     );
     navigate(remaining.length ? `/search/${remaining[0].id}` : "/search");

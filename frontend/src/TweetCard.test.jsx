@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import TweetCard from "./TweetCard";
 
 // Unit tests: TweetCard is a pure presentational component over one tweet object,
@@ -366,6 +366,59 @@ describe("TweetCard media", () => {
   it("renders nothing for an empty media list", () => {
     renderCard({ media: [] });
     expect(document.querySelector(".tweet-media")).toBeNull();
+  });
+});
+
+describe("TweetCard exclusive playback", () => {
+  // A feed stacks dozens of players and the browser will run every one of them
+  // at once, which is two soundtracks and no way to find the card that is
+  // talking. Only one may hold the floor -- except silent GIFs, which neither
+  // take it nor lose it.
+  const clip = (id) => ({ id, type: "video", url: `/poster-${id}.jpg`, src: `/clip-${id}.mp4` });
+  const gif = (id) => ({ ...clip(id), type: "animated_gif" });
+
+  function renderPair(firstMedia, secondMedia) {
+    render(
+      <>
+        <TweetCard tweet={{ ...baseTweet, id: "1", tweet_id: "1", media: [firstMedia] }} />
+        <TweetCard tweet={{ ...baseTweet, id: "2", tweet_id: "2", media: [secondMedia] }} />
+      </>,
+    );
+    const [first, second] = document.querySelectorAll("video");
+    // jsdom ships no media pipeline: `paused` never flips and pause() throws
+    // "not implemented", so the already-playing element is modelled by hand.
+    Object.defineProperty(first, "paused", { value: false, configurable: true });
+    first.pause = vi.fn();
+    return { first, second };
+  }
+
+  it("pauses the video already playing when another one starts", () => {
+    const { first, second } = renderPair(clip("m1"), clip("m2"));
+    fireEvent.play(second);
+    expect(first.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not pause the player that just started", () => {
+    const { second } = renderPair(clip("m1"), clip("m2"));
+    Object.defineProperty(second, "paused", { value: false, configurable: true });
+    second.pause = vi.fn();
+    fireEvent.play(second);
+    expect(second.pause).not.toHaveBeenCalled();
+  });
+
+  it("leaves a looping GIF running when a video starts", () => {
+    // Pausing one would strand a dead frame: a GIF renders without controls, so
+    // nothing on screen could start it again.
+    const { first, second } = renderPair(gif("m1"), clip("m2"));
+    expect(first).toHaveAttribute("data-autoloop");
+    fireEvent.play(second);
+    expect(first.pause).not.toHaveBeenCalled();
+  });
+
+  it("does not let a GIF stop the video that is playing", () => {
+    const { first, second } = renderPair(clip("m1"), gif("m2"));
+    fireEvent.play(second);
+    expect(first.pause).not.toHaveBeenCalled();
   });
 });
 

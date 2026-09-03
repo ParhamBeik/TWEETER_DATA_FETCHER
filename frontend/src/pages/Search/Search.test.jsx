@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -366,6 +366,52 @@ describe("deleting a query", () => {
       expect(api).toHaveBeenCalledWith("/searches/1/", { method: "DELETE" }),
     );
     expect(await screen.findByText(/4 result\(s\), 2 run\(s\) and its schedule are gone/)).toBeInTheDocument();
+  });
+
+  // Regression: the delete navigated to whatever the refresh returned, and the
+  // stale-response guard returns "nothing" for a request it decided to ignore.
+  // When the 20s rail poll landed first, the operator was thrown to the empty
+  // workspace while their other queries were still sitting in the rail.
+  it("lands on a surviving query when the rail poll wins the race", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    let releaseRefresh;
+    let listCalls = 0;
+    api.mockImplementation((path, init) => {
+      if (path === "/searches/1/" && init?.method === "DELETE") {
+        return Promise.resolve({ hits: 4, fetch_runs: 2 });
+      }
+      if (path === "/searches/") {
+        listCalls += 1;
+        if (listCalls === 1) return Promise.resolve({ results: [saved(1), saved(2)] });
+        // Call two is the refresh the delete awaits; hold it open so the poll
+        // that fires behind it supersedes it.
+        if (listCalls === 2) {
+          return new Promise((resolve) => {
+            releaseRefresh = () => resolve({ results: [saved(2)] });
+          });
+        }
+        return Promise.resolve({ results: [saved(2)] });
+      }
+      if (path.includes("/results/")) return Promise.resolve({ results: [], next: null });
+      if (path.includes("/runs/")) return Promise.resolve({ results: [], next: null });
+      return Promise.resolve({});
+    });
+
+    renderWorkspace();
+    await openDelete(user);
+    await user.type(screen.getByLabelText("Type the name to confirm"), "search 1");
+    await user.click(screen.getByRole("button", { name: "Delete search" }));
+    await waitFor(() => expect(typeof releaseRefresh).toBe("function"));
+
+    await act(() => vi.advanceTimersByTimeAsync(20000));
+    await act(async () => {
+      releaseRefresh();
+    });
+
+    expect(await screen.findByRole("heading", { name: "search 2" })).toBeInTheDocument();
+    expect(screen.queryByText("Pick a query")).toBeNull();
+    vi.useRealTimers();
   });
 });
 

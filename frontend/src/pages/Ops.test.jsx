@@ -270,6 +270,115 @@ describe("polling resilience", () => {
     await waitFor(() => expect(screen.getByText(/2 runs/i)).toBeInTheDocument());
   });
 
+  // Regression: the guard read the filter generation without taking a ticket of
+  // its own, so two overlapping polls of the same filter both applied. The
+  // slower one then ran its own setError("") over a live failure the newer one
+  // had just reported.
+  it("does not let a slow poll erase a newer poll's error", async () => {
+    let releaseSlow;
+    let runCalls = 0;
+    api.mockImplementation((path) => {
+      if (path === "/session/") return Promise.resolve(session());
+      if (path.startsWith("/runs/")) {
+        runCalls += 1;
+        if (runCalls === 1) return Promise.resolve({ results: [] });
+        if (runCalls === 2) {
+          return new Promise((resolve) => {
+            releaseSlow = () => resolve({ results: [] });
+          });
+        }
+        return Promise.reject(new Error("Service unavailable"));
+      }
+      return Promise.resolve({});
+    });
+
+    render(<Ops />);
+    await waitFor(() => expect(runCalls).toBe(1));
+
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    await waitFor(() => expect(typeof releaseSlow).toBe("function"));
+
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
+
+    await act(async () => {
+      releaseSlow();
+    });
+    expect(screen.getByText("Service unavailable")).toBeInTheDocument();
+  });
+
+  // Same root cause, different symptom: the list prepends each response ahead of
+  // the rows it kept, so a slow poll's page one landed above runs that only the
+  // newer response had -- newest-first order, with an older row on top.
+  it("keeps the newest response's ordering when polls overlap", async () => {
+    let releaseSlow;
+    let runCalls = 0;
+    api.mockImplementation((path) => {
+      if (path === "/session/") return Promise.resolve(session());
+      if (path.startsWith("/runs/")) {
+        runCalls += 1;
+        if (runCalls === 1) return Promise.resolve({ results: [run({ run_id: "r-old", target: "older" })] });
+        if (runCalls === 2) {
+          return new Promise((resolve) => {
+            releaseSlow = () => resolve({ results: [run({ run_id: "r-old", target: "older" })] });
+          });
+        }
+        return Promise.resolve({
+          results: [
+            run({ run_id: "r-new", target: "newest" }),
+            run({ run_id: "r-old", target: "older" }),
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<Ops />);
+    await waitFor(() => expect(runCalls).toBe(1));
+
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    await waitFor(() => expect(typeof releaseSlow).toBe("function"));
+
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    await screen.findByText("newest");
+
+    await act(async () => {
+      releaseSlow();
+    });
+    const targets = screen.getAllByText(/^(newest|older)$/).map((node) => node.textContent);
+    expect(targets).toEqual(["newest", "older"]);
+  });
+
+  // Regression: `load` learned to drop a superseded response, `loadMore` only
+  // learned it on the success path, so a failed page two painted an error over
+  // the filtered list that had already replaced it.
+  it("swallows a page-two failure that the filter change superseded", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    let rejectPage;
+    api.mockImplementation((path) => {
+      if (path === "/session/") return Promise.resolve(session());
+      if (path.includes("cursor=")) {
+        return new Promise((_resolve, reject) => {
+          rejectPage = () => reject(new Error("Session expired"));
+        });
+      }
+      if (path.startsWith("/runs/")) {
+        return Promise.resolve({ results: [run()], next: "/api/runs/?cursor=abc" });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<Ops />);
+    await user.click(await screen.findByRole("button", { name: /Load older runs/i }));
+    await waitFor(() => expect(typeof rejectPage).toBe("function"));
+
+    await user.selectOptions(screen.getByLabelText("Filter by subsystem"), "live");
+    await act(async () => {
+      rejectPage();
+    });
+    expect(screen.queryByText("Session expired")).toBeNull();
+  });
+
   it("stops polling once unmounted", async () => {
     routeApi();
     const { unmount } = render(<Ops />);

@@ -54,16 +54,27 @@ export default function Ops() {
   // ever re-reads the newest page, so once they have, its `next` cursor points
   // back at page two and must not overwrite where the list actually reaches.
   const expanded = useRef(false);
+  // Two separate clocks, because they invalidate different things. The filter
+  // generation says "this is a different list" and kills every request in
+  // flight, page one or not. The poll sequence only orders the 10s refreshes
+  // against each other: two overlapping polls used to both apply, so a slow one
+  // could clear the error banner a newer failed one had just set, and prepend
+  // its older page one above rows only the newer response had -- breaking the
+  // newest-first order. `loadMore` deliberately does not take a poll ticket, or
+  // a refresh landing first would silently discard the page the reader asked for.
   const listGeneration = useRef(0);
+  const pollSequence = useRef(0);
 
   async function load({ replace = false } = {}) {
     const generation = listGeneration.current;
+    const poll = ++pollSequence.current;
+    const superseded = () => generation !== listGeneration.current || poll !== pollSequence.current;
     try {
       const [data, health] = await Promise.all([
         api(subsystem ? `/runs/?subsystem=${subsystem}` : "/runs/"),
         api("/session/"),
       ]);
-      if (generation !== listGeneration.current) return;
+      if (superseded()) return;
       const fresh = data.results || [];
       setRuns((current) => {
         if (replace) return fresh;
@@ -79,7 +90,7 @@ export default function Ops() {
       // pinned an error banner to the page for the rest of the session.
       setError("");
     } catch (e) {
-      if (generation !== listGeneration.current) return;
+      if (superseded()) return;
       setError(e.message);
     }
   }
@@ -102,6 +113,9 @@ export default function Ops() {
       setRuns((current) => [...current, ...(data.results || [])]);
       setNext(data.next || null);
     } catch (e) {
+      // Same guard as the success path: without it, a page-two failure painted
+      // an error over a filtered list that `load` had already replaced.
+      if (generation !== listGeneration.current) return;
       setError(e.message);
     } finally {
       setLoadingMore(false);

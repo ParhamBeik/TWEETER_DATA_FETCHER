@@ -62,6 +62,28 @@ function playableSource(item) {
   return typeof item.src === "string" && item.src ? item.src : null;
 }
 
+/**
+ * Stop every other player before this one starts.
+ *
+ * A feed is dozens of stacked players and the browser is happy to run all of
+ * them at once, so starting a second post while the first was still talking
+ * gave two soundtracks and no way to tell which card to scroll back to. The
+ * document is the arbiter rather than a React context or a module-level
+ * "currently playing" ref: players appear in the feed, inside quoted posts, and
+ * behind the sensitive-media disclosure, and an element that unmounts mid-play
+ * would leave stale state pointing at a node that no longer exists.
+ *
+ * Silent looping GIFs are exempt on both sides -- they never claim the slot and
+ * are never stopped by one. They carry no audio, so they are not what makes
+ * this chaotic, and pausing one leaves a dead frame: a GIF renders without
+ * controls, so nothing on screen could start it again.
+ */
+function pauseOtherVideos(event) {
+  for (const other of document.querySelectorAll("video:not([data-autoloop])")) {
+    if (other !== event.currentTarget && !other.paused) other.pause();
+  }
+}
+
 const CELL = "media-cell relative overflow-hidden rounded-sm border border-paper-line bg-ink-900";
 const NOTE =
   "absolute bottom-1.5 left-1.5 rounded-xs bg-ink-900/85 px-1.5 py-0.5 font-mono text-2xs text-fg-muted";
@@ -109,6 +131,8 @@ function MediaVideo({ item, label, permalinkUrl, style }) {
         playsInline
         poster={item.url || undefined}
         aria-label={label}
+        data-autoloop={isGif ? "" : undefined}
+        onPlay={isGif ? undefined : pauseOtherVideos}
         // src on the element, not a <source> child: a failing <source> fires
         // `error` at itself and does not bubble, and once candidates run out the
         // media element enters NETWORK_NO_SOURCE *without* firing error at all.
