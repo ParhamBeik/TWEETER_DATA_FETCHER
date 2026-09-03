@@ -140,7 +140,14 @@ jobs:
               -o BatchMode=yes \
               -o ConnectTimeout=20 \
               "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-              /opt/apps/deploy_twitter.sh
+              'bash -s' << 'EOF'
+          set -e
+          if sudo -n true 2>/dev/null; then
+            sudo chown -R "$(id -u):$(id -g)" /opt/apps/ 2>/dev/null || true
+          fi
+          find /opt/apps/ -name .git -exec chmod -R u+rwX {} + 2>/dev/null || true
+          /opt/apps/deploy_twitter.sh
+          EOF
 
       - name: Discard the key
         if: always()
