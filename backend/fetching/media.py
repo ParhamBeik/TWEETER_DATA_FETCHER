@@ -22,7 +22,7 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.utils import timezone
 
-from tweets.models import MediaAsset, Tweet, TwitterUser
+from tweets.models import MediaAsset, PendingMedia, Tweet, TwitterUser
 
 logger = logging.getLogger(__name__)
 
@@ -215,52 +215,95 @@ def lookup_local_urls(remote_urls: list[str]) -> dict[str, str]:
     return found
 
 
+# How many times a URL is tried before it is left alone. Media disappears from
+# X routinely -- deleted posts, expired video variants -- and without a ceiling
+# those rows sit at the head of the queue being retried every 120 seconds
+# forever, which is the failure the queue was supposed to end.
+MAX_ATTEMPTS = 3
+
+
+def enqueue_media(items: list[tuple[str, str]]) -> int:
+    """Record media URLs that will need downloading. Returns rows added.
+
+    Called from ingest, so the archiver never has to go looking for work.
+    Idempotent by construction: remote_url is unique and conflicts are ignored,
+    so re-ingesting a tweet does not duplicate or reset its queue entry.
+    """
+    rows = [
+        PendingMedia(remote_url=url, tweet_id=str(tweet_id or "")[:64])
+        for url, tweet_id in items
+        if url and is_allowed_photo_url(url)
+    ]
+    if not rows:
+        return 0
+    created = PendingMedia.objects.bulk_create(rows, ignore_conflicts=True)
+    return len(created)
+
+
+def enqueue_from_tweet(extras, tweet_id: str = "") -> int:
+    """Queue every archivable URL on one tweet."""
+    return enqueue_media([(url, tweet_id) for url in photo_urls_from_extras(extras)])
+
+
 def archive_batch(limit: int) -> int:
-    """Download up to `limit` missing photos. Returns how many were stored."""
+    """Download up to `limit` missing files. Returns how many were stored.
+
+    Constant work per tick: the queue is read with a LIMIT, not searched for.
+    """
     if limit <= 0:
         return 0
     root = Path(settings.MEDIA_ROOT)
     root.mkdir(parents=True, exist_ok=True)
-    ready = {
-        asset.remote_url
-        for asset in MediaAsset.objects.only("remote_url", "relative_path")
-        if (root / asset.relative_path).is_file()
-    }
     saved = 0
-    tried: set[str] = set()
-    # Avatars first: there are a few dozen of them against tens of thousands of
-    # post images, they are the ones rendered on every card, and going last
-    # meant a permanent photo backlog would starve them forever.
-    for url in avatar_urls():
-        if url in ready or url in tried:
-            continue
-        tried.add(url)
-        if _store(url, root) is None:
-            continue
-        ready.add(url)
-        saved += 1
-        if saved >= limit:
-            return saved
-    # Photos backfill across the whole archive, as they always have. Video is
-    # forward-only: the back catalogue would be a large, unpredictable download
-    # for clips X has mostly stopped serving anyway.
-    video_cutoff = timezone.now() - timedelta(days=VIDEO_BACKFILL_DAYS)
-    for tweet in (
-        Tweet.objects.exclude(extras={}).only("extras", "ingested_at").iterator(chunk_size=200)
-    ):
-        recent = tweet.ingested_at is not None and tweet.ingested_at >= video_cutoff
-        for url in photo_urls_from_extras(tweet.extras):
-            if url in ready or url in tried or not is_allowed_photo_url(url):
+
+    # Avatars first, and still resolved directly rather than queued: there are a
+    # few dozen against tens of thousands of post images, they render on every
+    # card, and going last meant a permanent photo backlog starved them forever.
+    # A new profile picture is a new URL, so this also handles rotation.
+    wanted = avatar_urls()
+    if wanted:
+        have = set(
+            MediaAsset.objects.filter(remote_url__in=wanted).values_list("remote_url", flat=True)
+        )
+        for url in wanted:
+            if url in have or (root / relative_path_for(url)).is_file():
                 continue
-            if _is_video_url(url) and not recent:
-                continue
-            tried.add(url)
             if _store(url, root) is None:
                 continue
-            ready.add(url)
             saved += 1
             if saved >= limit:
                 return saved
+
+    # Then the queue, oldest first. Rows that turn out to be already archived
+    # (a second tweet carrying a photo we have) are dropped without a download.
+    pending = list(
+        PendingMedia.objects.filter(attempts__lt=MAX_ATTEMPTS)[: (limit - saved) * 2]
+    )
+    if not pending:
+        return saved
+    already = set(
+        MediaAsset.objects.filter(
+            remote_url__in=[row.remote_url for row in pending]
+        ).values_list("remote_url", flat=True)
+    )
+    done: list[int] = []
+    for row in pending:
+        if saved >= limit:
+            break
+        if row.remote_url in already:
+            done.append(row.pk)
+            continue
+        if _store(row.remote_url, root) is None:
+            # Counted, not deleted: MAX_ATTEMPTS decides when to stop, and the
+            # row stays afterwards so the reason is inspectable.
+            PendingMedia.objects.filter(pk=row.pk).update(
+                attempts=row.attempts + 1, last_error="download failed"
+            )
+            continue
+        done.append(row.pk)
+        saved += 1
+    if done:
+        PendingMedia.objects.filter(pk__in=done).delete()
     return saved
 
 
