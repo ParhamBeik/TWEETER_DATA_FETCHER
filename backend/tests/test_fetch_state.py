@@ -202,7 +202,7 @@ def test_session_health_only_counts_pools_for_endpoints_we_call():
 
 
 @pytest.mark.django_db
-def test_run_artifacts_persist_raw_pages_state_ledger_and_retention():
+def test_run_artifacts_persist_raw_pages_state_and_ledger():
     root = Path(tempfile.mkdtemp(prefix="tdf_artifacts_"))
     raw = root / "data" / "historical_live" / "raw" / "UserTweets" / "jack" / "batch"
     raw.mkdir(parents=True)
@@ -224,6 +224,11 @@ def test_run_artifacts_persist_raw_pages_state_ledger_and_retention():
         encoding="utf-8",
     )
     run = FetchRun.objects.create(run_id="test-run", subsystem="historical")
+    # An already-expired page from an earlier run. Persisting artifacts must
+    # leave it alone: retention belongs to fetching.tasks.purge_old_raw_pages,
+    # on the control queue, and not to the fetch worker's wall-clock budget.
+    # This used to be purged here by an uncapped loop at a hardcoded 7 days,
+    # which quietly overrode RAW_PAGE_RETENTION_DAYS.
     old = RawPage.objects.create(endpoint="Old", account="old", batch="old", page_number=1)
     RawPage.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=8))
 
@@ -233,8 +238,37 @@ def test_run_artifacts_persist_raw_pages_state_ledger_and_retention():
     assert summary["raw_pages"] == 1
     assert ledger["UserTweets:404"]["count"] == 1
     assert RawPage.objects.filter(endpoint="UserTweets", fetch_run=run).exists()
-    assert not RawPage.objects.filter(pk=old.pk).exists()
+    assert RawPage.objects.filter(pk=old.pk).exists()
     assert EndpointState.objects.get(account="jack", endpoint="UserTweets").data["status"] == "completed"
+
+
+@pytest.mark.django_db
+def test_raw_page_keep_statuses_gates_persistence(monkeypatch):
+    """The gate the census exists to inform: only listed statuses write pages.
+
+    Empty (today's setting) means keep everything, which is the baseline the
+    census measures against. Once a week of `raw_page_census` lines says what
+    each status costs, setting the frozenset is the whole change.
+    """
+    root = Path(tempfile.mkdtemp(prefix="tdf_keep_"))
+    raw = root / "data" / "historical_live" / "raw" / "UserTweets" / "jack" / "batch"
+    raw.mkdir(parents=True)
+    (raw / "page_1.json").write_text(json.dumps({"data": {"ok": True}}), encoding="utf-8")
+    reports = root / "data" / "historical_live" / "reports"
+    reports.mkdir(parents=True)
+    (reports / "run.json").write_text(
+        json.dumps({"summary": {"successful_endpoints": 1, "partial_endpoints": 0, "failed_endpoints": 0}}),
+        encoding="utf-8",
+    )
+    run = FetchRun.objects.create(run_id="keep-run", subsystem="historical")
+
+    monkeypatch.setattr(runner, "RAW_PAGE_KEEP_STATUSES", frozenset({"failed"}))
+    summary, _ledger, status = runner._persist_artifacts(root, "historical", run, 0)
+
+    # A healthy run under a failed-only rule writes nothing, and says so.
+    assert status == "completed"
+    assert summary["raw_pages"] == 0
+    assert not RawPage.objects.filter(fetch_run=run).exists()
 
 
 @pytest.mark.django_db
