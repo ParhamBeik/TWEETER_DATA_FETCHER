@@ -746,7 +746,7 @@ class SearchTimelineMonitor:
         return False, None
 
     def should_fetch_search(self, search_def: Dict[str, Any], product: str, interval_seconds: int, force_run: bool = False) -> bool:
-        # اگر در حالت force_run هستیم، تایمرها کاملا نادیده گرفته می‌شوند
+        # force_run ignores the timers entirely.
         if force_run:
             return True
             
@@ -1061,7 +1061,8 @@ class SearchTimelineMonitor:
             product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
             policy = self._policy_for_search(search_def)
             
-            # پارامتر force_run اینجا به تابع چک‌کننده پاس داده می‌شود
+            # force_run is passed through to the due-check rather than short-
+            # circuiting it here, so one code path decides what "due" means.
             if not self.should_fetch_search(
                 search_def,
                 product,

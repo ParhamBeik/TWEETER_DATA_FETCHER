@@ -104,7 +104,6 @@ class APIManager:
     def _resolve_config_path(config_path: Optional[str]) -> Path:
         return resolve_config_path(config_path)
 
-    # مسیر پیش‌فرض کانفیگ اصلاح شد
     def __init__(
         self,
         config_path: Optional[str] = None,

@@ -112,7 +112,10 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 # Archived photos. A compose volume in production; never the fetcher scratch
 # tree, which is deleted after every run.
-MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", str(BASE_DIR / "media")))
+# `or` rather than a get() default: compose passes an unset .env key through as
+# an empty string, and Path("") resolves to the working directory -- which would
+# scatter archived media wherever the process happened to start.
+MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT") or (BASE_DIR / "media"))
 MEDIA_URL = "/media/"
 # Photos per archive_media tick. The control worker is solo; a giant job would
 # starve the search dispatcher the same way a shared queue once did.
@@ -148,6 +151,50 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
 }
+
+# --- Serving behind a TLS-terminating proxy ---------------------------------
+#
+# In production Caddy terminates HTTPS on the host and proxies to the frontend
+# nginx over plain HTTP, which proxies /api/ to gunicorn. Django therefore sees
+# an http:// request and, without the header below, believes the connection was
+# never encrypted -- which makes request.is_secure() false, secure cookies
+# pointless, and CSRF origin checks disagree with the browser.
+#
+# nginx forwards the scheme Caddy reported (see frontend/nginx.conf), so this
+# header is the proxy's word, not the client's.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Off by default so `runserver` and the plain-HTTP compose stack keep working;
+# set DJANGO_SECURE_SSL=1 in the production .env, where TLS really is terminated
+# upstream. Marking a cookie Secure on a site served over http makes the browser
+# discard it, so this cannot be unconditional.
+_SECURE_SSL = os.environ.get("DJANGO_SECURE_SSL", "0") == "1"
+SESSION_COOKIE_SECURE = _SECURE_SSL
+CSRF_COOKIE_SECURE = _SECURE_SSL
+SESSION_COOKIE_HTTPONLY = True
+# The admin is the only session-cookie surface here and it is same-origin, so
+# Lax costs nothing and blocks cross-site form posts.
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SECURE_HSTS_SECONDS = 31536000 if _SECURE_SSL else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _SECURE_SSL
+SECURE_HSTS_PRELOAD = _SECURE_SSL
+SECURE_REFERRER_POLICY = "same-origin"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+# SECURE_SSL_REDIRECT stays off deliberately, and `manage.py check --deploy`
+# will keep saying so. Caddy already answers :80 with a redirect, so Django
+# redirecting as well only adds a hop -- and if the proxy header were ever
+# misconfigured, an app-level redirect turns that into an infinite loop instead
+# of a page served over the wrong scheme.
+# Django >= 4 checks the Origin header against this list on every unsafe request,
+# and an https:// origin never matches an http:// ALLOWED_HOSTS entry -- so
+# without it the admin login form 403s the moment it is served over HTTPS.
+# Comma-separated, scheme included: https://your.domain
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if o.strip()
+]
 
 # Never all-origins: this API is token-authenticated and drives a shared X
 # session, so an arbitrary origin must not be able to call it.

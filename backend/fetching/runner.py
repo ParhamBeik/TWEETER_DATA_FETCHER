@@ -207,10 +207,35 @@ def _persist_endpoint_states(root: Path, subsystem: str) -> int:
     return count
 
 
+# Raw pages are JSONB blobs measured in hundreds of kilobytes, so they are
+# flushed in small groups: one bulk upsert per page was a round trip each, and
+# holding every page of a run in memory before a single write is how a worker
+# with a 512m ceiling gets OOM-killed mid-cycle.
+_RAW_PAGE_WRITE_CHUNK = 100
+
+
+def _flush_raw_pages(rows: list[RawPage]) -> int:
+    if not rows:
+        return 0
+    RawPage.objects.bulk_create(
+        rows,
+        update_conflicts=True,
+        unique_fields=["endpoint", "account", "batch", "page_number"],
+        update_fields=["payload", "fetch_run"],
+    )
+    return len(rows)
+
+
 def _persist_raw_pages(root: Path, subsystem: str, run: FetchRun) -> int:
     sub = "historical_live" if subsystem in ("historical", "live") else subsystem
     raw_root = root / "data" / sub / "raw"
     count = 0
+    pending: list[RawPage] = []
+    # Postgres refuses an ON CONFLICT DO UPDATE that touches one row twice in a
+    # single statement, and the key is derived from the path (`page_1.json` and
+    # `page_01.json` both read as page 1), so collisions are deduplicated before
+    # they can reach the batch rather than aborting the whole write.
+    seen: set[tuple[str, str, str, int]] = set()
     for path in raw_root.rglob("page_*.json") if raw_root.exists() else ():
         payload = _read_json(path)
         if not isinstance(payload, dict):
@@ -225,14 +250,24 @@ def _persist_raw_pages(root: Path, subsystem: str, run: FetchRun) -> int:
         match = re.search(r"(\d+)$", path.stem)
         if not match:
             continue
-        RawPage.objects.update_or_create(
-            endpoint=endpoint,
-            account=account,
-            batch=batch,
-            page_number=int(match.group(1)),
-            defaults={"payload": payload, "fetch_run": run},
+        key = (endpoint, account, batch, int(match.group(1)))
+        if key in seen:
+            continue
+        seen.add(key)
+        pending.append(
+            RawPage(
+                endpoint=endpoint,
+                account=account,
+                batch=batch,
+                page_number=key[3],
+                payload=payload,
+                fetch_run=run,
+            )
         )
-        count += 1
+        if len(pending) >= _RAW_PAGE_WRITE_CHUNK:
+            count += _flush_raw_pages(pending)
+            pending = []
+    count += _flush_raw_pages(pending)
     cutoff = timezone.now() - timedelta(days=7)
     while True:
         stale_ids = list(
