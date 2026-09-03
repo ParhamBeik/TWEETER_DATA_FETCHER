@@ -114,7 +114,15 @@ class TweetMetric(models.Model):
     captured_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=["tweet", "-captured_at"], name="tweets_twee_tweet_i_7c1e4a_idx")]
+        indexes = [
+            models.Index(fields=["tweet", "-captured_at"], name="tweets_twee_tweet_i_7c1e4a_idx"),
+            # The velocity views scan this table by capture time across every
+            # tweet ("what gained engagement during this window"), which the
+            # composite above cannot serve -- it leads on tweet_id, so a bare
+            # range on captured_at falls back to a full scan of what is already
+            # one of the fastest-growing tables here.
+            models.Index(fields=["captured_at"], name="tweets_metric_captured_idx"),
+        ]
 
 
 class Search(models.Model):

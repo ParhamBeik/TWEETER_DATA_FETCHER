@@ -10,7 +10,7 @@ from io import StringIO
 from fetcher.processing import TZ as FEED_TZ
 
 from django.db import connection
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.http import StreamingHttpResponse
 from django.utils import timezone
@@ -435,6 +435,14 @@ class SearchViewSet(viewsets.ModelViewSet):
             # N -- schedule_for takes the flag pre-computed for exactly this.
             is_running_annotated=Exists(
                 FetchRun.objects.filter(search=OuterRef("pk"), status="running")
+            ),
+            # Which run is this query's newest, as a pk the serializer loads for
+            # the whole page in one query. `last_run` was the one field on this
+            # list still costing a query per row.
+            last_run_pk=Subquery(
+                FetchRun.objects.filter(search=OuterRef("pk"))
+                .order_by("-started_at", "-id")
+                .values("pk")[:1]
             ),
         )
         product = self.request.query_params.get("product")

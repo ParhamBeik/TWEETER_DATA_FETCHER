@@ -1,6 +1,11 @@
 from rest_framework import serializers
 
-from fetching.accounts import account_ops, live_state_map
+from fetching.accounts import (
+    account_ops,
+    live_state_map,
+    recent_tweet_counts,
+    watermark_map,
+)
 from fetching.media import (
     avatar_urls,
     lookup_local_urls,
@@ -9,6 +14,22 @@ from fetching.media import (
 )
 
 from .models import FetchRun, Search, SearchTweet, Tweet, TwitterUser
+
+
+def page_rows(serializer) -> list:
+    """Every instance being serialized alongside this one, or [].
+
+    A `many=True` serializer builds one child and reuses it for the whole page,
+    so the child can reach the page through its parent and resolve a per-page
+    lookup once instead of once per row. Empty for a single-object serializer,
+    which is the signal to fall back to a per-object lookup rather than cache a
+    map built from one row and hand it to the next.
+    """
+    parent = serializer.parent
+    rows = parent.instance if isinstance(parent, serializers.ListSerializer) else None
+    if rows is None:
+        return []
+    return list(rows)
 
 
 class TwitterUserSerializer(serializers.ModelSerializer):
@@ -63,12 +84,35 @@ class AccountOpsSerializer(TwitterUserSerializer):
             "watermarks",
         ]
 
+    def _ops_maps(self, instance) -> tuple[dict, dict]:
+        """Watermarks and recent-post counts for the whole roster page.
+
+        The roster is served unpaginated, so resolving these per row was two
+        queries per account -- ~130 for a 64-account roster. Cached on the child
+        serializer, which `many=True` reuses for every row.
+        """
+        cache = getattr(self, "_ops_maps_cache", None)
+        if cache is not None:
+            return cache
+        rows = page_rows(self) or [instance]
+        handles = [row.handle for row in rows]
+        cache = self._ops_maps_cache = (
+            watermark_map(handles),
+            recent_tweet_counts(handles),
+        )
+        return cache
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         live = self.context.get("live_state")
         if live is None:
             live = live_state_map()
-        data.update(account_ops(instance, live))
+        watermarks, recent_counts = self._ops_maps(instance)
+        data.update(
+            account_ops(
+                instance, live, watermarks=watermarks, recent_counts=recent_counts
+            )
+        )
         last_checked = data.get("last_checked_at")
         if last_checked and hasattr(last_checked, "isoformat"):
             data["last_checked_at"] = last_checked.isoformat()
@@ -129,6 +173,31 @@ class BaseTweetSerializer(serializers.ModelSerializer):
         payload = obj.payload if isinstance(getattr(obj, "payload", None), dict) else {}
         return payload.get(key, default)
 
+    @staticmethod
+    def _extras_of(row) -> dict:
+        extras = getattr(row, "extras", None)
+        return extras if isinstance(extras, dict) else {}
+
+    def _asset_map(self, obj) -> dict:
+        """remote photo/video URL → local path, for the whole page in one query.
+
+        Same reasoning as `TwitterUserSerializer._archived_avatars`, which was
+        already batched: resolving this per row meant one MediaAsset query per
+        tweet on the feed -- the single hottest endpoint here, and one the
+        console re-polls every 30 seconds.
+        """
+        cache = getattr(self, "_asset_cache", None)
+        if cache is not None:
+            return cache
+        rows = page_rows(self)
+        if not rows:
+            # Single-object serializer: no page to batch over, and caching a map
+            # built from this row would be wrong for the next one.
+            return lookup_local_urls(photo_urls_from_extras(self._extras_of(obj)))
+        urls = [url for row in rows for url in photo_urls_from_extras(self._extras_of(row))]
+        cache = self._asset_cache = lookup_local_urls(urls)
+        return cache
+
     def _rewritten_extras(self, obj) -> dict:
         """Prefer locally archived photo URLs; fall back to the X URL."""
         cache = getattr(self, "_rewritten_extras_cache", None)
@@ -137,8 +206,10 @@ class BaseTweetSerializer(serializers.ModelSerializer):
         key = obj.pk
         if key in cache:
             return cache[key]
-        extras = obj.extras if isinstance(obj.extras, dict) else {}
-        assets = lookup_local_urls(photo_urls_from_extras(extras))
+        extras = self._extras_of(obj)
+        # The map covers the whole page; rewrite_media_blob only swaps URLs it
+        # actually finds, so passing more than this row needs is harmless.
+        assets = self._asset_map(obj)
         cache[key] = rewrite_media_blob(extras, assets) if assets else extras
         return cache[key]
 
@@ -225,8 +296,32 @@ class SearchSerializer(serializers.ModelSerializer):
 
         return schedule_for(obj, running=getattr(obj, "is_running_annotated", None))
 
+    def _last_runs(self, obj):
+        """pk → FetchRun for every search on the page, in one query.
+
+        The viewset annotates `last_run_pk` (a correlated subquery) for exactly
+        this; without the batch each row still cost its own `.runs.first()`, and
+        the console re-polls this list every 20 seconds.
+        """
+        cache = getattr(self, "_last_run_cache", None)
+        if cache is not None:
+            return cache
+        rows = page_rows(self) or [obj]
+        pks = [
+            pk for pk in (getattr(row, "last_run_pk", None) for row in rows) if pk
+        ]
+        cache = self._last_run_cache = {
+            run.pk: run for run in FetchRun.objects.filter(pk__in=pks)
+        }
+        return cache
+
     def get_last_run(self, obj):
-        run = obj.runs.order_by("-started_at").first()
+        # `last_run_pk` is absent on a bare SearchSerializer(search); fall back to
+        # the direct lookup so this stays usable outside the list view.
+        if hasattr(obj, "last_run_pk"):
+            run = self._last_runs(obj).get(obj.last_run_pk)
+        else:
+            run = obj.runs.order_by("-started_at").first()
         if run is None:
             return None
         return {

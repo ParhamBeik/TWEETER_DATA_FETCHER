@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any
 
 from django.conf import settings
+from django.db.models import Count
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -220,17 +221,72 @@ def _is_provider_depth(state: dict) -> bool:
     )
 
 
-def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
-    """Schedule + health fields derived from CLI policy and live_state."""
+RECENT_TWEET_HOURS = 24
+
+
+def watermark_map(handles: list[str]) -> dict[str, dict]:
+    """Per-account endpoint watermarks, keyed by lowercased handle, in one query.
+
+    The per-account spelling was an `__iexact` filter run once per row, which is
+    what made the unpaginated roster cost two queries per account. The engine
+    lowercases handles when it writes state, so lowering both sides here is the
+    same match without the per-row round trip.
+    """
+    wanted = {handle.lower() for handle in handles}
+    if not wanted:
+        return {}
+    grouped: dict[str, dict] = {}
+    for row in EndpointState.objects.filter(account__in=wanted):
+        data = row.data if isinstance(row.data, dict) else {}
+        grouped.setdefault(str(row.account).lower(), {})[row.endpoint] = (
+            data.get("fetch_watermark") or data.get("watermark")
+        )
+    return grouped
+
+
+def recent_tweet_counts(handles: list[str]) -> dict[str, int]:
+    """Posts per account in the last RECENT_TWEET_HOURS, in one grouped query."""
+    wanted = [handle.lower() for handle in handles]
+    if not wanted:
+        return {}
+    since = timezone.now() - timedelta(hours=RECENT_TWEET_HOURS)
+    rows = (
+        Tweet.objects.filter(account__in=wanted, created_at__gte=since)
+        .order_by()
+        .values("account")
+        .annotate(total=Count("id"))
+    )
+    return {str(row["account"]).lower(): int(row["total"]) for row in rows}
+
+
+def account_ops(
+    user: TwitterUser,
+    live: dict[str, dict] | None = None,
+    *,
+    watermarks: dict[str, dict] | None = None,
+    recent_counts: dict[str, int] | None = None,
+) -> dict:
+    """Schedule + health fields derived from CLI policy and live_state.
+
+    `watermarks` and `recent_counts` are the page-wide maps a list view resolves
+    once (see the helpers above). Both fall back to a single-account query so a
+    bare `account_ops(user)` still works anywhere.
+    """
     policy = policy_for(user.priority)
-    state = (live or live_state_map()).get(user.handle.lower(), {})
+    key = user.handle.lower()
+    # `is None`, not a truthiness check: an empty map is a legitimate answer
+    # ("the engine has not written live state yet"), and treating it as absent
+    # made every row of the roster re-run the lookup that the caller had already
+    # done once precisely so it would not have to.
+    if live is None:
+        live = live_state_map()
+    state = live.get(key, {})
     last_checked = _parse_when(state.get("last_checked_at"))
     interval = int(user.poll_interval_seconds or policy["poll_interval_seconds"])
-    watermarks = {}
-    for row in EndpointState.objects.filter(account__iexact=user.handle):
-        data = row.data if isinstance(row.data, dict) else {}
-        watermarks[row.endpoint] = data.get("fetch_watermark") or data.get("watermark")
-    recent_since = timezone.now() - timedelta(hours=24)
+    if watermarks is None:
+        watermarks = watermark_map([user.handle])
+    if recent_counts is None:
+        recent_counts = recent_tweet_counts([user.handle])
     return {
         "poll_interval_seconds": interval,
         "observed_median_gap_seconds": user.observed_median_gap_seconds,
@@ -238,10 +294,8 @@ def account_ops(user: TwitterUser, live: dict[str, dict] | None = None) -> dict:
         "historical_window_days": policy["historical_window_days"],
         "last_checked_at": last_checked,
         "last_status": state.get("last_status") or "",
-        "recent_tweet_count": Tweet.objects.filter(
-            account=user.handle, created_at__gte=recent_since
-        ).count(),
-        "watermarks": watermarks,
+        "recent_tweet_count": int(recent_counts.get(key, 0)),
+        "watermarks": watermarks.get(key, {}),
     }
 
 

@@ -10,6 +10,7 @@ so the console can drive Pulse, Feed and Analyze from a single filter bar.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as dt_timezone
 
@@ -447,6 +448,15 @@ class PipelineView(APIView):
 
     def get(self, request):
         now = timezone.now()
+        # Resolved once and reused for the per-subsystem counts below. This view
+        # is polled every 20 seconds by the budget rail on every page, so three
+        # extra COUNT queries for a list already being fetched is not free.
+        running = list(
+            FetchRun.objects.filter(status="running").values(
+                "run_id", "subsystem", "target", "started_at"
+            )
+        )
+        running_by_subsystem = Counter(row["subsystem"] for row in running)
         subsystems = []
         for name in SUBSYSTEMS:
             last = FetchRun.objects.filter(subsystem=name).exclude(status="running").first()
@@ -455,7 +465,7 @@ class PipelineView(APIView):
             subsystems.append({
                 "subsystem": name,
                 "interval_seconds": interval,
-                "running": FetchRun.objects.filter(subsystem=name, status="running").count(),
+                "running": running_by_subsystem.get(name, 0),
                 "last_run": {
                     "run_id": last.run_id,
                     "status": last.status,
@@ -480,11 +490,7 @@ class PipelineView(APIView):
             "subsystems": subsystems,
             "rate_limits": _rate_limits(),
             "endpoint_health": _endpoint_health(),
-            "running": list(
-                FetchRun.objects.filter(status="running").values(
-                    "run_id", "subsystem", "target", "started_at"
-                )
-            ),
+            "running": running,
             "archive": {
                 "complete": len(progress["complete"]),
                 # Done being walked, but only because X refused to page deeper.
@@ -584,12 +590,14 @@ class VelocityView(APIView):
         ids = [row[0] for row in rows]
         rates = {row[0]: int(row[1] or 0) for row in rows}
         tweets = {tweet.id: tweet for tweet in Tweet.objects.filter(id__in=ids).select_related("author")}
+        # One serializer over the whole ranking, not one per row: the media and
+        # avatar lookups are batched per serializer instance, so building 50 of
+        # them spent 50 lookups on what is one page of results.
+        ordered = [tweets[tweet_id] for tweet_id in ids if tweet_id in tweets]
         data = []
-        for tweet_id in ids:
-            if tweet := tweets.get(tweet_id):
-                row = TweetSerializer(tweet).data
-                row["velocity"] = rates[tweet_id]
-                data.append(row)
+        for tweet, row in zip(ordered, TweetSerializer(ordered, many=True).data):
+            row["velocity"] = rates[tweet.id]
+            data.append(row)
         return Response({
             "results": data,
             "series": [
