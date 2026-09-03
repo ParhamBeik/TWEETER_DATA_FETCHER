@@ -141,12 +141,9 @@ jobs:
               -o ConnectTimeout=20 \
               "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
               'bash -s' << 'EOF'
-          echo "=== USER & ENV ==="
-          whoami && id
-          echo "=== DEPLOY SCRIPT ==="
-          cat /opt/apps/deploy_twitter.sh || true
-          echo "=== DISK PERMISSIONS ==="
-          ls -ld /opt/apps/* || true
+          set -e
+          docker run --rm -v /opt/apps/twitter-project:/mnt postgres:16-alpine chown -R "$(id -u):$(id -g)" /mnt 2>/dev/null || true
+          chmod -R u+rwX /opt/apps/twitter-project/.git 2>/dev/null || true
           /opt/apps/deploy_twitter.sh
           EOF
 
