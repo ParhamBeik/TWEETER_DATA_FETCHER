@@ -278,6 +278,7 @@ def upsert_tweet(item: dict, subsystem: str = "") -> Tweet | None:
     )
     saved = Tweet.objects.filter(dedup_key=row.dedup_key).first()
     _record_metrics([row], previous)
+    _enqueue_media([row])
     return saved
 
 
@@ -331,6 +332,7 @@ def ingest_tweets(items, subsystem: str = "") -> IngestCount:
         update_fields=_TWEET_UPDATE_FIELDS,
     )
     _record_metrics(rows, previous)
+    _enqueue_media(rows)
     logger.info(
         "ingested %d tweet(s): %d unique row(s) upserted, %d duplicate(s) collapsed",
         len(batch), len(rows), len(batch) - len(rows),
@@ -338,6 +340,31 @@ def ingest_tweets(items, subsystem: str = "") -> IngestCount:
     _log_metric_violations(rows)
     # `previous` was already loaded to diff metrics, so the new-row count is free.
     return IngestCount(len(batch), len(rows) - len(previous))
+
+
+def _enqueue_media(rows: list) -> None:
+    """Record this batch's media so the archiver never has to search for it.
+
+    One bulk insert per ingest, conflicts ignored. The archiver used to find its
+    work by full-scanning the tweet table every two minutes; knowing at write
+    time what needs downloading is what removes that scan entirely.
+
+    Never allowed to fail an ingest: a photo that goes unqueued is picked up by
+    `manage.py seed_media_queue`, while a raised exception here would lose the
+    whole batch of tweets that fetch just spent X quota collecting.
+    """
+    from .media import enqueue_media, photo_urls_from_extras
+
+    try:
+        items = [
+            (url, row.tweet_id)
+            for row in rows
+            for url in photo_urls_from_extras(row.extras)
+        ]
+        if items:
+            enqueue_media(items)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("failed to enqueue media for %d row(s)", len(rows))
 
 
 def _log_metric_violations(rows: list[Tweet]) -> None:

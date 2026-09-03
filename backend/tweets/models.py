@@ -367,6 +367,42 @@ class MediaAsset(models.Model):
         return self.relative_path
 
 
+class PendingMedia(models.Model):
+    """A media URL known to need downloading, but not downloaded yet.
+
+    The archiver used to *search* for work: every tick it stat-ed every
+    MediaAsset file and then full-scanned the tweet table, loading the JSONB
+    extras column, to find at most a handful of missing URLs. It restarted from
+    the top each time, so once the front of the archive was complete it re-walked
+    all of it before reaching anything new -- O(archive) work every 120 seconds,
+    forever, to do a constant amount of downloading.
+
+    Recording the work at ingest instead makes the archiver a queue consumer.
+
+    `attempts` is what keeps a permanently-dead URL (deleted media, a 404) from
+    sitting at the head of the queue being retried on every tick for the life of
+    the deployment. Rows are kept after they die rather than deleted, so the
+    reason is inspectable and a re-enqueue does not silently resurrect them.
+    """
+
+    remote_url = models.URLField(max_length=1000, unique=True)
+    # Which tweet first wanted it, for diagnosis only -- the same URL can be
+    # reachable from several tweets, and the first one to ask is enough context.
+    tweet_id = models.CharField(max_length=64, blank=True, default="")
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Oldest first: the queue drains in the order things were seen, so a
+        # burst of new posts cannot starve what was already waiting.
+        ordering = ["id"]
+        indexes = [models.Index(fields=["attempts", "id"], name="tweets_pendingmedia_idx")]
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return self.remote_url
+
+
 class ExportJob(models.Model):
     """One requested feed export, produced off the request thread.
 
