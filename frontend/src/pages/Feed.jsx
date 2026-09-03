@@ -37,6 +37,11 @@ const POST_TYPES = [
   { value: "quote", label: "Quotes" },
 ];
 
+// Export polling. The ceiling matters more than the interval: a job that never
+// finishes has to end as a message, not a spinner that runs until the tab dies.
+const EXPORT_POLL_MS = 1500;
+const EXPORT_POLL_LIMIT = 120; // ~3 minutes
+
 const DEFAULTS = {
   sort: "latest",
   window: "today",
@@ -89,6 +94,10 @@ export default function Feed() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState([]);
   const [draftQuery, setDraftQuery] = useState(filters.q);
+  // Which format is currently being built, so the button can say so. An export
+  // is now a job, and a button that looks idle while one runs invites a second.
+  const [exporting, setExporting] = useState("");
+  const [notice, setNotice] = useState("");
 
   // Monotonic id for the active query. A page-append that is still in flight when
   // the user re-filters belongs to the previous query, so its rows must be
@@ -189,27 +198,60 @@ export default function Feed() {
     setPending([]);
   }
 
+  // The export is built on a worker, not streamed out of the request. A
+  // full-archive extract used to hold one of two gunicorn workers for its whole
+  // duration, so two at once took the console down for everyone. The cost of
+  // that fix is that the UI has to wait for a job rather than a response.
   async function downloadExport(fmt) {
-    const params = feedQuery(filters);
-    params.set("format", fmt);
-    let url;
+    setExporting(fmt);
+    setError("");
     try {
-      const res = await authorizedFetch(`/api/export/?${params}`);
-      if (!res.ok) {
-        // Previously any non-OK read "Export failed" with no cause, and a network
-        // rejection escaped as an unhandled promise with no message at all.
-        setError(`Export failed (${res.status} ${res.statusText || "error"}).`);
+      const job = await api("/export/", {
+        method: "POST",
+        body: { format: fmt, query: feedQuery(filters).toString() },
+      });
+      const finished = await waitForExport(job.id);
+      if (finished.status !== "completed") {
+        setError(finished.error || "Export failed.");
         return;
       }
-      const blob = await res.blob();
-      url = URL.createObjectURL(blob);
+      await saveExport(finished);
+      if (finished.truncated) {
+        setNotice(
+          `Exported the first ${finished.row_count.toLocaleString()} posts. ` +
+            "Narrow the window or add filters to export the rest.",
+        );
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExporting("");
+    }
+  }
+
+  // Poll until the worker finishes. Bounded: a job that never resolves must
+  // surface as an error rather than spinning silently forever.
+  async function waitForExport(id) {
+    for (let attempt = 0; attempt < EXPORT_POLL_LIMIT; attempt += 1) {
+      const job = await api(`/export/${id}/`);
+      if (job.status === "completed" || job.status === "failed") return job;
+      await new Promise((resolve) => setTimeout(resolve, EXPORT_POLL_MS));
+    }
+    throw new Error("Export is taking longer than expected — check back shortly.");
+  }
+
+  // The download is authenticated, so it cannot be a plain link: fetch it with
+  // the access token and hand the browser a blob.
+  async function saveExport(job) {
+    let url;
+    try {
+      const res = await authorizedFetch(`/api${job.download_url.replace(/^\/api/, "")}`);
+      if (!res.ok) throw new Error(`Download failed (${res.status}).`);
+      url = URL.createObjectURL(await res.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = `tweets.${fmt}`;
+      link.download = job.filename;
       link.click();
-      setError("");
-    } catch {
-      setError("Export failed — the API is unreachable.");
     } finally {
       // Revoking synchronously after click() can cancel the download before the
       // browser has read the blob; defer to the next task instead.
@@ -228,13 +270,21 @@ export default function Feed() {
         lede="Everything the account collector has captured from the timelines you track. Saved searches are on their own page."
         actions={
           <>
-            <Button size="sm" onClick={() => downloadExport("jsonl")}>
+            <Button
+              size="sm"
+              disabled={Boolean(exporting)}
+              onClick={() => downloadExport("jsonl")}
+            >
               <Download className="size-3.5" aria-hidden="true" />
-              Export JSONL
+              {exporting === "jsonl" ? "Preparing JSONL…" : "Export JSONL"}
             </Button>
-            <Button size="sm" onClick={() => downloadExport("csv")}>
+            <Button
+              size="sm"
+              disabled={Boolean(exporting)}
+              onClick={() => downloadExport("csv")}
+            >
               <Download className="size-3.5" aria-hidden="true" />
-              Export CSV
+              {exporting === "csv" ? "Preparing CSV…" : "Export CSV"}
             </Button>
           </>
         }
@@ -243,6 +293,13 @@ export default function Feed() {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
         <div className="order-2 min-w-0 lg:order-1">
           {error && <ErrorNote className="mb-3">{error}</ErrorNote>}
+          {/* A truncated export is a correct answer to a different question,
+              so it is said plainly rather than as an error. */}
+          {notice && (
+            <p className="mb-3 text-xs text-fg-muted" role="status">
+              {notice}
+            </p>
+          )}
 
           <div className="mx-auto max-w-2xl">
             {pending.length > 0 && (

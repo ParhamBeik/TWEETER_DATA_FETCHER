@@ -367,6 +367,52 @@ class MediaAsset(models.Model):
         return self.relative_path
 
 
+class ExportJob(models.Model):
+    """One requested feed export, produced off the request thread.
+
+    Exporting used to stream the feed queryset straight out of the view. With no
+    row ceiling and only two gunicorn workers, two people exporting the archive
+    at once occupied both and the console stopped answering for everyone. The
+    work now runs on the control worker, which already owns the long, chunked
+    maintenance jobs, and the request thread only ever creates this row.
+
+    `token` is what names the file on disk. It is random rather than derived
+    from the id so a file cannot be found by guessing a sequence -- though the
+    download still goes through an authenticated view, because an unguessable
+    URL is a bearer token that leaks through history and proxy logs.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+    FORMAT_CHOICES = [("jsonl", "JSONL"), ("csv", "CSV")]
+
+    token = models.CharField(max_length=64, unique=True)
+    fmt = models.CharField(max_length=8, choices=FORMAT_CHOICES, default="jsonl")
+    # The feed filters this export was asked for, stored verbatim so the worker
+    # rebuilds exactly the queryset the operator was looking at.
+    params = models.JSONField(default=dict, blank=True)
+    requested_by = models.ForeignKey(
+        "auth.User", on_delete=models.CASCADE, related_name="export_jobs"
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending", db_index=True)
+    relative_path = models.CharField(max_length=400, blank=True, default="")
+    row_count = models.IntegerField(default=0)
+    truncated = models.BooleanField(default=False)
+    error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"export {self.token[:8]} ({self.status})"
+
+
 class XSession(models.Model):
     """Single shared operator X session (cookies/bearer). One active row."""
 

@@ -526,6 +526,35 @@ def purge_old_tweet_metrics() -> int:
     return total
 
 
+@shared_task(name="fetching.tasks.run_export")
+def run_export(job_id: int) -> int:
+    """Materialize one feed export on the control worker.
+
+    Here rather than in the view because the queryset has no row ceiling of its
+    own and gunicorn runs two workers: a full-archive export used to hold one of
+    them for the whole download, and two at once took the console down.
+    """
+    from fetching.exports import write_export
+    from tweets.models import ExportJob
+
+    job = ExportJob.objects.filter(id=job_id).first()
+    if job is None:
+        # Deleted between queue and pickup, e.g. by the TTL purge.
+        return 0
+    return write_export(job).row_count
+
+
+@shared_task(name="fetching.tasks.purge_old_exports")
+def purge_old_exports() -> int:
+    """Expire generated export files and their rows together."""
+    from fetching.exports import purge_expired
+
+    deleted = purge_expired(settings.EXPORT_TTL_HOURS)
+    if deleted:
+        logger.info("purge_old_exports: removed %d export(s)", deleted)
+    return deleted
+
+
 @shared_task(name="fetching.tasks.archive_media")
 def archive_media() -> int:
     """Copy a small batch of tweet photos onto the media volume.
