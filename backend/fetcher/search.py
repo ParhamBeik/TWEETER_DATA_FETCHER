@@ -760,7 +760,7 @@ class SearchTimelineMonitor:
             return True
         return (datetime.utcnow() - last_dt).total_seconds() >= interval_seconds
 
-    def monitor_search(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
+    def _plan_run(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
         product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
         slug = SearchQueryBuilder.slug(search_def)
         raw_query = SearchQueryBuilder.build_raw_query(search_def, self.storage._now())
@@ -771,17 +771,6 @@ class SearchTimelineMonitor:
         batch_dir.mkdir(parents=True, exist_ok=True)
         self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
         self.console.info(f"  Query: {raw_query}")
-        seen_ids: Set[str] = set()
-        cursor: Optional[str] = None
-        cursor_history: Set[str] = set()
-        tweets: List[Dict[str, Any]] = []
-        debug: Dict[str, Any] = {}
-        attempts = 0
-        error_samples: List[Dict[str, Any]] = []
-        last_http_status: Optional[int] = None
-        exhausted_reason = "unknown"
-        transport = "http"
-        page_output_paths: List[str] = []
         rolling_hours = int(policy["rolling_hours"])
         window_start = datetime.utcnow() - timedelta(hours=max(1, rolling_hours))
         # Where the previous successful run of this search got to. Pages entirely
@@ -800,9 +789,42 @@ class SearchTimelineMonitor:
         page_cap = int(policy["pagination_safety_cap_pages"])
         requested_depth = max(1, int(policy.get("pagination_depth", search_def.get("pagination_depth", 1))))
         deep_search = requested_depth > 1
+        return {
+            "product": product,
+            "slug": slug,
+            "raw_query": raw_query,
+            "search_url": search_url,
+            "policy": policy,
+            "jalali_batch": jalali_batch,
+            "batch_dir": batch_dir,
+            "rolling_hours": rolling_hours,
+            "window_start": window_start,
+            "known_ground": known_ground,
+            "variables_template": variables_template,
+            "features_json": features_json,
+            "page_cap": page_cap,
+            "requested_depth": requested_depth,
+            "deep_search": deep_search,
+        }
+
+    def _fetch_pages(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+        policy = plan["policy"]
+        page_cap = plan["page_cap"]
+        deep_search = plan["deep_search"]
+        product = plan["product"]
+        search_url = plan["search_url"]
+        slug = plan["slug"]
+        window_start = plan["window_start"]
+        known_ground = plan["known_ground"]
+        variables_template = plan["variables_template"]
+        features_json = plan["features_json"]
+        attempts = 0
+        error_samples: List[Dict[str, Any]] = []
+        last_http_status: Optional[int] = None
+        exhausted_reason = "unknown"
+        transport = "http"
         bootstrap = None
         payloads: List[Dict[str, Any]] = []
-
         query_id = str(self.api_manager.get_query_id("SearchTimeline") or "").strip()
         if not query_id:
             raise RuntimeError("Missing api_config.search_timeline_query_id")
@@ -898,6 +920,37 @@ class SearchTimelineMonitor:
                     if bootstrap.error:
                         error_samples.append({"transport": "browser", "exception": bootstrap.error})
 
+        return {
+            "payloads": payloads,
+            "transport": transport,
+            "exhausted_reason": exhausted_reason,
+            "attempts": attempts,
+            "last_http_status": last_http_status,
+            "http_latency_ms": http_latency_ms,
+            "error_samples": error_samples,
+            "bootstrap": bootstrap,
+        }
+
+    def _parse_pages(self, plan: Dict[str, Any], fetched: Dict[str, Any]) -> Dict[str, Any]:
+        slug = plan["slug"]
+        product = plan["product"]
+        jalali_batch = plan["jalali_batch"]
+        page_cap = plan["page_cap"]
+        deep_search = plan["deep_search"]
+        window_start = plan["window_start"]
+        known_ground = plan["known_ground"]
+        payloads = fetched["payloads"]
+        transport = fetched["transport"]
+        exhausted_reason = fetched["exhausted_reason"]
+        http_latency_ms = fetched["http_latency_ms"]
+        bootstrap = fetched["bootstrap"]
+        seen_ids: Set[str] = set()
+        cursor: Optional[str] = None
+        cursor_history: Set[str] = set()
+        tweets: List[Dict[str, Any]] = []
+        debug: Dict[str, Any] = {}
+        page_output_paths: List[str] = []
+
         for page, payload in enumerate(payloads, start=1):
             output_path = self.storage.save_search_result_page(slug, product, jalali_batch, page, payload)
             page_output_paths.append(str(output_path))
@@ -952,6 +1005,39 @@ class SearchTimelineMonitor:
             elif payloads:
                 exhausted_reason = f"partial_browser_{bootstrap.stop_reason or 'stalled'}"
 
+        return {
+            "tweets": tweets,
+            "debug": debug,
+            "cursor_history": cursor_history,
+            "page_output_paths": page_output_paths,
+            "exhausted_reason": exhausted_reason,
+        }
+
+    def _build_report(
+        self,
+        search_def: Dict[str, Any],
+        plan: Dict[str, Any],
+        fetched: Dict[str, Any],
+        parsed: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        slug = plan["slug"]
+        product = plan["product"]
+        raw_query = plan["raw_query"]
+        batch_dir = plan["batch_dir"]
+        rolling_hours = plan["rolling_hours"]
+        window_start = plan["window_start"]
+        page_cap = plan["page_cap"]
+        requested_depth = plan["requested_depth"]
+        transport = fetched["transport"]
+        attempts = fetched["attempts"]
+        last_http_status = fetched["last_http_status"]
+        error_samples = fetched["error_samples"]
+        bootstrap = fetched["bootstrap"]
+        tweets = parsed["tweets"]
+        debug = parsed["debug"]
+        cursor_history = parsed["cursor_history"]
+        page_output_paths = parsed["page_output_paths"]
+        exhausted_reason = parsed["exhausted_reason"]
         pages_on_disk = len(list(batch_dir.glob("page_*.json")))
         # #region agent log
         _agent_debug_log(
@@ -1013,7 +1099,21 @@ class SearchTimelineMonitor:
             "counts": {"tweets": len(tweets)},
             "outputs": outputs,
         }
-        
+
+        return report
+
+    def _advance_state(
+        self,
+        search_def: Dict[str, Any],
+        plan: Dict[str, Any],
+        report: Dict[str, Any],
+        tweets: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        product = plan["product"]
+        slug = plan["slug"]
+        exhausted_reason = report["metadata"]["exhausted_reason"]
+        last_http_status = report["metadata"]["last_http_status"]
+        status = report["status"]
         state_key = self._state_key(search_def, product)
         current_state = self.search_state.get(state_key, {})
         is_success = status == "completed"
@@ -1044,6 +1144,13 @@ class SearchTimelineMonitor:
         self._save_json(self.state_file, self.search_state)
         self._save_json(self.reports_root / f"{slug}_{product.lower()}_{self.storage._batch_name()}.json", report)
         return report
+
+    def monitor_search(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
+        plan = self._plan_run(search_def)
+        fetched = self._fetch_pages(plan)
+        parsed = self._parse_pages(plan, fetched)
+        report = self._build_report(search_def, plan, fetched, parsed)
+        return self._advance_state(search_def, plan, report, parsed["tweets"])
 
     def run_cycle(self, only_names: Optional[Set[str]] = None, force_run: bool = False) -> List[Dict[str, Any]]:
         self.fetcher.recorder.emit(

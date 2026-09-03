@@ -331,7 +331,7 @@ def test_the_known_ground_reason_counts_as_a_completed_run():
 
     from fetcher.search import SearchTimelineMonitor
 
-    source = inspect.getsource(SearchTimelineMonitor.monitor_search)
+    source = inspect.getsource(SearchTimelineMonitor._build_report)
     successful = source.split("successful_reasons = {")[1].split("}")[0]
     assert "success_reached_known_ground" in successful
 
