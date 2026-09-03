@@ -157,7 +157,15 @@ REST_FRAMEWORK = {
         # mining, window functions over the metric table. These are the requests
         # worth metering even for a signed-in user.
         "analytics": os.environ.get("THROTTLE_ANALYTICS", "30/min"),
+        # Feed exports run on the control worker; meter creation to protect the queue.
+        "exports": os.environ.get("THROTTLE_EXPORTS", "10/hour"),
     },
+    # Set NUM_PROXIES so DRF extracts the real client IP from HTTP_X_FORWARDED_FOR
+    # rather than concatenating the entire header (which lets clients defeat rate
+    # limiting by rotating fake IPs). 2 behind Caddy + Nginx in prod, 1 in local compose.
+    "NUM_PROXIES": int(
+        os.environ.get("DJANGO_NUM_PROXIES", "2" if os.environ.get("DJANGO_SECURE_SSL", "0") == "1" else "1")
+    ),
 }
 
 from datetime import datetime, timedelta  # noqa: E402  (kept next to the settings it configures)

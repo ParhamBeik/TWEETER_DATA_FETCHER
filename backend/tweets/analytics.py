@@ -295,6 +295,8 @@ def _request_spend(window: Window) -> list[dict]:
 class IngestionView(APIView):
     """The Pulse time series: what arrived, from where, and what it cost."""
 
+    throttle_scope = "analytics"
+
     def get(self, request):
         window = window_from(request)
         handles = accounts_from(request)
@@ -868,6 +870,8 @@ class TopicBlocklistView(APIView):
 
 
 class AccountsAnalyticsView(APIView):
+    throttle_scope = "analytics"
+
     def get(self, request):
         window = window_from(request)
         # Exclude retweets so accounts are ranked strictly on their own authored content,

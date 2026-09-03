@@ -1003,7 +1003,8 @@ class SearchTimelineMonitor:
             elif payloads and len(payloads) >= page_cap:
                 exhausted_reason = "partial_safety_cap_reached"
             elif payloads:
-                exhausted_reason = f"partial_browser_{bootstrap.stop_reason or 'stalled'}"
+                stop = getattr(bootstrap, "stop_reason", None) or "stalled"
+                exhausted_reason = f"partial_browser_{stop}"
 
         return {
             "tweets": tweets,

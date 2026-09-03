@@ -138,3 +138,12 @@ def test_latest_sort_still_pages_by_cursor(client):
     body = client.get("/api/feed/").json()
     assert "results" in body
     assert client.get("/api/feed/?offset=5000").status_code == 200
+
+
+@pytest.mark.django_db
+def test_next_link_suppressed_when_next_offset_would_exceed_max_offset(client):
+    for index in range(10):
+        _post(f"ceil-{index}", likes=index)
+    response = client.get("/api/feed/?sort=top&offset=990&limit=20")
+    assert response.status_code == 200
+    assert response.json()["next"] is None

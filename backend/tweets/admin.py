@@ -43,6 +43,17 @@ class SearchAdmin(admin.ModelAdmin):
     list_filter = ("product", "enabled")
     search_fields = ("slug", "name", "raw_query")
 
+    def delete_model(self, request, obj):
+        from fetching.searches import teardown_search
+
+        teardown_search(obj)
+
+    def delete_queryset(self, request, queryset):
+        from fetching.searches import teardown_search
+
+        for obj in queryset:
+            teardown_search(obj)
+
 
 @admin.register(SearchTweet)
 class SearchTweetAdmin(admin.ModelAdmin):

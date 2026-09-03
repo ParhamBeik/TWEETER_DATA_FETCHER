@@ -101,6 +101,7 @@ volumes:
   redisdata:
   beat-schedule:
   media_data:
+  static_data:
 
 networks:
   edge:
