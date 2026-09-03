@@ -40,6 +40,10 @@ app.conf.task_routes = {
     "fetching.tasks.purge_old_fetch_runs": {"queue": "control"},
     "fetching.tasks.purge_old_raw_pages": {"queue": "control"},
     "fetching.tasks.purge_old_tweet_metrics": {"queue": "control"},
+    # Exports belong here for the same reason the purges do: they are long,
+    # bounded, and nobody is holding a request open waiting for them.
+    "fetching.tasks.run_export": {"queue": "control"},
+    "fetching.tasks.purge_old_exports": {"queue": "control"},
     "fetching.tasks.recompute_poll_intervals": {"queue": "control"},
     "fetching.tasks.archive_media": {"queue": "control"},
 }
@@ -99,6 +103,13 @@ def setup_periodic_tasks(sender, **_kwargs):
         schedule(86400.0),
         app.signature("fetching.tasks.purge_old_tweet_metrics"),
         name="purge-old-tweet-metrics",
+    )
+    # Generated exports and their rows expire together, on a tighter clock than
+    # the other retention jobs -- an extract is useful for hours, not months.
+    sender.add_periodic_task(
+        schedule(3600.0),
+        app.signature("fetching.tasks.purge_old_exports"),
+        name="purge-old-exports",
     )
     # Daily re-tiering: polling cadence follows each account's measured posting
     # rate, so it has to be recomputed as that rate drifts.

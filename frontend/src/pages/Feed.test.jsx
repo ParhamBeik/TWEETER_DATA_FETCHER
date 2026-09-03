@@ -239,7 +239,34 @@ describe("Feed export", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   });
 
-  const exportFetch = (overrides = {}) =>
+  // The export is a job now: POST to queue it, poll until it finishes, then
+  // fetch the file from an authenticated download URL. It moved off the request
+  // thread because streaming it held one of two gunicorn workers for the whole
+  // download, so two at once took the console down.
+  const finishedJob = (overrides = {}) => ({
+    id: 7,
+    status: "completed",
+    row_count: 2,
+    truncated: false,
+    error: "",
+    filename: "tweets_2026-09-03.csv",
+    download_url: "/api/export/7/download/",
+    ...overrides,
+  });
+
+  /** Route the feed, the roster, and the two export calls through one mock. */
+  const mockExportApi = (job = finishedJob(), { queued } = {}) => {
+    api.mockImplementation((path, options) => {
+      if (path === "/export/" && options?.method === "POST") {
+        return Promise.resolve(queued ?? { id: job.id, status: "pending" });
+      }
+      if (path.startsWith("/export/")) return Promise.resolve(job);
+      if (path.startsWith("/accounts/")) return Promise.resolve({ results: [] });
+      return Promise.resolve(page([]));
+    });
+  };
+
+  const downloadFetch = (overrides = {}) =>
     vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -248,54 +275,110 @@ describe("Feed export", () => {
       ...overrides,
     });
 
-  it("requests the chosen format with the active filters and auth token", async () => {
+  it("queues the chosen format with the active filters", async () => {
     const user = userEvent.setup();
-    const fetchSpy = exportFetch();
-    vi.stubGlobal("fetch", fetchSpy);
+    mockExportApi();
+    vi.stubGlobal("fetch", downloadFetch());
     renderFeed("/feed?sort=top&window=7d");
+    await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/export/", expect.objectContaining({ method: "POST" })),
+    );
+    const [, options] = api.mock.calls.find(([path]) => path === "/export/");
+    expect(options.body.format).toBe("csv");
+    // The filters travel as the feed's own query string, so the worker rebuilds
+    // exactly the queryset that was on screen.
+    expect(options.body.query).toContain("window=7d");
+    expect(options.body.query).toContain("sort=top");
+  });
+
+  it("queues JSONL from the JSONL button", async () => {
+    const user = userEvent.setup();
+    mockExportApi();
+    vi.stubGlobal("fetch", downloadFetch());
+    renderFeed();
+    await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: "Export JSONL" }));
+    await waitFor(() => {
+      const call = api.mock.calls.find(([path]) => path === "/export/");
+      expect(call[1].body.format).toBe("jsonl");
+    });
+  });
+
+  it("downloads the finished file with the authenticated URL", async () => {
+    const user = userEvent.setup();
+    mockExportApi();
+    const fetchSpy = downloadFetch();
+    vi.stubGlobal("fetch", fetchSpy);
+    renderFeed();
     await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
 
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toContain("/api/export/");
-    expect(url).toContain("format=csv");
-    expect(url).toContain("window=7d");
+    expect(url).toBe("/api/export/7/download/");
+    // The file is behind auth, so it cannot be a plain link.
     expect(init.headers.Authorization).toBe("Bearer access-123");
   });
 
-  it("requests JSONL from the JSONL button", async () => {
+  it("says so when the export hit the row ceiling", async () => {
     const user = userEvent.setup();
-    const fetchSpy = exportFetch();
-    vi.stubGlobal("fetch", fetchSpy);
+    mockExportApi(finishedJob({ truncated: true, row_count: 100000 }));
+    vi.stubGlobal("fetch", downloadFetch());
     renderFeed();
     await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
-    await user.click(screen.getByRole("button", { name: "Export JSONL" }));
-    await waitFor(() => expect(fetchSpy.mock.calls[0][0]).toContain("format=jsonl"));
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+
+    // A prefix of the answer presented as the answer is the failure mode worth
+    // guarding against; it is a notice rather than an error because the file
+    // that downloaded is still correct as far as it goes.
+    expect(await screen.findByText(/first 100,000 posts/)).toBeInTheDocument();
   });
 
-  it("reports the status code when the export request is rejected", async () => {
+  it("reports a failed job rather than downloading nothing", async () => {
     const user = userEvent.setup();
-    vi.stubGlobal(
-      "fetch",
-      exportFetch({ ok: false, status: 503, statusText: "Service Unavailable" }),
-    );
+    mockExportApi(finishedJob({ status: "failed", error: "disk full", download_url: null }));
+    vi.stubGlobal("fetch", downloadFetch());
     renderFeed();
     await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
-    expect(await screen.findByText(/Export failed \(503/)).toBeInTheDocument();
+    expect(await screen.findByText("disk full")).toBeInTheDocument();
   });
 
   // Regression: a network rejection here used to escape as an unhandled promise,
   // leaving the operator with a button that silently did nothing.
   it("reports a network failure instead of rejecting unhandled", async () => {
     const user = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    api.mockImplementation((path) =>
+      path.startsWith("/accounts/")
+        ? Promise.resolve({ results: [] })
+        : path.startsWith("/export/")
+          ? Promise.reject(new Error("Network error — the API is unreachable."))
+          : Promise.resolve(page([])),
+    );
     renderFeed();
     await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
-    expect(await screen.findByText(/Export failed — the API is unreachable/)).toBeInTheDocument();
+    expect(await screen.findByText(/the API is unreachable/)).toBeInTheDocument();
+  });
+
+  it("disables both buttons while a job is running", async () => {
+    const user = userEvent.setup();
+    mockExportApi(finishedJob({ status: "pending" }));
+    vi.stubGlobal("fetch", downloadFetch());
+    renderFeed();
+    await waitFor(() => expect(feedCalls().length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+
+    // A button that looks idle while a job runs invites a second one.
+    expect(await screen.findByRole("button", { name: /Preparing CSV/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export JSONL" })).toBeDisabled();
   });
 });
 

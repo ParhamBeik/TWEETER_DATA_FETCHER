@@ -1,18 +1,17 @@
 """Read APIs: feed, accounts, cycles, and searches."""
 from __future__ import annotations
 
-import csv
 import hashlib
-import json
+import secrets
 from datetime import timedelta, timezone as dt_timezone
-from io import StringIO
+from pathlib import Path
 
 from fetcher.processing import TZ as FEED_TZ
 
-from django.db import connection
+from django.conf import settings
 from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
-from django.http import StreamingHttpResponse
+from django.http import FileResponse
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import status, viewsets
@@ -35,7 +34,7 @@ from config.pagination import (
 
 from .analytics import normalize_handles
 
-from .models import FetchRun, Search, SearchTweet, Tweet, TwitterUser, XSession
+from .models import ExportJob, FetchRun, Search, SearchTweet, Tweet, TwitterUser, XSession
 from .serializers import (
     AccountOpsSerializer,
     FetchRunDetailSerializer,
@@ -551,78 +550,112 @@ class SearchViewSet(viewsets.ModelViewSet):
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
 
+def _export_payload(job: ExportJob) -> dict:
+    from fetching.exports import filename_for
+
+    return {
+        "id": job.id,
+        "status": job.status,
+        "format": job.fmt,
+        "row_count": job.row_count,
+        # True means the row ceiling was reached and this is a prefix of the
+        # answer, not the answer. The console has to be able to say so.
+        "truncated": job.truncated,
+        "error": job.error,
+        "filename": filename_for(job),
+        "created_at": job.created_at,
+        "finished_at": job.finished_at,
+        "download_url": (
+            f"/api/export/{job.id}/download/" if job.status == "completed" else None
+        ),
+    }
+
+
 class ExportView(APIView):
-    """Stream the current feed as JSONL or CSV."""
+    """Request a feed export, and list your own.
+
+    POST queues the work and returns immediately. It used to stream the whole
+    result set out of this view, which meant one download occupied a gunicorn
+    worker for its full duration -- and with `--workers 2`, two concurrent
+    full-archive exports left nothing to serve the console with. The queryset
+    has no row ceiling of its own, so there was no size at which this stopped
+    being possible.
+    """
 
     renderer_classes = [JSONRenderer]
 
     def perform_content_negotiation(self, request, force=False):
         return JSONRenderer(), "json"
 
-    # Every engagement column the row carries, not just the three the ranking
-    # happens to use -- an export that silently drops replies and quotes makes
-    # offline analysis disagree with the console for no visible reason.
-    COLUMNS = (
-        "tweet_id", "account", "created_at", "type",
-        "likes", "retweets", "replies", "quotes", "bookmarks", "views",
-        "text", "url",
-    )
-
     def get(self, request):
-        fmt = str(request.query_params.get("format") or "jsonl").lower()
+        """This user's recent exports, newest first."""
+        jobs = ExportJob.objects.filter(requested_by=request.user)[:20]
+        return Response({"results": [_export_payload(job) for job in jobs]})
+
+    def post(self, request):
+        fmt = str(
+            request.data.get("format") or request.query_params.get("format") or "jsonl"
+        ).lower()
         if fmt not in {"jsonl", "csv"}:
             return Response({"detail": "format must be jsonl or csv"}, status=400)
-        # Defaults to what the operator is looking at on screen. `raw` returns
-        # X's verbatim string, entities and duplicate links intact.
-        raw_text = str(request.query_params.get("text") or "clean").lower() == "raw"
-        qs = feed_queryset(request.query_params)
-
-        def record(tweet):
-            return {
-                "tweet_id": tweet.tweet_id,
-                "account": tweet.account,
-                "created_at": tweet.created_at.isoformat() if tweet.created_at else None,
-                "type": tweet.type,
-                "likes": tweet.likes,
-                "retweets": tweet.retweets,
-                "replies": tweet.replies,
-                "quotes": tweet.quotes,
-                "bookmarks": tweet.bookmarks,
-                "views": tweet.views,
-                "text": tweet.text if raw_text else (tweet.text_clean or tweet.text),
-                "url": tweet.url,
-            }
-
-        def rows():
-            if fmt == "csv":
-                buffer = StringIO()
-                writer = csv.writer(buffer)
-                writer.writerow(self.COLUMNS)
-                yield buffer.getvalue()
-                buffer.seek(0)
-                buffer.truncate(0)
-                for tweet in qs.iterator(chunk_size=200):
-                    values = record(tweet)
-                    writer.writerow([values[column] if values[column] is not None else "" for column in self.COLUMNS])
-                    yield buffer.getvalue()
-                    buffer.seek(0)
-                    buffer.truncate(0)
-                return
-            for tweet in qs.iterator(chunk_size=200):
-                yield json.dumps(record(tweet), ensure_ascii=False) + "\n"
-
-        content_type = "text/csv" if fmt == "csv" else "application/x-ndjson"
-        today_str = timezone.now().strftime("%Y-%m-%d")
-        accounts = normalize_handles(
-            request.query_params.getlist("account") if hasattr(request.query_params, "getlist") else [request.query_params.get("account")]
+        # The filters are stored verbatim, as a query string, so the worker
+        # rebuilds exactly the queryset the operator was looking at -- including
+        # repeatable ?account=, which a dict would flatten to its last value.
+        query = request.data.get("query")
+        if query is None:
+            query = request.query_params.urlencode()
+        job = ExportJob.objects.create(
+            token=secrets.token_urlsafe(32),
+            fmt=fmt,
+            params={"query": str(query)},
+            requested_by=request.user,
         )
-        if accounts:
-            tag = "_".join(accounts[:2])
-            if len(accounts) > 2:
-                tag += f"_plus_{len(accounts) - 2}"
-            filename = f"tweets_{tag}_{today_str}.{fmt}"
-        else:
-            filename = f"tweets_{today_str}.{fmt}"
-        response = StreamingHttpResponse(rows(), content_type=content_type)
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        from fetching.tasks import run_export
+
+        run_export.delay(job.id)
+        job.refresh_from_db()
+        return Response(_export_payload(job), status=status.HTTP_202_ACCEPTED)
+
+
+class ExportDetailView(APIView):
+    """Poll one export's progress."""
+
+    renderer_classes = [JSONRenderer]
+
+    def get(self, request, pk):
+        job = ExportJob.objects.filter(pk=pk, requested_by=request.user).first()
+        if job is None:
+            return Response({"detail": "not found"}, status=404)
+        return Response(_export_payload(job))
+
+
+class ExportDownloadView(APIView):
+    """Serve a finished export.
+
+    Through Django rather than nginx on purpose. An export is a bulk extract of
+    the archive, unlike a single archived photo, and an unguessable URL is a
+    bearer token: it survives in browser history, referrer headers and proxy
+    logs long after the person who generated it stopped needing it.
+    """
+
+    renderer_classes = [JSONRenderer]
+
+    def get(self, request, pk):
+        from fetching.exports import filename_for
+
+        job = ExportJob.objects.filter(pk=pk, requested_by=request.user).first()
+        if job is None:
+            return Response({"detail": "not found"}, status=404)
+        if job.status != "completed" or not job.relative_path:
+            return Response({"detail": f"export is {job.status}"}, status=409)
+        path = Path(settings.MEDIA_ROOT) / job.relative_path
+        if not path.is_file():
+            # The TTL purge reached the file. Say so rather than 500ing on the
+            # open, so the console can offer to run it again.
+            return Response({"detail": "export has expired"}, status=410)
+        return FileResponse(
+            path.open("rb"),
+            as_attachment=True,
+            filename=filename_for(job),
+            content_type="text/csv" if job.fmt == "csv" else "application/x-ndjson",
+        )

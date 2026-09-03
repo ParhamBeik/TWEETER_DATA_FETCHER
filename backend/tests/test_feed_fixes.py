@@ -242,15 +242,18 @@ def test_export_carries_every_metric_and_offers_raw_text(client_user):
     raw = "R&amp;D https://t.co/dup https://t.co/dup"
     upsert_tweet(_item("1", text=raw, replies=3, quotes=2, bookmarks=9))
 
-    body = b"".join(
-        client_user.get("/api/export/?format=csv").streaming_content
-    ).decode()
+    def _export(query: str) -> str:
+        job = client_user.post(
+            "/api/export/", {"format": "csv", "query": query}, format="json"
+        ).json()
+        return b"".join(
+            client_user.get(job["download_url"]).streaming_content
+        ).decode()
+
+    body = _export("")
     header, row = body.splitlines()[0], body.splitlines()[1]
     for column in ("replies", "quotes", "bookmarks"):
         assert column in header
     assert "R&D" in row and "R&amp;D" not in row
 
-    verbatim = b"".join(
-        client_user.get("/api/export/?format=csv&text=raw").streaming_content
-    ).decode()
-    assert "R&amp;D" in verbatim
+    assert "R&amp;D" in _export("text=raw")

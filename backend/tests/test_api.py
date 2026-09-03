@@ -325,7 +325,11 @@ def test_export_jsonl_shares_feed_filters(client_user):
             "created_at": "Wed Oct 10 20:19:24 +0000 2018",
         }
     )
-    resp = client.get("/api/export/?format=jsonl")
+    # POST-then-download since the export moved onto the control worker; the
+    # filters still travel as the feed's own query string.
+    job = client.post("/api/export/", {"format": "jsonl", "query": ""}, format="json")
+    assert job.status_code == 202
+    resp = client.get(job.json()["download_url"])
     assert resp.status_code == 200
     body = b"".join(resp.streaming_content).decode()
     lines = [line for line in body.splitlines() if line]

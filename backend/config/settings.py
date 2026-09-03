@@ -335,6 +335,13 @@ RAW_PAGE_PURGE_MAX_ROWS = int(os.environ.get("RAW_PAGE_PURGE_MAX_ROWS", "200000"
 # changed like/repost/view count, and views tick constantly on a popular post.
 TWEET_METRIC_RETENTION_DAYS = int(os.environ.get("TWEET_METRIC_RETENTION_DAYS", "90"))
 TWEET_METRIC_PURGE_MAX_ROWS = int(os.environ.get("TWEET_METRIC_PURGE_MAX_ROWS", "500000"))
+# Feed exports run on the control worker and land on the media volume. The row
+# ceiling is what stops "All time, no filters" from being an unbounded job; the
+# response says when it was hit, rather than silently returning a prefix.
+EXPORT_MAX_ROWS = int(os.environ.get("EXPORT_MAX_ROWS", "100000"))
+# Long enough to download something you asked for and got distracted from,
+# short enough that the volume does not accumulate extracts nobody wants.
+EXPORT_TTL_HOURS = int(os.environ.get("EXPORT_TTL_HOURS", "24"))
 # Signup is open by default. New accounts are read-only (see
 # tweets.permissions.IsStaffOrReadOnly); operating the fetcher and replacing the
 # shared X session require staff, granted from the Django admin.
