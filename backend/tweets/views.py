@@ -33,7 +33,7 @@ from config.pagination import (
     StandardCursorPagination,
 )
 
-from .analytics import engagement_expression, normalize_handles
+from .analytics import normalize_handles
 
 from .models import FetchRun, Search, SearchTweet, Tweet, TwitterUser, XSession
 from .serializers import (
@@ -173,15 +173,22 @@ def feed_queryset(params):
     # payload is expensive on a table this size.
     qs = with_feed_ts(qs.select_related("author").defer("payload"))
     sort = str(params.get("sort") or "").lower()
-    # Secondary key is feed_ts, not id: ties should break by recency, and the
-    # offset paginator needs a fully deterministic order.
+    # Both ranked sorts order on a stored, indexed column and break ties on id.
+    #
+    # `top` used to annotate the engagement expression and sort on that, which
+    # no index can serve -- over the All-time window the console offers, that
+    # was a full scan and sort of the archive on every request. Tweet.engagement
+    # is now a persisted generated column with its own index.
+    #
+    # The tiebreaker is id, not feed_ts: the index is (-engagement, -id), and a
+    # middle key the index does not carry forces a sort of every tied group.
+    # Ties here are tweets with identical scores, where recency-vs-id is not a
+    # meaningful distinction anyway.
     if sort == "top":
-        return qs.annotate(engagement=engagement_expression()).order_by(
-            "-engagement", "-feed_ts", "-id"
-        )
+        return qs.order_by("-engagement", "-id")
     if sort == "views":
         # Reach, asked as its own question rather than folded into engagement.
-        return qs.order_by("-views", "-feed_ts", "-id")
+        return qs.order_by("-views", "-id")
     return qs.order_by("-feed_ts", "-id")
 
 

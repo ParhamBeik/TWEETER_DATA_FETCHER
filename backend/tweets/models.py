@@ -89,6 +89,23 @@ class Tweet(models.Model):
 
     ingested_at = models.DateTimeField(auto_now_add=True)
 
+    # Deliberate actions only -- the same four fields as
+    # analytics.ENGAGEMENT_FIELDS, and views is excluded there for the same
+    # reason: an impression is not an interaction, and views run 100-1000x
+    # larger, so summing them in makes "most engaged" a synonym for "most
+    # viewed". Reach is its own question and has its own sort.
+    #
+    # Stored rather than computed per query. The feed offers this as a sort over
+    # an unbounded window, and an expression sort has no index to use, so
+    # ranking the archive meant a full scan plus a sort every time. A persisted
+    # generated column can be indexed; the database keeps it in step, so there is
+    # no second write path to forget.
+    engagement = models.GeneratedField(
+        expression=models.F("likes") + models.F("retweets") + models.F("replies") + models.F("quotes"),
+        output_field=models.BigIntegerField(),
+        db_persist=True,
+    )
+
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [
@@ -98,6 +115,10 @@ class Tweet(models.Model):
             # posted, and split that by which pipeline captured it.
             models.Index(fields=["-ingested_at"]),
             models.Index(fields=["source_subsystem", "-ingested_at"]),
+            # The feed's two ranked sorts. Both are offered over "All time", so
+            # without these each one scanned and sorted the whole table.
+            models.Index(fields=["-engagement", "-id"], name="tweets_engagement_rank_idx"),
+            models.Index(fields=["-views", "-id"], name="tweets_views_rank_idx"),
         ]
 
     def __str__(self) -> str:  # pragma: no cover - trivial

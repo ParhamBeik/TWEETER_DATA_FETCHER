@@ -69,6 +69,13 @@ SUBSYSTEMS = ("live", "historical", "search")
 
 
 def engagement_expression() -> ExpressionWrapper:
+    """The engagement formula as an ORM expression.
+
+    Kept for callers that must compute it on the fly. The feed and the account
+    aggregates now read `Tweet.engagement`, a persisted generated column built
+    from the same ENGAGEMENT_FIELDS -- see the model. The two definitions have to
+    agree, which `test_engagement_definitions_agree` enforces.
+    """
     total = sum(F(field) for field in ENGAGEMENT_FIELDS)
     return ExpressionWrapper(total, output_field=FloatField())
 
@@ -869,8 +876,10 @@ class AccountsAnalyticsView(APIView):
             .values("account")
             .annotate(
                 posts=Count("id"),
-                average_engagement=Avg(engagement_expression()),
-                total_engagement=Sum(engagement_expression()),
+                # The stored column, not the expression: same four fields, but
+                # the database has already summed them on every row.
+                average_engagement=Avg("engagement"),
+                total_engagement=Sum("engagement"),
                 replies=Sum("replies"),
             )
             .order_by("-average_engagement", "account")[:100]
