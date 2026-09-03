@@ -141,11 +141,12 @@ jobs:
               -o ConnectTimeout=20 \
               "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
               'bash -s' << 'EOF'
-          set -e
-          if sudo -n true 2>/dev/null; then
-            sudo chown -R "$(id -u):$(id -g)" /opt/apps/ 2>/dev/null || true
-          fi
-          find /opt/apps/ -name .git -exec chmod -R u+rwX {} + 2>/dev/null || true
+          echo "=== USER & ENV ==="
+          whoami && id
+          echo "=== DEPLOY SCRIPT ==="
+          cat /opt/apps/deploy_twitter.sh || true
+          echo "=== DISK PERMISSIONS ==="
+          ls -ld /opt/apps/* || true
           /opt/apps/deploy_twitter.sh
           EOF
 
