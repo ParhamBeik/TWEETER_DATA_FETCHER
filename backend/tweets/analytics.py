@@ -527,6 +527,9 @@ class PipelineView(APIView):
 class VelocityView(APIView):
     """Rank tweets by engagement gained during the window, plus its shape over time."""
 
+    # Window functions over the whole metric table; see the throttle rates.
+    throttle_scope = "analytics"
+
     def get(self, request):
         window = window_from(request)
         handles = accounts_from(request)
@@ -796,6 +799,9 @@ class TopicsView(APIView):
     both -- they are about whether a row is a topic at all, not about ordering.
     """
 
+    # Phrase mining tokenizes and bigrams every post in the window.
+    throttle_scope = "analytics"
+
     def get(self, request):
         window = window_from(request)
         handles = accounts_from(request)
@@ -909,6 +915,11 @@ NARRATIVE_TIMEOUT_MS = 15_000
 
 class NarrativesView(APIView):
     """Flag near-duplicate tweets from *different* accounts, posted close together."""
+
+    # A trigram self-join, already carrying its own statement timeout because a
+    # single unbounded request could take a worker down. Metered as well, so a
+    # retry loop cannot simply keep re-triggering that.
+    throttle_scope = "analytics"
 
     def get(self, request):
         window = window_from(request)

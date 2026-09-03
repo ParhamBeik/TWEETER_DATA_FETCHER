@@ -136,6 +136,28 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "config.pagination.StandardCursorPagination",
     "PAGE_SIZE": 30,
+    # Nothing here was rate limited at all, which meant unlimited password
+    # attempts against a system that drives a shared X session.
+    #
+    # AnonRateThrottle covers unauthenticated traffic generally; ScopedRateThrottle
+    # applies only to views that declare a `throttle_scope`, so signed-in console
+    # use is deliberately unmetered -- the budget rail, ops and feed pollers make
+    # ~500 requests/hour per open tab, and a user ceiling low enough to be useful
+    # would throttle the UI itself.
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.environ.get("THROTTLE_ANON", "60/min"),
+        # Five a minute is invisible to a person typing a password and makes
+        # guessing at any useful speed impossible.
+        "login": os.environ.get("THROTTLE_LOGIN", "5/min"),
+        # The analytics views run the heavy raw SQL -- trigram self-joins, phrase
+        # mining, window functions over the metric table. These are the requests
+        # worth metering even for a signed-in user.
+        "analytics": os.environ.get("THROTTLE_ANALYTICS", "30/min"),
+    },
 }
 
 from datetime import datetime, timedelta  # noqa: E402  (kept next to the settings it configures)

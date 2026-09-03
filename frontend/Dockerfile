@@ -1,6 +1,9 @@
 # Multi-stage: build the Vite SPA, then serve dist via nginx.
 # Build context is the repo root.
-FROM node:20-alpine AS build
+# node 24 to match .github/workflows/ci.yml. The image only runs `vite
+# build`, which works on older majors, but building on a version CI never
+# exercises is how a 'works in CI, breaks in the image' failure appears.
+FROM node:24-alpine AS build
 
 WORKDIR /app
 
