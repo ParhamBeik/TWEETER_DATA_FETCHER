@@ -241,11 +241,6 @@ def enqueue_media(items: list[tuple[str, str]]) -> int:
     return len(created)
 
 
-def enqueue_from_tweet(extras, tweet_id: str = "") -> int:
-    """Queue every archivable URL on one tweet."""
-    return enqueue_media([(url, tweet_id) for url in photo_urls_from_extras(extras)])
-
-
 def archive_batch(limit: int) -> int:
     """Download up to `limit` missing files. Returns how many were stored.
 

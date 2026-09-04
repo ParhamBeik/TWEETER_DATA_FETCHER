@@ -86,13 +86,16 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 | POST | `/api/auth/refresh/` | rotates the pair; the spent refresh token is blacklisted |
 | POST | `/api/auth/logout/` | blacklists the refresh token |
 | GET | `/api/auth/me/` | current identity, including `is_staff` |
-| GET | `/api/feed/` | tracked accounts only (`UserTweets`); saved searches are served separately. Filters: `account`, `tier`, `since`, `until`, `window`, `run_id`, `q`, `types` (`tweet,reply,retweet,quote`), `has_media`. `sort=latest\|top` — `top` ranks by engagement and pages by offset, `latest` pages by cursor |
-| GET | `/api/export/?format=jsonl\|csv` | stream the current feed |
+| GET | `/api/feed/` | tracked accounts only (`UserTweets`); saved searches are served separately. Filters: `account` (repeatable), `tier`, `since`, `until`, `window`, `run_id`, `q`, `types` (`tweet,reply,retweet,quote`), `has_media`, `include_untracked`. `sort=latest\|top\|views` — `top` and `views` rank on a stored column and page by offset, `latest` pages by cursor |
+| POST | `/api/export/` | queue an export of the current feed (`{format: jsonl\|csv, query: "<feed query string>"}`); returns immediately with the job |
+| GET | `/api/export/` \| `/api/export/{id}/` | your recent exports, or one job's progress |
+| GET | `/api/export/{id}/download/` | the finished file, through Django so it is still access-checked |
 | GET/POST/PATCH | `/api/accounts/` | read for all; write is *staff* (track, set tier, clear quarantine) |
 | POST | `/api/accounts/{handle}/fetch/` | *staff* — on-demand live + historical for one handle |
 | GET | `/api/accounts/{handle}/tweets/` | one account's timeline |
 | GET | `/api/runs/` \| `/api/runs/{run_id}/` | cycle history and detail |
 | POST | `/api/cycles/` | *staff* — queue one global cycle (`live`, `historical`, `search`) |
+| GET/POST | `/api/session/` | *staff*, both ways — session health (never the secrets), or replace the shared X session |
 | GET/POST | `/api/searches/` | read for all; create is *staff* (and enqueues a fetch) |
 | PATCH/DELETE | `/api/searches/{id}/` | *staff* — edit, or tear the whole job down (schedule, queued run, results, history, cursors, raw pages) |
 | GET | `/api/searches/{id}/results/` | ranked results, from the search tables |
@@ -159,7 +162,14 @@ cd frontend && npm test               # component suite
 ```
 
 The analytics views that need Postgres (topics, velocity, narratives) are skipped
-on SQLite, so re-run them against a real database before trusting a change there.
+on SQLite, so a green local run says nothing about them. CI runs the same suite a
+second time against a real Postgres service, which is where those tests actually
+execute; to do the same locally, point the suite at a database:
+
+```bash
+TEST_POSTGRES_HOST=127.0.0.1 TEST_POSTGRES_DB=twitter_saas_test python -m pytest -q
+```
+
 The topic *ranking* is deliberately pure and does run in the suite
 (`tests/test_topics_scoring.py`); only the grouping SQL is skipped.
 

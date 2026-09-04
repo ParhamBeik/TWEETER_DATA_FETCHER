@@ -42,7 +42,12 @@ function routeApi({ runs = [], health = session(), detail = null } = {}) {
   });
 }
 
-beforeEach(() => api.mockReset());
+// Block body, not an expression: mockReset() returns the mock, and a hook
+// that returns a callable hands Vitest a teardown function -- which it then
+// calls, running the api mock with no arguments after every test.
+beforeEach(() => {
+  api.mockReset();
+});
 
 describe("session health panel", () => {
   it("reports a configured session", async () => {

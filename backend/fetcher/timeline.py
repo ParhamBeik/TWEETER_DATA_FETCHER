@@ -8,7 +8,7 @@ For normal historical/live runs use ``fetcher.historical`` or ``fetcher.live``; 
 module runs the lower-level sequential fetch engine with configured accounts.
 
 Code map:
-- EngineLogger keeps console output readable.
+- PipelineConsole keeps console output readable.
 - FetcherEngine loads config, resolves user IDs, paginates endpoints, and saves raw pages.
 - The bottom cursor is the only pagination value that may be reused.
 - Storage and tweet-set processing happen in other modules.
@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
 from fetcher.config import PROJECT_ROOT
+from fetcher.clock import utc_now_iso
 from fetcher.client import APIManager
 from fetcher.processing import (
     RollingWindowEvaluator,
@@ -81,10 +82,6 @@ def _response_latency_ms(response: Any, request_started: float) -> int:
     if seconds is None:
         seconds = time.monotonic() - request_started
     return max(0, int(float(seconds) * 1000))
-
-
-# Backward-compatible alias
-EngineLogger = PipelineConsole
 
 
 # Timeline fetching ---------------------------------------------------------
@@ -311,7 +308,7 @@ class FetcherEngine:
             meta={
                 "raw_batch_path": str(batch_dir),
                 "pages_fetched": pages_fetched,
-                "recovery_started_at": datetime.utcnow().isoformat() + "Z",
+                "recovery_started_at": utc_now_iso(),
                 "recovery_reason": "pagination_404_context_rejected",
             },
         )
@@ -418,7 +415,7 @@ class FetcherEngine:
         min_remaining: int = 0,
         resume_cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
-        started_at = datetime.utcnow().isoformat() + "Z"
+        started_at = utc_now_iso()
         attempts = 0
         empty_page_streak = 0
         error_samples: List[Dict[str, Any]] = []
@@ -453,7 +450,7 @@ class FetcherEngine:
                 "error_samples": error_samples[-5:],
                 "rate_headers": self.api_manager.rate_limits.get(endpoint, {}),
                 "started_at": started_at,
-                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "finished_at": utc_now_iso(),
                 "window_coverage": latest_window_coverage,
                 "transport": transport,
                 "bootstrap_route": self.last_bootstrap.route if self.last_bootstrap else None,
@@ -514,7 +511,7 @@ class FetcherEngine:
                 "transport": transport,
                 "cursor_termination_reason": cursor_termination_reason,
                 "raw_batch_path": str(raw_batch),
-                "finished_at": datetime.utcnow().isoformat() + "Z",
+                "finished_at": utc_now_iso(),
             }
             # Advance the rolling-window watermark ONLY on a successful completion, using
             # the run's start time. A partial/failed run leaves the old watermark intact
@@ -1019,7 +1016,7 @@ class FetcherEngine:
                 last_cursor=next_cursor if next_cursor else "__END__",
                 status="running",
                 meta={
-                    "last_page_fetched_at": datetime.utcnow().isoformat() + "Z",
+                    "last_page_fetched_at": utc_now_iso(),
                     "last_page_number": page,
                     "raw_batch_path": str(batch_dir),
                     "window_coverage": latest_window_coverage,
@@ -1103,5 +1100,3 @@ class FetcherEngine:
             cursor_value="__END__",
             raw_batch=batch_dir,
         )
-
-TimelineFetcher = FetcherEngine

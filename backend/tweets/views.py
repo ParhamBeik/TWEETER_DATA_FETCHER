@@ -11,12 +11,13 @@ from fetcher.processing import TZ as FEED_TZ
 from django.conf import settings
 from django.db.models import Count, Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
-from django.http import FileResponse
+from django.http import FileResponse, QueryDict
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView, RetrieveAPIView, get_object_or_404
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -32,7 +33,7 @@ from config.pagination import (
     StandardCursorPagination,
 )
 
-from .analytics import normalize_handles
+from .analytics import normalize_handles, parse_instant
 
 from .models import ExportJob, FetchRun, Search, SearchTweet, Tweet, TwitterUser, XSession
 from .serializers import (
@@ -73,6 +74,26 @@ FEED_WINDOWS = {"1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720}
 # which meant that at 00:30 Tehran the feed labelled "Today" was almost entirely
 # yesterday. These snap to real boundaries so the label is the truth.
 FEED_CALENDAR_WINDOWS = ("today", "week", "month")
+
+
+def feed_instant(params, name: str):
+    """One `?since=`/`?until=` value as an aware datetime, or None if absent.
+
+    The raw string used to go straight into `created_at__gte`, where Django's
+    field coercion raises `django.core.exceptions.ValidationError` -- which DRF
+    does not handle, so `?since=garbage` was a 500 rather than a 400. The same
+    string is stored verbatim on an export job, so a typo there failed the job
+    on the worker with an opaque message instead of being rejected on the way in.
+    """
+    raw = params.get(name)
+    if not raw:
+        return None
+    parsed = parse_instant(raw)
+    if parsed is None:
+        raise ValidationError(
+            {name: f"Expected an ISO 8601 timestamp, got {str(raw)[:100]!r}."}
+        )
+    return parsed
 
 
 def _calendar_start(window: str):
@@ -144,10 +165,10 @@ def feed_queryset(params):
             qs = qs.filter(account__in=tier_handles)
         except ValueError:
             pass
-    since = params.get("since")
+    since = feed_instant(params, "since")
     if since:
         qs = qs.filter(created_at__gte=since)
-    until = params.get("until")
+    until = feed_instant(params, "until")
     if until:
         qs = qs.filter(created_at__lte=until)
     run_id = params.get("run_id")
@@ -272,6 +293,25 @@ class AccountViewSet(viewsets.ModelViewSet):
             return qs.filter(tracking=False)[:ACCOUNT_BROWSE_LIMIT]
         return qs.filter(tracking=True)
 
+    def get_object(self):
+        """One account by handle, looked up across the whole table.
+
+        DRF routes a detail lookup through `get_queryset`, which narrows the
+        *list* to the tracked roster -- so PATCHing an account that ?q= had just
+        found answered 404, and finding an untracked account in order to start
+        tracking it is the only reason that search exists. Identity is not the
+        list filter.
+
+        Handles are stored normalized (migration 0007 enforces it, ingest and
+        `create` write them that way), so the URL is normalized to match rather
+        than compared verbatim.
+        """
+        account = get_object_or_404(
+            TwitterUser, handle=_normalize_handle(self.kwargs[self.lookup_field])
+        )
+        self.check_object_permissions(self.request, account)
+        return account
+
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["live_state"] = live_state_map()
@@ -326,10 +366,14 @@ class AccountViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def fetch(self, request, handle=None):
+        # Resolved, not taken from the URL. This spends the shared X rate budget
+        # and writes a FetchRun, and an unknown handle used to answer 202 and
+        # actually start an engine subprocess for an account nobody tracks.
+        account = self.get_object()
         from fetching.tasks import fetch_account_historical, fetch_account_live
 
-        fetch_account_live.delay(handle)
-        fetch_account_historical.delay(handle)
+        fetch_account_live.delay(account.handle)
+        fetch_account_historical.delay(account.handle)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
 
@@ -605,6 +649,12 @@ class ExportView(APIView):
         query = request.data.get("query")
         if query is None:
             query = request.query_params.urlencode()
+        # Validated here, not only on the worker: the filters are replayed
+        # verbatim by fetching.exports, so a malformed timestamp would otherwise
+        # surface minutes later as a failed job instead of a 400 on this request.
+        stored = QueryDict(str(query))
+        feed_instant(stored, "since")
+        feed_instant(stored, "until")
         job = ExportJob.objects.create(
             token=secrets.token_urlsafe(32),
             fmt=fmt,

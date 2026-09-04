@@ -16,6 +16,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from fetcher.search import SearchTimelineMonitor
+from fetcher.clock import utc_now
 from fetching.tasks import dispatch_due_searches, run_search
 from tweets.models import Search
 
@@ -240,7 +241,7 @@ def _monitor():
 
 
 def _at(hours_ago):
-    return datetime.utcnow() - timedelta(hours=hours_ago)
+    return utc_now() - timedelta(hours=hours_ago)
 
 
 class _Page(dict):

@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from fetcher.config import PROJECT_ROOT, read_json, write_json
+from fetcher.clock import utc_now, utc_now_iso
 
 UNION_SET = "4_union"
 ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")
@@ -69,7 +70,7 @@ class StorageManager:
     # --- Time and naming ---------------------------------------------------
 
     def _now(self) -> datetime:
-        return datetime.now(self.tz) if self.tz else datetime.utcnow()
+        return datetime.now(self.tz) if self.tz else utc_now()
 
     def _batch_name(self) -> str:
         return self._now().strftime("%Y-%m-%d_%H-%M")
@@ -226,7 +227,7 @@ class StorageManager:
         return self.save_sync_state(state)
 
     def mark_account_skipped_for_run(self, username: str, reason: str) -> Path:
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso()
 
         def mutate(account: Dict[str, Any]) -> None:
             account.update({"skip_current_run": True, "skip_reason": reason, "skip_at": now})

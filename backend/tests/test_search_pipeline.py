@@ -1,12 +1,12 @@
 import unittest
 import json
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from fetcher.search import SearchTimelineMonitor
+from fetcher.clock import utc_now
 from fetcher.processing import TweetSetProcessor
 from fetcher.browser import BrowserBootstrapResult
 
@@ -152,7 +152,7 @@ class SearchPipelineTests(unittest.TestCase):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
         monitor.storage = MagicMock()
-        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._now.return_value = utc_now()
         monitor.storage._batch_name.return_value = "batch"
         monitor.storage.save_search_result_page.side_effect = lambda *args: Path(self.temp_dir) / f"page_{args[-2]}.json"
         monitor.raw_root = Path(self.temp_dir) / "raw"
@@ -206,7 +206,7 @@ class SearchPipelineTests(unittest.TestCase):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
         monitor.storage = MagicMock()
-        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._now.return_value = utc_now()
         monitor.storage._batch_name.return_value = "batch"
         monitor.storage.save_search_result_page.side_effect = lambda *args: Path(self.temp_dir) / f"page_{args[-2]}.json"
         monitor.raw_root = Path(self.temp_dir) / "raw"

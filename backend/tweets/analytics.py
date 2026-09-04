@@ -10,13 +10,14 @@ so the console can drive Pulse, Feed and Analyze from a single filter bar.
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.conf import settings
 from django.db import connection, transaction, OperationalError
-from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, Q, Sum
+from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import Trunc
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -68,18 +69,6 @@ AUTO_BUCKET_HOUR_LIMIT = 48
 SUBSYSTEMS = ("live", "historical", "search")
 
 
-def engagement_expression() -> ExpressionWrapper:
-    """The engagement formula as an ORM expression.
-
-    Kept for callers that must compute it on the fly. The feed and the account
-    aggregates now read `Tweet.engagement`, a persisted generated column built
-    from the same ENGAGEMENT_FIELDS -- see the model. The two definitions have to
-    agree, which `test_engagement_definitions_agree` enforces.
-    """
-    total = sum(F(field) for field in ENGAGEMENT_FIELDS)
-    return ExpressionWrapper(total, output_field=FloatField())
-
-
 @dataclass(frozen=True)
 class Window:
     since: datetime
@@ -96,10 +85,15 @@ class Window:
         return self.since - (self.until - self.since)
 
 
-def _parse_when(value) -> datetime | None:
+def parse_instant(value) -> datetime | None:
+    """One request-supplied timestamp as an aware datetime, or None if unusable.
+
+    Shared with the feed (tweets.views), which needs the same spelling of "an
+    ISO timestamp the console might send" -- including the space-separated
+    offset a URL-decoded `+` turns into.
+    """
     if not value:
         return None
-    import re
     raw = str(value).replace("Z", "+00:00")
     parsed = parse_datetime(raw)
     if parsed is None and " " in raw:
@@ -112,8 +106,8 @@ def _parse_when(value) -> datetime | None:
 
 def window_from(request) -> Window:
     """Resolve range/since/until/bucket into one clamped, validated window."""
-    until = _parse_when(request.query_params.get("until")) or timezone.now()
-    since = _parse_when(request.query_params.get("since"))
+    until = parse_instant(request.query_params.get("until")) or timezone.now()
+    since = parse_instant(request.query_params.get("since"))
     if since is None:
         try:
             span = parse_since(request.query_params.get("range") or DEFAULT_RANGE)

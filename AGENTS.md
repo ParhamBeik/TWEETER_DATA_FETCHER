@@ -21,6 +21,7 @@ For install and usage see `README.md`. This file is the working contract.
 | Scratch-disk layer | `backend/fetcher/storage.py` |
 | Console, file logs, NDJSON events | `backend/fetcher/observability.py` |
 | Paths, config resolution, account tiers | `backend/fetcher/config.py` |
+| UTC clock (`utc_now`, `utc_now_iso`) | `backend/fetcher/clock.py` |
 | Design tokens (colour, type, spacing) | `frontend/src/index.css` |
 | UI primitives (button, panel, status, dialog, tabs) | `frontend/src/ui/` |
 | Shared X budget rail, on every page | `frontend/src/BudgetRail.jsx` |
@@ -45,6 +46,16 @@ For install and usage see `README.md`. This file is the working contract.
 - Celery task `name=` strings are wire identifiers. Renaming one strands any
   message already queued under the old name.
 - Run `cd backend && python -m pytest -q` after code changes.
+- Timestamps written by the engine are naive-UTC ISO strings ending in `Z`, and
+  the scheduling checks subtract a parsed one from "now". Use
+  `fetcher.clock.utc_now`/`utc_now_iso`, never `datetime.utcnow()` (deprecated,
+  scheduled for removal) and never a bare aware `datetime.now(timezone.utc)` --
+  the first breaks the runtime upgrade, the second raises `TypeError` on those
+  subtractions and starts writing `+00:00` into files that already hold `Z`.
+- `backend/requirements.txt` is pinned with `~=` (patch series only). The image
+  is rebuilt from it on every deploy, so an open range means two builds of one
+  commit can ship different dependencies. Raise a pin deliberately, with a suite
+  run behind it.
 
 ## Runtime contracts
 

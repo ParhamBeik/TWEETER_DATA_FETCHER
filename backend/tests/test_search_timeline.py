@@ -1,8 +1,9 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from fetcher.search import SearchTimelineMonitor
+from fetcher.clock import utc_now
 
 
 class SearchTimelinePathResolutionTests(unittest.TestCase):
@@ -21,7 +22,7 @@ class SearchTimelinePathResolutionTests(unittest.TestCase):
         self.assertEqual(resolved, abs_path)
 
     def test_window_crossed_page_stops_pagination(self):
-        window_start = datetime.utcnow() - timedelta(hours=6)
+        window_start = utc_now() - timedelta(hours=6)
         page_result = {
             "tweets": [{"raw_timestamp": "Wed Jan 01 00:00:00 +0000 2020"}],
             "next_cursor": "cursor-2",
