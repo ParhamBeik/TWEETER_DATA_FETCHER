@@ -1,10 +1,10 @@
 import unittest
 import json
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fetcher.live import LiveMonitor
+from fetcher.clock import utc_now
 from fetcher.search import SearchTimelineMonitor
 from fetcher.config import DEFAULT_PRIORITY_POLICIES
 
@@ -40,7 +40,7 @@ class SearchStatusTests(unittest.TestCase):
     def test_search_state_does_not_sleep_failed_initial_404(self):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.storage = MagicMock()
-        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._now.return_value = utc_now()
         monitor.storage._batch_name.return_value = "batch"
         monitor.config = {}
         monitor.console = MagicMock()
@@ -83,7 +83,7 @@ class SearchStatusTests(unittest.TestCase):
     def test_search_uses_configured_features(self):
         monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
         monitor.storage = MagicMock()
-        monitor.storage._now.return_value = datetime.utcnow()
+        monitor.storage._now.return_value = utc_now()
         monitor.storage._batch_name.return_value = "batch"
         monitor.config = {
             "graphql_endpoint_payloads": {

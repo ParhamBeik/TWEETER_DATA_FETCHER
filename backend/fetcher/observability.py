@@ -12,7 +12,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from fetcher.clock import utc_now, utc_now_iso
 from enum import Enum
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -454,7 +454,7 @@ class EventRecorder:
 
     def emit(self, event_type: str, **fields: Any) -> None:
         payload = {
-            "ts": datetime.utcnow().isoformat() + "Z",
+            "ts": utc_now_iso(),
             "type": event_type,
             "subsystem": self.subsystem,
             "run_id": self.run_id,
@@ -529,7 +529,7 @@ class EventRecorder:
     ) -> str:
         safe_account = re.sub(r"[^a-zA-Z0-9_\\-]+", "_", account or "unknown")
         safe_endpoint = re.sub(r"[^a-zA-Z0-9_\\-]+", "_", endpoint or "unknown")
-        stamp = datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
+        stamp = utc_now().strftime("%Y-%m-%d_%H%M%S_%f")
         detail_name = f"{stamp}_{safe_account}_{safe_endpoint}_{status_code}.json"
         detail_path = self.errors_dir / detail_name
         url = urlsplit(request_url)
@@ -543,7 +543,7 @@ class EventRecorder:
             "headers": _safe_headers(request_headers),
             "variables": _safe_variables(variables),
             "response_text": (response_text or "")[:8000],
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now_iso(),
         }
         try:
             with detail_path.open("w", encoding="utf-8") as handle:
@@ -594,7 +594,7 @@ class EventRecorder:
         status_key = str(status_code)
         by_status[status_key] = int(by_status.get(status_key, 0)) + 1
         signature = f"{endpoint}:{status_key}"
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso()
         failure = ledger.setdefault(
             signature,
             {
@@ -622,7 +622,7 @@ class EventRecorder:
         except (OSError, ValueError):
             return
         changed = False
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso()
         for signature, failure in summary.get("failure_ledger", {}).items():
             if signature.startswith(f"{endpoint}:") and account in failure.get("targets", []):
                 failure.update({"recovered": True, "recovered_at": now, "final_disposition": "recovered"})

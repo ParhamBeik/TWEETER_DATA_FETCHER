@@ -43,6 +43,7 @@ except Exception:
 
 
 from fetcher.config import PROJECT_ROOT
+from fetcher.clock import utc_now, utc_now_iso
 
 from fetcher.config import DEFAULT_PRIORITY_POLICIES
 from fetcher.timeline import FetcherEngine
@@ -706,7 +707,7 @@ class SearchTimelineMonitor:
         debug_target.mkdir(parents=True, exist_ok=True)
         dedup = {str(tweet.get("id")): tweet for tweet in tweets if tweet.get("id")}
         tweets_sorted = list(dedup.values())
-        payload = {"generated_at": datetime.utcnow().isoformat() + "Z", "search_slug": slug, "product": product, "raw_query": raw_query, "metadata": metadata, "tweets": tweets_sorted}
+        payload = {"generated_at": utc_now_iso(), "search_slug": slug, "product": product, "raw_query": raw_query, "metadata": metadata, "tweets": tweets_sorted}
         json_path = target / f"{slug}.json"
         self._save_json(json_path, payload)
         for name in ["entry_type_counts", "cursor_candidates", "skipped_entries", "processed_entries"]:
@@ -758,7 +759,7 @@ class SearchTimelineMonitor:
             last_dt = datetime.fromisoformat(str(last).replace("Z", ""))
         except Exception:
             return True
-        return (datetime.utcnow() - last_dt).total_seconds() >= interval_seconds
+        return (utc_now() - last_dt).total_seconds() >= interval_seconds
 
     def _plan_run(self, search_def: Dict[str, Any]) -> Dict[str, Any]:
         product = SearchQueryBuilder.normalize_product(str(search_def.get("product", "Top")))
@@ -772,7 +773,7 @@ class SearchTimelineMonitor:
         self.console.info(f"Fetching search: {search_def.get('name', slug)} (product={product})")
         self.console.info(f"  Query: {raw_query}")
         rolling_hours = int(policy["rolling_hours"])
-        window_start = datetime.utcnow() - timedelta(hours=max(1, rolling_hours))
+        window_start = utc_now() - timedelta(hours=max(1, rolling_hours))
         # Where the previous successful run of this search got to. Pages entirely
         # older than this are already stored, so scrolling to them is wasted time.
         known_ground = self._parse_known_ground(
@@ -1137,7 +1138,7 @@ class SearchTimelineMonitor:
             new_state["newest_seen_at"] = current_state.get("newest_seen_at")
 
         if is_success:
-            new_state["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
+            new_state["last_checked_at"] = utc_now_iso()
         else:
             new_state["last_checked_at"] = current_state.get("last_checked_at")
             

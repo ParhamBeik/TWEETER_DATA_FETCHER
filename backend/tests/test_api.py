@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 
 from fetching.ingest import ingest_search_hits, upsert_tweet
 from tweets.models import (
+    ExportJob,
     FetchRun,
     Search,
     SearchHit,
@@ -313,6 +314,56 @@ def test_feed_filters_by_text_query(client_user):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("param", ["since", "until"])
+@pytest.mark.parametrize("value", ["garbage", "2024-13-45", "not a date"])
+def test_feed_rejects_an_unparseable_timestamp(client_user, param, value):
+    """A bad ?since=/?until= is the caller's mistake, so it must read as one.
+
+    Handing the raw string to `created_at__gte` raised Django's own
+    ValidationError, which DRF does not translate -- every one of these was a
+    500 and an error-log traceback.
+    """
+    client, _ = client_user
+    response = client.get(f"/api/feed/?{param}={value}")
+    assert response.status_code == 400
+    assert param in response.json()
+
+
+@pytest.mark.django_db
+def test_feed_accepts_the_timestamps_the_console_sends(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
+    upsert_tweet(
+        {
+            "rest_id": "1",
+            "author_id": "1",
+            "account": "jack",
+            "text": "hello",
+            "created_at": "Wed Oct 10 20:19:24 +0000 2018",
+        }
+    )
+    for window in ("2018-10-10T00:00:00Z", "2018-10-10T00:00:00+00:00", "2018-10-10"):
+        response = client.get(f"/api/feed/?since={window}")
+        assert response.status_code == 200, window
+        assert [t["tweet_id"] for t in response.json()["results"]] == ["1"], window
+
+
+@pytest.mark.django_db
+def test_export_rejects_an_unparseable_timestamp_before_queueing(client_user):
+    """The worker replays these filters verbatim, so the check belongs here.
+
+    Accepting the request queued a job that failed minutes later with a message
+    about a database lookup, on a screen that only knows it asked for an export.
+    """
+    client, _ = client_user
+    response = client.post(
+        "/api/export/", {"format": "jsonl", "query": "since=garbage"}, format="json"
+    )
+    assert response.status_code == 400
+    assert ExportJob.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_export_jsonl_shares_feed_filters(client_user):
     client, _ = client_user
     TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
@@ -431,6 +482,50 @@ def test_account_unquarantine_and_fetch(client_user):
     assert queued.status_code == 202
     hist.assert_called_once_with("jack")
     live.assert_called_once_with("jack")
+
+
+@pytest.mark.django_db
+def test_an_untracked_account_found_by_search_can_be_tracked(client_user):
+    """Searching the whole table exists so an untracked account can be enabled.
+
+    The detail lookup used to run through the list queryset, which defaults to
+    tracked-only -- so the console's Enable button, on the one row type that
+    search is for, answered 404.
+    """
+    client, _ = client_user
+    TwitterUser.objects.create(handle="incidental", tracking=False, display_name="Seen once")
+
+    found = client.get("/api/accounts/?q=incidental").data
+    assert [row["handle"] for row in found] == ["incidental"]
+
+    resp = client.patch("/api/accounts/incidental/", {"tracking": True}, format="json")
+    assert resp.status_code == 200
+    assert TwitterUser.objects.get(handle="incidental").tracking is True
+
+
+@pytest.mark.django_db
+def test_account_detail_normalizes_the_handle_in_the_url(client_user):
+    client, _ = client_user
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    assert client.patch("/api/accounts/@JACK/", {"priority": 3}, format="json").status_code == 200
+    assert TwitterUser.objects.get(handle="jack").priority == 3
+
+
+@pytest.mark.django_db
+def test_fetch_refuses_a_handle_that_does_not_exist(client_user):
+    """Every fetch spends the shared X budget and writes a run row.
+
+    This used to answer 202 for any string in the URL and start a real engine
+    subprocess for an account nobody had ever heard of.
+    """
+    client, _ = client_user
+    with patch("fetching.tasks.fetch_account_historical.delay") as hist, patch(
+        "fetching.tasks.fetch_account_live.delay"
+    ) as live:
+        resp = client.post("/api/accounts/nobody-has-this-handle/fetch/")
+    assert resp.status_code == 404
+    hist.assert_not_called()
+    live.assert_not_called()
 
 
 @pytest.mark.django_db

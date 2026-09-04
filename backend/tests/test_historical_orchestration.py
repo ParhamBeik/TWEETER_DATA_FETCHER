@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from unittest.mock import Mock, patch, MagicMock
 
 from fetcher.timeline import FetcherEngine
+from fetcher.clock import utc_now_iso
 
 
 class HistoricalOrchestrationTests(unittest.TestCase):
@@ -45,7 +46,7 @@ class HistoricalOrchestrationTests(unittest.TestCase):
         
         # Simulate the logic:
         state_status = "completed"
-        started_at = datetime.utcnow().isoformat() + "Z"
+        started_at = utc_now_iso()
         completion_meta = {}
         
         if state_status == "completed":
@@ -67,7 +68,7 @@ class HistoricalOrchestrationTests(unittest.TestCase):
         completion_meta = {}
         
         if state_status == "completed":
-            completion_meta["fetch_watermark"] = datetime.utcnow().isoformat() + "Z"
+            completion_meta["fetch_watermark"] = utc_now_iso()
         
         self.assertNotIn("fetch_watermark", completion_meta)
     
@@ -134,7 +135,7 @@ class HistoricalPhaseEventsTests(unittest.TestCase):
             "phase": "pass_1",
             "endpoint": "UserTweets",
             "accounts": ["elonmusk", "naval", "satoshipay"],
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now_iso(),
         }
         
         self.assertEqual(phase_event["type"], "phase_start")

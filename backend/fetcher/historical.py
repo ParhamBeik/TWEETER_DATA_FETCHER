@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fetcher.config import PROJECT_ROOT
+from fetcher.clock import utc_now_iso
 
 from fetcher.config import get_priority_policy, ordered_accounts
 from fetcher.timeline import FetcherEngine
@@ -419,7 +420,7 @@ def _record_backfill_progress(
         meta["backfill_complete"] = True
         meta["backfill_depth_reason"] = depth_reason
         meta["backfill_cursor"] = None
-        meta["backfill_completed_at"] = datetime.utcnow().isoformat() + "Z"
+        meta["backfill_completed_at"] = utc_now_iso()
         if depth_reason == DEPTH_PROVIDER_LIMIT:
             CONSOLE.warning(
                 f"@{username} {endpoint} stopped at X's serving depth after "
@@ -467,7 +468,7 @@ def run_v4(
     engine.recorder.emit("run_start", accounts=accounts)
     report: Dict[str, Any] = {
         "run_id": run_id,
-        "started_at": datetime.utcnow().isoformat() + "Z",
+        "started_at": utc_now_iso(),
         "config": {
             "endpoint_order": ["UserTweets"],
             "enabled_endpoints": ["UserTweets"],
@@ -513,7 +514,7 @@ def run_v4(
 
     if not active_accounts:
         console.warning("No accounts with resolved user IDs; nothing to fetch.")
-        report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+        report["finished_at"] = utc_now_iso()
         _update_report_summary(report)
         json_path = storage.save_run_report_json(report, run_id)
         txt_path = storage.save_run_report_txt(report, run_id)
@@ -594,7 +595,7 @@ def run_v4(
             }),
         )
 
-    report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+    report["finished_at"] = utc_now_iso()
     _update_report_summary(report)
     json_path = storage.save_run_report_json(report, run_id)
     txt_path = storage.save_run_report_txt(report, run_id)

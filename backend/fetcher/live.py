@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fetcher.config import PROJECT_ROOT, get_priority_policy, load_tier_config, ordered_accounts
+from fetcher.clock import utc_now, utc_now_iso
 from fetcher.observability import PipelineConsole, attach_run_id
 from fetcher.processing import TweetSetProcessor, window_cutoff
 from fetcher.storage import StorageManager
@@ -144,8 +145,8 @@ class LiveStorageManager:
         self.seen_tweets[tweet_id] = {
             "tweet_id": tweet_id,
             "account": tweet.get("account"),
-            "first_seen_at": existing.get("first_seen_at") if isinstance(existing, dict) else datetime.utcnow().isoformat() + "Z",
-            "last_seen_at": datetime.utcnow().isoformat() + "Z",
+            "first_seen_at": existing.get("first_seen_at") if isinstance(existing, dict) else utc_now_iso(),
+            "last_seen_at": utc_now_iso(),
             "stored_in": sorted(locations),
         }
         self._save_json(self.seen_tweets_file, self.seen_tweets)
@@ -209,7 +210,7 @@ class LiveMonitor:
     def _record_resolution_failure(self, username: str, reason: str) -> Dict[str, Any]:
         state = self.live_storage.account_state(username)
         count = int(state.get("availability_failure_count", 0) or 0) + 1
-        now = datetime.utcnow().isoformat() + "Z"
+        now = utc_now_iso()
         updates: Dict[str, Any] = {
             "last_checked_at": now,
             "last_status": "failed",
@@ -239,7 +240,7 @@ class LiveMonitor:
             last_dt = datetime.fromisoformat(str(last).replace("Z", ""))
         except Exception:
             return True
-        return (datetime.utcnow() - last_dt).total_seconds() >= interval
+        return (utc_now() - last_dt).total_seconds() >= interval
 
     def _record_endpoint_result(self, username: str, result: Dict[str, Any]) -> None:
         updates = {
@@ -303,7 +304,7 @@ class LiveMonitor:
         result: Dict[str, Any] = {
             "account": username,
             "priority": policy.get("priority"),
-            "started_at": datetime.utcnow().isoformat() + "Z",
+            "started_at": utc_now_iso(),
             "endpoints": {},
         }
         try:
@@ -341,7 +342,7 @@ class LiveMonitor:
             result["status"] = "partial"
         else:
             result["status"] = "completed"
-        result["finished_at"] = datetime.utcnow().isoformat() + "Z"
+        result["finished_at"] = utc_now_iso()
         self._record_endpoint_result(username, result)
         return result
 
@@ -369,7 +370,7 @@ class LiveMonitor:
         self.console.banner(f"Cycle started: {len(selected)} account(s)")
         self.fetcher.recorder.emit("cycle_start", accounts=selected)
         report = {
-            "started_at": datetime.utcnow().isoformat() + "Z",
+            "started_at": utc_now_iso(),
             "accounts": {},
             "summary": {
                 "eligible": 0, "checked": 0, "skipped": 0, "failed": 0,
@@ -415,7 +416,7 @@ class LiveMonitor:
             report["accounts"][username] = {
                 "account": username,
                 "priority": policy.get("priority"),
-                "started_at": datetime.utcnow().isoformat() + "Z",
+                "started_at": utc_now_iso(),
                 "endpoints": {},
             }
             try:
@@ -426,7 +427,7 @@ class LiveMonitor:
                 report["accounts"][username].update({
                     "status": "failed",
                     "reason": f"user_id_resolution_failed: {str(exc)[:300]}",
-                    "finished_at": datetime.utcnow().isoformat() + "Z",
+                    "finished_at": utc_now_iso(),
                 })
                 report["accounts"][username]["availability"] = self._record_resolution_failure(
                     username, report["accounts"][username]["reason"]
@@ -473,11 +474,11 @@ class LiveMonitor:
             account_report["new_tweets"] = new_stats
             statuses = [str(row.get("status")) for row in account_report["endpoints"].values()]
             account_report["status"] = "failed" if any(status == "failed" for status in statuses) else ("partial" if any(status == "partial" for status in statuses) else "completed")
-            account_report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+            account_report["finished_at"] = utc_now_iso()
             self._record_endpoint_result(username, account_report)
             if account_report.get("status") != "completed":
                 report["summary"]["failed"] += 1
-        report["finished_at"] = datetime.utcnow().isoformat() + "Z"
+        report["finished_at"] = utc_now_iso()
 
         # Print summary after cycle
         self.console.banner(f"Cycle complete: {report['summary']}")
@@ -489,7 +490,7 @@ class LiveMonitor:
 
         report_id = (
             f"{getattr(self, 'run_id', None) or 'live'}_"
-            f"live_{datetime.utcnow().strftime('%Y%m%dT%H%M%S%fZ')}"
+            f"live_{utc_now().strftime('%Y%m%dT%H%M%S%fZ')}"
         )
         report["report_id"] = report_id
         report_path = self.live_storage.storage.save_run_report_json(report, report_id)

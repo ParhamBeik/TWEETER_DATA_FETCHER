@@ -1,17 +1,37 @@
-Django>=5.0,<5.2
-djangorestframework>=3.15
-djangorestframework-simplejwt>=5.3
-psycopg[binary]>=3.1
-celery>=5.3
-redis>=5.0
-django-cors-headers>=4.3
-gunicorn>=21.0
+# Pinned with ~=, which allows the patch series and nothing else
+# (`Django~=5.2.17` accepts 5.2.18, never 5.3).
+#
+# Open `>=` ranges were not a policy, they were a liability: the image is rebuilt
+# from this file on every deploy, so a fresh build silently resolved gunicorn 26,
+# pytest 9, redis 8 and rich 15 -- majors nobody had run the suite against -- and
+# two builds of the same commit could ship different dependency sets. A green CI
+# run said nothing about the image that followed it. The patch series is the
+# widest range that still carries security fixes without carrying behaviour
+# changes.
+#
+# To move one: raise the pin, run `python -m pytest` (and CI, which runs the same
+# suite against Postgres), then commit the pin with the evidence.
+# Verified together on Python 3.11 against SQLite and PostgreSQL: 443 passed.
 
-# X engine runtime
-requests>=2.0
-playwright>=1.0
-rich>=13.0
+# Django 5.2 is the LTS (supported to April 2028). The previous `<5.2` ceiling
+# held this project on 5.1, which reached end of life in December 2025 -- no
+# security fixes at all.
+Django~=5.2.17
+djangorestframework~=3.18.0
+djangorestframework-simplejwt~=5.5.1
+psycopg[binary]~=3.3.5
+celery~=5.6.3
+redis~=8.1.0
+django-cors-headers~=4.9.0
+gunicorn~=26.2.0
+
+# X engine runtime. The playwright pin and the `playwright install chromium`
+# layer in backend/Dockerfile are one pair: the library only drives the browser
+# build it shipped with.
+requests~=2.34.2
+playwright~=1.62.0
+rich~=15.0.0
 
 # Tests
-pytest>=8.0
-pytest-django>=4.8
+pytest~=9.1.1
+pytest-django~=4.14.0

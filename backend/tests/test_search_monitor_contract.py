@@ -23,13 +23,14 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from fetcher.processing import TweetSetProcessor
+from fetcher.clock import utc_now
 from fetcher.search import SearchTimelineMonitor
 
 
@@ -92,7 +93,7 @@ def build_monitor(workspace: Path, *, state: dict | None = None) -> SearchTimeli
     monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
     monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
     monitor.storage = MagicMock()
-    monitor.storage._now.return_value = datetime.utcnow()
+    monitor.storage._now.return_value = utc_now()
     monitor.storage._batch_name.return_value = "batch"
     monitor.storage.save_search_result_page.side_effect = (
         lambda *args: workspace / f"page_{args[-2]}.json"
@@ -118,7 +119,7 @@ def build_monitor(workspace: Path, *, state: dict | None = None) -> SearchTimeli
 
 def http_page(tweet_id="1", created_at=None, cursor=None, **extra):
     """An HTTP page 1 carrying the underscore-prefixed transport metadata."""
-    created_at = created_at or datetime.utcnow().strftime("%a %b %d %H:%M:%S +0000 %Y")
+    created_at = created_at or utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y")
     page = _search_page(tweet_id, created_at, cursor)
     page["_attempts"] = 1
     page["_status"] = 200
@@ -217,8 +218,8 @@ def test_no_bottom_cursor_ends_a_deep_run_successfully(workspace):
         route_retry_count=0,
         target_pages={
             "SearchTimeline": [
-                _search_page("1", datetime.utcnow().strftime("%a %b %d %H:%M:%S +0000 %Y"), "c1"),
-                _search_page("2", datetime.utcnow().strftime("%a %b %d %H:%M:%S +0000 %Y"), None),
+                _search_page("1", utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y"), "c1"),
+                _search_page("2", utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y"), None),
             ]
         },
     )
@@ -239,7 +240,7 @@ def _state_of(monitor) -> dict:
 
 def test_a_successful_run_records_the_newest_tweet_it_saw(workspace):
     monitor = build_monitor(workspace)
-    stamp = datetime.utcnow().strftime("%a %b %d %H:%M:%S +0000 %Y")
+    stamp = utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y")
     monitor._request_page = MagicMock(return_value=http_page(created_at=stamp))
 
     monitor.monitor_search({**SEARCH_DEF, "pagination_depth": 1})
@@ -253,11 +254,11 @@ def test_the_mark_only_ever_moves_forward(workspace):
     """An older tweet must not pull the mark back, or the next run re-scrolls
     ground it has already stored.
     """
-    future = (datetime.utcnow() + timedelta(days=1)).isoformat() + "Z"
+    future = (utc_now() + timedelta(days=1)).isoformat() + "Z"
     monitor = build_monitor(
         workspace, state={"test::latest": {"newest_seen_at": future}}
     )
-    old = (datetime.utcnow() - timedelta(days=5)).strftime("%a %b %d %H:%M:%S +0000 %Y")
+    old = (utc_now() - timedelta(days=5)).strftime("%a %b %d %H:%M:%S +0000 %Y")
     monitor._request_page = MagicMock(return_value=http_page(created_at=old))
 
     monitor.monitor_search({**SEARCH_DEF, "pagination_depth": 1})
@@ -270,7 +271,7 @@ def test_a_partial_run_never_advances_the_mark(workspace):
     newest tweet would leave a hole no later run goes back for -- and nothing
     at the time would look wrong.
     """
-    previous = (datetime.utcnow() - timedelta(days=3)).isoformat() + "Z"
+    previous = (utc_now() - timedelta(days=3)).isoformat() + "Z"
     monitor = build_monitor(
         workspace, state={"test::latest": {"newest_seen_at": previous, "last_checked_at": "old"}}
     )
@@ -278,7 +279,7 @@ def test_a_partial_run_never_advances_the_mark(workspace):
         ok=False, error="boom", stop_reason=None, target_pages={"SearchTimeline": []},
         route=None, support_request_count=0, route_retry_count=0,
     )
-    now = datetime.utcnow().strftime("%a %b %d %H:%M:%S +0000 %Y")
+    now = utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y")
     monitor._request_page = MagicMock(return_value=http_page(created_at=now, cursor="c1"))
 
     report = monitor.monitor_search({**SEARCH_DEF, "pagination_depth": 3})
