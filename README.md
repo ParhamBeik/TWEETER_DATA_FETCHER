@@ -189,4 +189,19 @@ can never rewrite a script bash is still reading.
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-`scripts/backup_pg.sh` writes a nightly gzipped `pg_dump` and keeps the last 14.
+### Backups
+
+`scripts/backup_pg.sh` writes a gzipped `pg_dump` and keeps the last 14. It
+refuses to accept a dump that does not end with pg_dump's own completion marker,
+and rotates only after a good one is on disk — a failed dump used to leave a
+20-byte gzip that `gunzip -t` calls valid, and fourteen bad nights in a row would
+have deleted every backup that still restored.
+
+**It is not scheduled by anything in this repo.** Wire it into cron on the host,
+the way the other services on the same box already are:
+
+```cron
+0 1 * * * cd /opt/apps/twitter-project && ./scripts/backup_pg.sh >> /var/log/twitter-backup.log 2>&1
+```
+
+Until that line exists there are no backups, however green the deploy looks.

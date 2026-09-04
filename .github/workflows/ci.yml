@@ -39,9 +39,9 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           # Must match backend/Dockerfile. A suite that passes on one interpreter
           # says nothing about the image if the image runs another.
@@ -85,9 +85,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # jsdom 30 (via vitest) pulls undici 8, which hard-requires
           # >=22.19.0 and dies with "webidl.util.markAsUncloneable is not a

@@ -313,12 +313,16 @@ class FetcherEngine:
             },
         )
         # Automatic auth recovery via a headless sniffer has been retired
-        # (YAGNI: it was the least-reliable part of the auth path). The v4
-        # sniffer is now a pure diagnostic tool. Refresh auth/query-ids manually
-        # via fetcher/twitter/auth.py.
+        # (YAGNI: it was the least-reliable part of the auth path). The sniffer
+        # is now a pure diagnostic tool, run by hand -- see fetcher/auth.py.
+        #
+        # The command below is the whole point of this line: it is printed at the
+        # moment an operator has to act. It named `auto_refresh.py`, and a file by
+        # that name does not exist anywhere in this repo.
         self.logger.warning(
-            f"@{account} {endpoint} 404/context-rejected; automatic auth recovery is disabled "
-            "(run auto_refresh.py --interactive manually to refresh)."
+            f"@{account} {endpoint} 404/context-rejected; automatic auth recovery is disabled. "
+            "Refresh by hand: `python -m fetcher.auth --interactive`, then post the "
+            "resulting config.json to /api/session/ (or `manage.py load_xsession --file`)."
         )
         return False
 
