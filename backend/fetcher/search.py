@@ -1114,15 +1114,21 @@ class SearchTimelineMonitor:
         product = plan["product"]
         slug = plan["slug"]
         exhausted_reason = report["metadata"]["exhausted_reason"]
-        last_http_status = report["metadata"]["last_http_status"]
         status = report["status"]
         state_key = self._state_key(search_def, product)
         current_state = self.search_state.get(state_key, {})
         is_success = status == "completed"
         
         new_state = {
-            "last_status": exhausted_reason if is_success else f"error_http_{last_http_status}",
-            "last_counts": report["counts"]
+            # The reason itself, never a fabricated HTTP label. About a third of
+            # deep searches end `partial_browser_stalled`, which carries a 200 in
+            # `last_http_status` -- so the old spelling filed the browser stall
+            # as `error_http_200` and threw away the one fact worth knowing. A
+            # genuine HTTP failure already names its status in the reason
+            # (`failed_initial_404`), and the code itself is still in the report
+            # metadata. fetcher/live.py records the raw status the same way.
+            "last_status": exhausted_reason,
+            "last_counts": report["counts"],
         }
 
         # High-water mark for the next run's early stop. Only ever advanced, and

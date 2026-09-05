@@ -22,6 +22,21 @@ frontend/dist/
 *.sqlite3
 backups/
 
+# The X session, in every shape the docs tell an operator to create it in.
+# All three hold `auth_token`, which is a full login to the shared X account:
+#
+#  - `session.json` is what the README hands to `manage.py load_xsession`.
+#  - `backend/config/config.json` is where the engine reads its session from,
+#    and that directory is the Django settings package -- i.e. tracked -- so an
+#    untracked config.json sits in a folder people `git add` without looking.
+#  - `tdf-auth` copies config.json to `.json.bak` before every rewrite, which
+#    left a second, longer-lived copy of the same credential beside it.
+session.json
+backend/config/config.json
+backend/config/config.json.bak
+backend/config/searches.json
+*.json.bak
+
 # Test/build artifacts
 .pytest_cache/
 coverage/

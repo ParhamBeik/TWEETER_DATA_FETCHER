@@ -170,8 +170,39 @@ class BaseTweetSerializer(serializers.ModelSerializer):
         extras = self._rewritten_extras(obj)
         if key in extras:
             return extras.get(key, default)
-        payload = obj.payload if isinstance(getattr(obj, "payload", None), dict) else {}
-        return payload.get(key, default)
+        return self._payloads(obj).get(obj.pk, {}).get(key, default)
+
+    def _payloads(self, obj) -> dict:
+        """pk → payload, for the whole page in one query.
+
+        The feed querysets `.defer("payload")` because the blob is large and
+        almost never read. But a row whose `extras` is missing one of the keys
+        above falls through to `payload` here, and reading a *deferred* field
+        re-fetches it one row at a time -- 30 extra round-trips per page, each
+        dragging a whole JSONB document, which is strictly worse than never
+        having deferred it.
+
+        Every stored row now carries a complete `extras` (ingest writes all six
+        keys, present or null), so this path is dormant today. It is batched
+        anyway because the day someone adds a seventh key to `_extra`, every
+        existing row falls through it at once -- and an N+1 that appears when a
+        field is added is one nobody is looking for.
+        """
+        cache = getattr(self, "_payload_cache", None)
+        if cache is None:
+            cache = self._payload_cache = {}
+        if obj.pk in cache:
+            return cache
+        # `or [obj]` for a single-object serializer, which has no page to batch
+        # over -- one query for one row, the same cost as the deferred load.
+        rows = page_rows(self) or [obj]
+        cache.update({
+            pk: payload if isinstance(payload, dict) else {}
+            for pk, payload in type(obj)
+            ._default_manager.filter(pk__in=[row.pk for row in rows])
+            .values_list("pk", "payload")
+        })
+        return cache
 
     @staticmethod
     def _extras_of(row) -> dict:

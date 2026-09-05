@@ -24,6 +24,7 @@ from rest_framework.views import APIView
 
 from fetching.accounts import clamp_priority, clear_live_quarantine, live_state_map
 
+from .params import body_mapping
 from .permissions import IsStaff, IsStaffOrReadOnly
 
 from config.pagination import (
@@ -318,14 +319,15 @@ class AccountViewSet(viewsets.ModelViewSet):
         return context
 
     def create(self, request, *args, **kwargs):
-        handle = _normalize_handle(request.data.get("handle") or "")
+        data = body_mapping(request)
+        handle = _normalize_handle(data.get("handle") or "")
         if not handle:
             return Response({"detail": "handle required"}, status=400)
-        priority = clamp_priority(request.data.get("priority", 7))
+        priority = clamp_priority(data.get("priority", 7))
         account, _created = TwitterUser.objects.update_or_create(
             handle=handle,
             defaults={
-                "display_name": request.data.get("display_name") or handle,
+                "display_name": data.get("display_name") or handle,
                 "tracking": True,
                 "priority": priority,
                 "quarantined": False,
@@ -344,17 +346,18 @@ class AccountViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         account = self.get_object()
+        data = body_mapping(request)
         fields = []
-        if "tracking" in request.data:
-            account.tracking = bool(request.data.get("tracking"))
+        if "tracking" in data:
+            account.tracking = bool(data.get("tracking"))
             fields.append("tracking")
-        if "priority" in request.data:
-            account.priority = clamp_priority(request.data.get("priority"))
+        if "priority" in data:
+            account.priority = clamp_priority(data.get("priority"))
             fields.append("priority")
-        if "display_name" in request.data:
-            account.display_name = str(request.data.get("display_name") or "")
+        if "display_name" in data:
+            account.display_name = str(data.get("display_name") or "")
             fields.append("display_name")
-        if request.data.get("quarantined") is False:
+        if data.get("quarantined") is False:
             account.quarantined = False
             account.quarantine_reason = ""
             account.quarantined_at = None
@@ -403,7 +406,7 @@ class CycleView(APIView):
     permission_classes = [IsStaff]
 
     def post(self, request):
-        subsystem = str(request.data.get("subsystem") or "").lower()
+        subsystem = str(body_mapping(request).get("subsystem") or "").lower()
         from fetching.tasks import backfill_historical_all, poll_live_all, repoll_searches
 
         tasks = {
@@ -638,15 +641,16 @@ class ExportView(APIView):
         return Response({"results": [_export_payload(job) for job in jobs]})
 
     def post(self, request):
+        data = body_mapping(request)
         fmt = str(
-            request.data.get("format") or request.query_params.get("format") or "jsonl"
+            data.get("format") or request.query_params.get("format") or "jsonl"
         ).lower()
         if fmt not in {"jsonl", "csv"}:
             return Response({"detail": "format must be jsonl or csv"}, status=400)
         # The filters are stored verbatim, as a query string, so the worker
         # rebuilds exactly the queryset the operator was looking at -- including
         # repeatable ?account=, which a dict would flatten to its last value.
-        query = request.data.get("query")
+        query = data.get("query")
         if query is None:
             query = request.query_params.urlencode()
         # Validated here, not only on the worker: the filters are replayed

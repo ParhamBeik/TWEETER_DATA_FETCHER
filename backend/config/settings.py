@@ -50,6 +50,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Ahead of anything that reads a parameter: a NUL byte in the query string
+    # is a DataError from psycopg the moment it reaches a filter.
+    "config.middleware.RejectNullBytesMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

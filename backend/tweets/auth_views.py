@@ -26,6 +26,8 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from .params import body_mapping
+
 MAX_USERNAME_LENGTH = 150
 
 
@@ -57,9 +59,10 @@ class RegisterView(APIView):
         if not settings.ALLOW_REGISTRATION:
             return Response({"detail": "Registration is closed."}, status=403)
 
-        username = str(request.data.get("username") or "").strip()
-        email = str(request.data.get("email") or "").strip()
-        password = request.data.get("password") or ""
+        data = body_mapping(request)
+        username = str(data.get("username") or "").strip()
+        email = str(data.get("email") or "").strip()
+        password = data.get("password") or ""
 
         errors: dict[str, list[str]] = {}
         if not username:
@@ -119,10 +122,11 @@ class LoginView(APIView):
     throttle_scope = "login"
 
     def post(self, request):
-        raw_username = str(request.data.get("username") or "").strip()
+        data = body_mapping(request)
+        raw_username = str(data.get("username") or "").strip()
         matched_user = User.objects.filter(username__iexact=raw_username).first()
         username = matched_user.username if matched_user is not None else raw_username
-        user = authenticate(username=username, password=request.data.get("password") or "")
+        user = authenticate(username=username, password=data.get("password") or "")
         if user is None or not user.is_active:
             # One message for both "no such user" and "wrong password", so the
             # endpoint cannot be used to enumerate accounts.
@@ -151,7 +155,7 @@ class LogoutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        raw = request.data.get("refresh") or ""
+        raw = body_mapping(request).get("refresh") or ""
         if raw:
             try:
                 RefreshToken(raw).blacklist()
