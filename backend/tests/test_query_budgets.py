@@ -16,8 +16,21 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 from fetching.ingest import upsert_tweet
-from tweets.models import EndpointState, FetchRun, MediaAsset, Search, TwitterUser
+from tweets.models import (
+    EndpointState,
+    ExportJob,
+    FetchRun,
+    MediaAsset,
+    Search,
+    SearchHit,
+    SearchTweet,
+    Tweet,
+    TwitterUser,
+)
 
 
 @pytest.fixture
@@ -153,3 +166,93 @@ def test_single_object_serializers_still_resolve_their_own_lookups(
     timeline = staff_client.get("/api/accounts/acct1/tweets/")
     assert timeline.status_code == 200
     assert timeline.json()["results"][0]["media"][0]["url"].startswith("/media/")
+
+
+def _seed_rows(count: int, user):
+    """`count` of everything the list endpoints below page over.
+
+    Deliberately built with empty `extras`, which is what a row stored before a
+    key existed looks like. That is the state in which the tweet serializers
+    fall back to the deferred `payload` column, so it is the state that exposes
+    a per-row load.
+    """
+    for index in range(count):
+        handle = f"acct{index}"
+        TwitterUser.objects.create(handle=handle, tracking=True, priority=3)
+        EndpointState.objects.create(
+            account=handle, endpoint="UserTweets", data={"fetch_watermark": "2026-01-01"}
+        )
+        Tweet.objects.create(
+            dedup_key=f"tweet:{index}", tweet_id=str(1000 + index), account=handle,
+            text=f"post {index}", text_clean=f"post {index}", type="Tweet",
+            source_subsystem="live",
+        )
+        ExportJob.objects.create(
+            token=f"token-{index}", fmt="jsonl", params={}, requested_by=user,
+            status="completed", relative_path=f"export-{index}.jsonl",
+        )
+    search = Search.objects.create(name="q", slug="q", raw_query="term")
+    for index in range(count):
+        hit = SearchTweet.objects.create(
+            dedup_key=f"hit:{index}", tweet_id=str(5000 + index), account=f"acct{index}",
+            text=f"hit {index}", text_clean=f"hit {index}", type="Tweet",
+        )
+        SearchHit.objects.create(search=search, search_tweet=hit, rank=index)
+        FetchRun.objects.create(
+            run_id=f"run-{index}", subsystem="search", search=search,
+            status="completed", summary={"ingested_tweets": index, "new_tweets": index},
+        )
+    return search
+
+
+def _clear():
+    for model in (SearchHit, SearchTweet, Tweet, FetchRun, Search, ExportJob,
+                  EndpointState, TwitterUser):
+        model.objects.all().delete()
+
+
+# Every list endpoint the console polls, keyed by a template the search id fills.
+PAGED_ENDPOINTS = [
+    "/api/feed/",
+    "/api/accounts/",
+    "/api/runs/",
+    "/api/searches/",
+    "/api/searches/{search}/results/",
+    "/api/searches/{search}/runs/",
+    "/api/export/",
+    "/api/stats/pipeline/",
+    "/api/stats/overview/",
+    "/api/analytics/ingestion/",
+    "/api/analytics/accounts/",
+]
+
+
+@pytest.mark.django_db
+def test_no_list_endpoint_costs_more_queries_as_rows_are_added(
+    staff_client, settings, tmp_path
+):
+    """The N+1 test proper: serve 2 rows, then 12, and compare the query counts.
+
+    An upper bound catches a regression only if someone guessed the bound
+    tightly enough; comparing two sizes catches any cost that scales, whatever
+    the constant. This is how the feed's deferred-`payload` load was found --
+    `.defer("payload")` avoids the blob on the list query, and then reading the
+    deferred field re-fetched it one row at a time, so the page paid 30 extra
+    round-trips *and* still loaded every payload.
+    """
+    settings.MEDIA_ROOT = tmp_path
+    user = User.objects.get(username="ops")
+    measured: dict[str, list[int]] = {}
+    for row_count in (2, 12):
+        _clear()
+        search = _seed_rows(row_count, user)
+        for template in PAGED_ENDPOINTS:
+            with CaptureQueriesContext(connection) as queries:
+                response = staff_client.get(template.format(search=search.id))
+            assert response.status_code == 200, template
+            measured.setdefault(template, []).append(len(queries.captured_queries))
+
+    scaling = {
+        template: counts for template, counts in measured.items() if counts[1] > counts[0]
+    }
+    assert not scaling, f"query count grows with row count: {scaling}"

@@ -31,6 +31,7 @@ from fetching.management.commands.fetch_report import parse_since
 
 from tweets import topics
 from tweets.models import FetchRun, KeyValueState, Search, SearchTweet, Tweet, TwitterUser
+from tweets.params import body_mapping
 from tweets.permissions import IsStaff
 from tweets.serializers import TweetSerializer, _new_tweets
 
@@ -65,6 +66,17 @@ DEFAULT_RANGE = "24h"
 # SQL -- membership in this dict is what makes the raw-SQL views injection-safe.
 BUCKET_KINDS = {"hour": "hour", "day": "day", "week": "week"}
 AUTO_BUCKET_HOUR_LIMIT = 48
+
+# Bounds for any request-supplied instant. `window_from` subtracts a window
+# length from `until` and `Window.previous_since` subtracts another from
+# `since`, so an instant near datetime.min made those raise OverflowError --
+# `?until=0001-01-01` was an uncaught 500 on every endpoint in this file.
+# Clamping rather than rejecting keeps the file's existing contract that a
+# nonsense window resolves to a usable one; both bounds are far outside
+# anything X has ever hosted, so a clamped request returns nothing, which is
+# the honest answer to "what happened in the year 1".
+EARLIEST_INSTANT = datetime(1900, 1, 1, tzinfo=dt_timezone.utc)
+LATEST_INSTANT = datetime(2200, 1, 1, tzinfo=dt_timezone.utc)
 
 SUBSYSTEMS = ("live", "historical", "search")
 
@@ -104,16 +116,30 @@ def parse_instant(value) -> datetime | None:
     return parsed
 
 
+def _representable(value: datetime) -> datetime:
+    """Keep an instant inside the range the window arithmetic can hold."""
+    return min(max(value, EARLIEST_INSTANT), LATEST_INSTANT)
+
+
 def window_from(request) -> Window:
     """Resolve range/since/until/bucket into one clamped, validated window."""
-    until = parse_instant(request.query_params.get("until")) or timezone.now()
+    until = _representable(
+        parse_instant(request.query_params.get("until")) or timezone.now()
+    )
     since = parse_instant(request.query_params.get("since"))
+    if since is not None:
+        since = _representable(since)
     if since is None:
         try:
             span = parse_since(request.query_params.get("range") or DEFAULT_RANGE)
         except ValueError:
             span = parse_since(DEFAULT_RANGE)
-        since = until - span
+        # Capped before the subtraction rather than after it. `?range=999999999d`
+        # is a perfectly representable timedelta of 2.7 million years, and it is
+        # `until - span` itself that overflows; clamping the result afterwards
+        # never runs. The cap is the same one applied below, so this changes no
+        # window that was already legal.
+        since = until - min(span, timedelta(hours=MAX_WINDOW_HOURS))
     if since >= until:
         since = until - parse_since(DEFAULT_RANGE)
     since = max(since, until - timedelta(hours=MAX_WINDOW_HOURS))
@@ -849,13 +875,14 @@ class TopicBlocklistView(APIView):
         return Response({"terms": sorted(topic_blocklist())})
 
     def post(self, request):
-        term = str(request.data.get("topic") or "").strip().lower()
+        data = body_mapping(request)
+        term = str(data.get("topic") or "").strip().lower()
         if not term:
             return Response({"detail": "topic required"}, status=400)
         terms = topic_blocklist()
         # One endpoint, both directions: the console's control is a toggle, and
         # two endpoints for one boolean is two things to keep in step.
-        terms.discard(term) if request.data.get("hidden") is False else terms.add(term)
+        terms.discard(term) if data.get("hidden") is False else terms.add(term)
         namespace, name = _BLOCKLIST_STATE
         KeyValueState.objects.update_or_create(
             namespace=namespace, name=name, defaults={"data": {"terms": sorted(terms)}}

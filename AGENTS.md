@@ -14,6 +14,8 @@ For install and usage see `README.md`. This file is the working contract.
 | API | `backend/tweets/views.py`, `analytics.py`, `auth_views.py`, `urls.py` |
 | Topic ranking (pure, no DB) | `backend/tweets/topics.py` |
 | Auth (JWT) + the staff gate | `backend/tweets/auth_views.py`, `permissions.py` |
+| Untrusted request bodies (`body_mapping`) | `backend/tweets/params.py` |
+| Edge request guards (NUL bytes) | `backend/config/middleware.py` |
 | HTTP transport, tx/query-id health | `backend/fetcher/client.py` |
 | Pagination engine | `backend/fetcher/timeline.py` |
 | Pipelines | `backend/fetcher/{historical,live,search}.py` |
@@ -52,6 +54,15 @@ For install and usage see `README.md`. This file is the working contract.
   scheduled for removal) and never a bare aware `datetime.now(timezone.utc)` --
   the first breaks the runtime upgrade, the second raises `TypeError` on those
   subtractions and starts writing `+00:00` into files that already hold `Z`.
+- No request may answer 5xx. `request.data` is whatever JSON arrived -- a list,
+  a string, a number -- so read named fields through `tweets.params.body_mapping`,
+  never `request.data.get` directly. Any request value that reaches a `filter()`
+  must survive `tests/test_api_input_sweep.py`, which replays every route and
+  parameter against a battery of hostile values. Add the route and its params to
+  that table when you add an endpoint.
+- Run the suite against Postgres, not just SQLite, before trusting an input fix.
+  SQLite accepts things Postgres rejects outright -- a NUL byte in a text filter
+  is a `DataError` there and silently fine here.
 - `backend/requirements.txt` is pinned with `~=` (patch series only). The image
   is rebuilt from it on every deploy, so an open range means two builds of one
   commit can ship different dependencies. Raise a pin deliberately, with a suite

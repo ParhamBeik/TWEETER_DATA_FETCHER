@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 from fetcher.client import APIManager
 from fetcher.live import LiveMonitor
 from fetcher.live import LiveStorageManager
+from fetcher.clock import utc_now
+from datetime import timedelta
 
 
 def _api_manager_with_budget(rate_limits):
@@ -202,3 +204,66 @@ class LivePipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SeenTweetLedgerTests(unittest.TestCase):
+    """The "have I seen this tweet" ledger: correctness, cost, and growth.
+
+    It is round-tripped through Postgres by the runner on every fetch run, so
+    what it costs to write and how large it is allowed to get are properties of
+    the whole pipeline, not of this file.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.storage = LiveStorageManager(
+            Path(self.temp_dir), data_root_override=Path(self.temp_dir) / "data"
+        )
+
+    def test_first_seen_at_is_recorded_and_then_preserved(self):
+        """It was null on every row in production: `{}` is a dict, so the
+        "already known" branch ran for tweets that were not known yet."""
+        self.storage.register_tweet({"id": "1", "account": "a"}, ["live/a"])
+        first = self.storage.seen_tweets["1"]["first_seen_at"]
+        self.assertIsNotNone(first)
+
+        self.storage.register_tweet({"id": "1", "account": "a"}, ["live/b"])
+        again = self.storage.seen_tweets["1"]
+        self.assertEqual(again["first_seen_at"], first)
+        self.assertGreaterEqual(again["last_seen_at"], first)
+        self.assertEqual(again["stored_in"], ["live/a", "live/b"])
+
+    def test_registering_a_batch_writes_the_file_once(self):
+        """Saving per tweet re-serialized the whole ledger every time."""
+        writes = []
+        original = LiveStorageManager._save_json
+
+        def counting_save(path, payload):
+            writes.append(path)
+            return original(path, payload)
+
+        with patch.object(LiveStorageManager, "_save_json", staticmethod(counting_save)):
+            for index in range(25):
+                self.storage.register_tweet({"id": str(index), "account": "a"}, ["live/a"])
+            self.assertEqual(writes, [], "register_tweet must not write")
+            self.storage.flush_seen_tweets()
+
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(len(json.loads(self.storage.seen_tweets_file.read_text())), 25)
+
+    def test_flush_drops_entries_past_the_retention_window(self):
+        """Nothing pruned this file; it reached 15k entries in production."""
+        from fetcher.live import SEEN_TWEET_RETENTION_DAYS
+
+        stale = (utc_now() - timedelta(days=SEEN_TWEET_RETENTION_DAYS + 1)).isoformat() + "Z"
+        self.storage.seen_tweets = {
+            "old": {"tweet_id": "old", "last_seen_at": stale},
+            "malformed": "not a dict",
+        }
+        self.storage.register_tweet({"id": "fresh", "account": "a"}, ["live/a"])
+        self.storage.flush_seen_tweets()
+
+        self.assertEqual(sorted(self.storage.seen_tweets), ["fresh"])
+        self.assertEqual(
+            sorted(json.loads(self.storage.seen_tweets_file.read_text())), ["fresh"]
+        )

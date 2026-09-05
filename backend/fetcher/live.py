@@ -13,7 +13,7 @@ import argparse
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -30,6 +30,10 @@ Isolated v4 live-monitoring storage and viral-report helpers.
 """
 
 
+
+
+# How long a tweet stays in the "already seen" ledger. See flush_seen_tweets.
+SEEN_TWEET_RETENTION_DAYS = 30
 
 
 class LiveStorageManager:
@@ -136,20 +140,57 @@ class LiveStorageManager:
         return str(tweet_id) in self.seen_tweets
 
     def register_tweet(self, tweet: Dict[str, Any], stored_in: List[str]) -> None:
+        """Record one tweet in the ledger, in memory.
+
+        Deliberately does not write. This is called once per tweet, and saving
+        here re-serialized the whole ledger every time -- quadratic in a file
+        that only ever grew. Call `flush_seen_tweets` once the batch is done.
+        """
         tweet_id = str(tweet.get("id") or tweet.get("rest_id") or "").strip()
         if not tweet_id:
             return
-        existing = self.seen_tweets.get(tweet_id, {})
-        locations = set(existing.get("stored_in", [])) if isinstance(existing, dict) else set()
+        existing = self.seen_tweets.get(tweet_id)
+        existing = existing if isinstance(existing, dict) else {}
+        locations = set(existing.get("stored_in") or [])
         locations.update(stored_in)
+        now = utc_now_iso()
         self.seen_tweets[tweet_id] = {
             "tweet_id": tweet_id,
             "account": tweet.get("account"),
-            "first_seen_at": existing.get("first_seen_at") if isinstance(existing, dict) else utc_now_iso(),
-            "last_seen_at": utc_now_iso(),
+            # `existing` is `{}` for a tweet seen for the first time, and `{}` is
+            # a dict -- so the old spelling took the `.get` branch and stored
+            # null here for every new tweet. The field had never been populated.
+            "first_seen_at": existing.get("first_seen_at") or now,
+            "last_seen_at": now,
             "stored_in": sorted(locations),
         }
-        self._save_json(self.seen_tweets_file, self.seen_tweets)
+
+    def flush_seen_tweets(self) -> Path:
+        """Prune the ledger to its retention window, then write it once.
+
+        Nothing had ever pruned this file. It reached 15k entries in production,
+        and because the runner round-trips every state file through Postgres, a
+        687 kB row was being read and rewritten on *every* fetch run -- including
+        the archive walk, which never reads it.
+
+        Entries are dropped by `last_seen_at`. The ledger only answers "has the
+        live poller seen this tweet before", and live never looks back further
+        than `live_window_hours` across three pages, so 30 days is generous by
+        more than an order of magnitude. It is also the retention already applied
+        to search hits, rather than a new number to keep track of.
+        """
+        cutoff = (
+            utc_now() - timedelta(days=SEEN_TWEET_RETENTION_DAYS)
+        ).isoformat() + "Z"
+        # Both sides are produced by `utc_now_iso()`, so they share a fixed
+        # `YYYY-MM-DDTHH:MM:SS[.ffffff]Z` shape and compare correctly as strings.
+        # That keeps this one pass over the dict instead of 15k datetime parses.
+        self.seen_tweets = {
+            tweet_id: entry
+            for tweet_id, entry in self.seen_tweets.items()
+            if isinstance(entry, dict) and str(entry.get("last_seen_at") or "") >= cutoff
+        }
+        return self._save_json(self.seen_tweets_file, self.seen_tweets)
 
     def save_processed_set(self, username: str, set_name: str, tweets: List[Dict[str, Any]]) -> List[Path]:
         # Merge into the shared historical_live store (same writer historical uses),
@@ -292,6 +333,8 @@ class LiveMonitor:
             else:
                 new_count += 1
             self.live_storage.register_tweet(tweet, [f"live/{username}"])
+        # One write for the batch, after every tweet is recorded.
+        self.live_storage.flush_seen_tweets()
         if new_count > 0:
             self.console.success(f"New tweets for @{username}: {new_count}")
         return {"new": new_count, "duplicates": duplicate_count}

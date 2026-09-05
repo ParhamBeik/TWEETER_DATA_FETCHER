@@ -143,7 +143,9 @@ so the split between them is explicit:
   no query can be starved by the ones ahead of it. Deep pages come from browser
   scrolling, and a repoll stops once it reaches tweets the last run stored.
 
-Search hits are purged after 30 days, run records after 90.
+Search hits are purged after 30 days, run records after 90, and the live
+poller's "already seen" ledger after 30 — it is round-tripped through Postgres
+on every fetch run, so it is not allowed to grow without limit.
 
 ### Two collectors, two tables
 
