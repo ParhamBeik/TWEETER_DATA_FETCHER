@@ -85,6 +85,14 @@ def tracked_accounts_payload(cap: int | None = None) -> dict:
         # its tier default inside the engine rather than carrying a duplicate.
         if user.poll_interval_seconds:
             record["poll_interval_seconds"] = int(user.poll_interval_seconds)
+        # The raw posting rate, alongside the interval derived from it. The
+        # interval answers "how often to look"; the live poller separately needs
+        # "how much will be waiting when I do" to size its page budget, and the
+        # interval cannot answer that -- it is clamped into the tier's band, so
+        # every priority-1 account reports the same number no matter how much it
+        # actually posts.
+        if user.observed_median_gap_seconds:
+            record["observed_median_gap_seconds"] = int(user.observed_median_gap_seconds)
         buckets[f"priority_{priority}"].append(record)
     return buckets
 
@@ -219,6 +227,37 @@ def _is_provider_depth(state: dict) -> bool:
         not state.get("backfill_depth_reason")
         and state.get("backfill_last_outcome") == _EXHAUSTED
     )
+
+
+DEPTH_REPROBE_DAYS = 30
+
+
+def due_depth_probes(archive: dict | None = None, *, now=None) -> list[str]:
+    """Parked-at-the-wall accounts whose last verdict is old enough to re-test.
+
+    A probe is only cheap if the walk left a cursor at the wall. Without one,
+    retrying would start from the top of the timeline -- a full re-walk, which
+    is the thing parking was meant to stop. Accounts already parked before
+    the cursor was kept therefore stay parked.
+    """
+    archive = archive if archive is not None else archive_state()
+    now = now or timezone.now()
+    if timezone.is_naive(now):
+        now = timezone.make_aware(now, dt_timezone.utc)
+    due: list[str] = []
+    for handle, state in archive.items():
+        if not state.get("backfill_complete"):
+            continue
+        if not _is_provider_depth(state):
+            continue
+        cursor = state.get("backfill_cursor")
+        if not cursor or cursor in {"__START__", "__END__"}:
+            continue
+        completed = _parse_when(state.get("backfill_completed_at"))
+        if completed is not None and (now - completed) < timedelta(days=DEPTH_REPROBE_DAYS):
+            continue
+        due.append(handle)
+    return due
 
 
 RECENT_TWEET_HOURS = 24

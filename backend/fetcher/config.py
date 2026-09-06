@@ -143,6 +143,13 @@ def load_tier_config(config: Dict) -> Tuple[Dict[str, Dict], Dict[int, Dict]]:
             measured = record.get("poll_interval_seconds")
             if measured:
                 entry["poll_interval_seconds"] = int(measured)
+            # The unclamped posting rate behind that cadence. The live poller
+            # sizes its page budget from this rather than from the interval,
+            # which is clamped into the tier band and so cannot tell a busy
+            # priority-1 account from a quiet one.
+            gap = record.get("observed_median_gap_seconds")
+            if gap:
+                entry["observed_median_gap_seconds"] = int(gap)
             account_map[username.lower()] = entry
     return account_map, policy_map
 
@@ -165,6 +172,8 @@ def get_priority_policy(
     }
     if meta.get("poll_interval_seconds"):
         policy["poll_interval_seconds"] = int(meta["poll_interval_seconds"])
+    if meta.get("observed_median_gap_seconds"):
+        policy["observed_median_gap_seconds"] = int(meta["observed_median_gap_seconds"])
     return policy
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import time
 from datetime import datetime, timedelta
@@ -209,10 +210,19 @@ class LiveMonitor:
     ENDPOINTS = ("UserTweets",)
     QUARANTINE_FAILURE_THRESHOLD = 3
     RATE_LIMIT_RESERVE = 5
-    # Live keeps the last few hours current; that is one or two pages of timeline.
-    # It used to inherit the engine's 50-page archive cap, so a single account
-    # could spend a whole rate window on tweets the archive walk already owns.
-    MAX_PAGES = 3
+    # Page budget for an account whose posting rate has not been measured yet
+    # (fewer than six timestamped tweets in the window -- see
+    # fetching.accounts.median_gap_seconds). Two pages covers roughly 40 tweets,
+    # which is more than a new account produces between polls.
+    DEFAULT_PAGES = 2
+    # Tweets per UserTweets page. X serves 20 entries and pads the first page
+    # with pinned or promoted items, so real pages land at 20-25. The low end is
+    # the safe estimate here: underestimating buys one spare page, while
+    # overestimating truncates the account mid-timeline.
+    TWEETS_PER_PAGE = 20
+    # Spare pages on top of the estimate, to absorb a burst that the median
+    # posting rate by definition does not describe.
+    BURST_HEADROOM_PAGES = 1
 
     def __init__(self, config_path: Optional[str] = None):
         self.project_root = PROJECT_ROOT
@@ -283,10 +293,52 @@ class LiveMonitor:
             return True
         return (utc_now() - last_dt).total_seconds() >= interval
 
+    def _elapsed_seconds(self, username: str) -> Optional[float]:
+        state = self.live_storage.account_state(username)
+        last = state.get("last_attempted_at") or state.get("last_checked_at")
+        if not last:
+            return None
+        try:
+            raw = str(last)
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00") if raw.endswith("Z") else raw)
+        except Exception:
+            return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.replace(tzinfo=None)
+        return max(0.0, (utc_now() - parsed).total_seconds())
+
+    def _activity_pages(self, username: str) -> int:
+        """Pages this account is expected to need, from its own posting rate.
+
+        Quiet accounts stay at one page; a bursty one gets enough pages to
+        cover tweets posted since we last looked, plus one spare. Unmeasured
+        accounts (too few timestamps to take a median) get DEFAULT_PAGES.
+        The time cutoff on the timeline is still the real stop -- this number
+        is only the budget, so a short estimate cannot invent a hole.
+        """
+        policy = get_priority_policy(username, self.account_map, self.priority_policies)
+        gap = int(policy.get("observed_median_gap_seconds") or 0)
+        elapsed = self._elapsed_seconds(username)
+        if not gap or elapsed is None:
+            return self.DEFAULT_PAGES
+        needed = max(1, math.ceil(elapsed / gap / self.TWEETS_PER_PAGE))
+        if needed <= 1:
+            return 1
+        return int(needed + self.BURST_HEADROOM_PAGES)
+
+    def _page_budget(self, username: str, remaining_accounts: int) -> int:
+        """Activity estimate, clamped to this account's fair share of the bucket."""
+        remaining_requests = max(0, self._available_timeline_requests())
+        if remaining_requests <= 0:
+            return 1
+        fair_share = max(1, remaining_requests // max(1, remaining_accounts))
+        return max(1, min(self._activity_pages(username), fair_share, remaining_requests))
+
     def _record_endpoint_result(self, username: str, result: Dict[str, Any]) -> None:
         updates = {
             "last_status": result["status"],
             "last_counts": result["sets"],
+            "last_attempted_at": result["finished_at"],
         }
         if result["status"] == "completed":
             updates["last_checked_at"] = result["finished_at"]
@@ -369,7 +421,7 @@ class LiveMonitor:
                 user_id,
                 endpoint,
                 live_window_hours=live_window_hours,
-                safety_cap_pages=self.MAX_PAGES,
+                safety_cap_pages=self._page_budget(username, remaining_accounts=1),
             )
             result["endpoints"][endpoint] = {k: v for k, v in endpoint_result.items() if k != "pages"}
             endpoint_pages[endpoint] = endpoint_result.get("pages", [])
@@ -496,12 +548,16 @@ class LiveMonitor:
                 if idx > 0:
                     self.api_manager.human_delay("between_accounts")
                 policy = get_priority_policy(username, self.account_map, self.priority_policies)
+                still_due = [
+                    name for name in list(user_ids)[idx:]
+                    if name not in mid_loop_deferred
+                ]
                 endpoint_result = self._fetch_live_endpoint(
                     username,
                     user_id,
                     endpoint,
                     live_window_hours=int(policy.get("live_window_hours", 24)),
-                    safety_cap_pages=self.MAX_PAGES,
+                    safety_cap_pages=self._page_budget(username, remaining_accounts=len(still_due)),
                 )
                 report["accounts"][username]["endpoints"][endpoint] = {k: v for k, v in endpoint_result.items() if k != "pages"}
                 endpoint_pages_by_account[username][endpoint] = endpoint_result.get("pages", [])

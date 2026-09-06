@@ -26,6 +26,7 @@ from . import runner
 from .accounts import (
     archive_progress,
     archive_state,
+    due_depth_probes,
     interval_for,
     median_gap_seconds,
     sync_quarantine_from_live_state,
@@ -211,9 +212,10 @@ def _backfill_queue(limit: int) -> list[str]:
     account is dropped for good once its walk reaches the end of the timeline.
     """
     archive = _archive_state()
+    users = list(TwitterUser.objects.filter(tracking=True, quarantined=False).order_by("priority", "id"))
     pending = [
         user
-        for user in TwitterUser.objects.filter(tracking=True, quarantined=False).order_by("priority", "id")
+        for user in users
         if not archive.get(user.handle.lower(), {}).get("backfill_complete")
     ]
     pending.sort(
@@ -223,6 +225,14 @@ def _backfill_queue(limit: int) -> list[str]:
             user.id,
         )
     )
+    # Unfinished walks first. Monthly wall-probes fill leftover slots so a
+    # still-walking account is never displaced by a parked one.
+    if len(pending) < limit:
+        due = {handle.lower() for handle in due_depth_probes(archive)}
+        pending.extend(
+            user for user in users
+            if user.handle.lower() in due
+        )
     return [user.handle for user in pending[:limit]]
 
 

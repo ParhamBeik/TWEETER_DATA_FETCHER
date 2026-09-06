@@ -64,6 +64,12 @@ from fetcher.config import resolve_config_path
 
 VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
 
+# Broad saved searches were stored at 720h. A Latest walk cannot finish that
+# window in one run, and until the watermark deadlock was fixed every partial
+# run started over -- ~4,600 browser page loads a day. The operator chose a 6h
+# cap so a run is a few pages. The time cutoff is still the real stop.
+SEARCH_ROLLING_HOURS_CAP = 6
+
 FROZEN_SEARCH_FEATURES: Dict[str, object] = dict(SEARCH_TIMELINE_FEATURES)
 logger = logging.getLogger(__name__)
 
@@ -252,7 +258,9 @@ class SearchTimelineMonitor:
             "pagination_depth": requested_depth,
             "pagination_safety_cap_pages": max(1, page_cap),
             "max_retries": int(search_def.get("max_retries", 3)),
-            "rolling_hours": int(search_def.get("rolling_hours", 24)),
+            "rolling_hours": max(
+                1, min(int(search_def.get("rolling_hours", SEARCH_ROLLING_HOURS_CAP)), SEARCH_ROLLING_HOURS_CAP)
+            ),
         }
 
     def _after_bootstrap(self, bootstrap: Any, endpoint: str = "SearchTimeline") -> None:
@@ -1104,6 +1112,50 @@ class SearchTimelineMonitor:
 
         return report
 
+    # A run that ended for one of these reasons ran out of *depth*: it began at
+    # the newest result, followed one cursor chain down, and stopped because the
+    # page budget ran out or the browser stopped producing pages. Pages 1..N are
+    # therefore contiguous from the top, which is the only property the
+    # high-water mark needs. Every other partial reason names a failure that can
+    # leave the top of the results unseen, and those still may not advance it.
+    _DEPTH_LIMITED_REASONS = ("partial_safety_cap_reached", "partial_browser_")
+
+    def _walked_down_from_the_top(self, plan: Dict[str, Any], report: Dict[str, Any]) -> bool:
+        """Did this run cover the newest results downwards with no gap?
+
+        Restricting the mark to `status == "completed"` deadlocked every broad
+        query. A term like "war" cannot exhaust a 30-day window inside one run,
+        so it always ended `partial_browser_stalled`; a partial could not
+        advance the mark; and with the mark frozen the next run scrolled back to
+        the same ageing boundary. Two searches burned ~4,600 browser page loads
+        a day re-reading tweets they already had and could never finish.
+
+        A depth-limited run is different from a broken one. It saw the top --
+        page 1 of a Latest timeline *is* the newest result -- and everything it
+        did not reach lies strictly below its oldest tweet, which is where the
+        rolling window, not this mark, is the backstop.
+
+        Chronological products only. Under "Top", page order is relevance, so
+        page 3 can hold something newer than page 1 and "newest seen" says
+        nothing about what was covered.
+        """
+        if SearchQueryBuilder.normalize_product(str(plan.get("product") or "")) != "Latest":
+            return False
+        if not report["counts"].get("tweets"):
+            return False
+        metadata = report["metadata"]
+        reason = str(metadata["exhausted_reason"])
+        if not reason.startswith(self._DEPTH_LIMITED_REASONS):
+            return False
+        if reason.startswith("partial_browser_"):
+            # A stalled scroll only proves depth ran out if the browser ever
+            # started. A bootstrap that never opened the page lands in this same
+            # bucket through the for/else fallback, and it saw nothing it can
+            # vouch for -- advancing on that is precisely the hole this mark is
+            # supposed to prevent.
+            return bool((metadata.get("browser_bootstrap") or {}).get("ok"))
+        return True
+
     def _advance_state(
         self,
         search_def: Dict[str, Any],
@@ -1132,18 +1184,21 @@ class SearchTimelineMonitor:
         }
 
         # High-water mark for the next run's early stop. Only ever advanced, and
-        # only by a successful run: a partial run has not proven it saw the top
-        # of the results, so trusting its newest tweet would leave a hole no
-        # later run goes back for.
+        # only by a run that provably started at the newest result and paged
+        # downwards without a gap -- see `_walked_down_from_the_top`.
         seen_times = [value for value in (self._tweet_datetime(t) for t in tweets) if value]
         newest = max(seen_times) if seen_times else None
         previous_ground = self._parse_known_ground(current_state)
-        if is_success and newest and (previous_ground is None or newest > previous_ground):
+        may_advance = is_success or self._walked_down_from_the_top(plan, report)
+        if may_advance and newest and (previous_ground is None or newest > previous_ground):
             new_state["newest_seen_at"] = newest.isoformat() + "Z"
         elif previous_ground:
             new_state["newest_seen_at"] = current_state.get("newest_seen_at")
 
-        if is_success:
+        # Same predicate: a depth-limited run did this tick's work, so its timer
+        # moves. Leaving it pinned made a query that can never complete eligible
+        # again on the very next cycle, ignoring its own interval entirely.
+        if may_advance:
             new_state["last_checked_at"] = utc_now_iso()
         else:
             new_state["last_checked_at"] = current_state.get("last_checked_at")

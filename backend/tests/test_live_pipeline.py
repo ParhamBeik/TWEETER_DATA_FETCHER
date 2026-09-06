@@ -198,7 +198,11 @@ class LivePipelineTests(unittest.TestCase):
 
         monitor.live_storage.update_account_state.assert_called_once_with(
             "example",
-            {"last_status": "partial", "last_counts": {"4_union": 0}},
+            {
+                "last_status": "partial",
+                "last_counts": {"4_union": 0},
+                "last_attempted_at": "2026-08-16T15:05:14Z",
+            },
         )
 
 
@@ -267,3 +271,49 @@ class SeenTweetLedgerTests(unittest.TestCase):
         self.assertEqual(
             sorted(json.loads(self.storage.seen_tweets_file.read_text())), ["fresh"]
         )
+
+
+class LivePageBudgetTests(unittest.TestCase):
+    """Unit: page count is arithmetic over elapsed time, posting rate, and the
+    remaining rate bucket. The pyramid puts that at unit level -- no HTTP, no
+    Django -- because a wrong clamp is how a busy account starves the fleet.
+    """
+
+    def _monitor(self, remaining=50, last_checked=None, gaps=None):
+        from fetcher.config import DEFAULT_PRIORITY_POLICIES
+
+        monitor = LiveMonitor.__new__(LiveMonitor)
+        monitor.account_map = {
+            name: {"observed_median_gap_seconds": gap} for name, gap in (gaps or {}).items()
+        }
+        monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
+        monitor.live_storage = MagicMock()
+        monitor.live_storage.account_state.return_value = {
+            "last_checked_at": last_checked,
+        }
+        monitor.api_manager = _api_manager_with_budget(
+            {"UserTweets": {"limit": remaining, "remaining": remaining, "reset": 0}}
+        )
+        return monitor
+
+    def test_unmeasured_account_gets_the_default_two_pages(self):
+        monitor = self._monitor()
+        self.assertEqual(monitor._activity_pages("newbie"), 2)
+
+    def test_a_quiet_account_stays_at_one_page(self):
+        past = (utc_now() - timedelta(minutes=30)).isoformat() + "Z"
+        monitor = self._monitor(last_checked=past, gaps={"ustreasury": 9 * 3600})
+        self.assertEqual(monitor._activity_pages("ustreasury"), 1)
+
+    def test_a_busy_account_gets_pages_for_expected_tweets_plus_headroom(self):
+        # Just under 8 hours so clock drift during the assertion cannot tip
+        # 120 tweets / 20 into the next page.
+        past = (utc_now() - timedelta(hours=7, minutes=50)).isoformat() + "Z"
+        monitor = self._monitor(last_checked=past, gaps={"elonmusk": 240})
+        self.assertEqual(monitor._activity_pages("elonmusk"), 7)
+
+    def test_fair_share_caps_a_busy_account_when_the_bucket_is_thin(self):
+        past = (utc_now() - timedelta(hours=8)).isoformat() + "Z"
+        # remaining 10, reserve 5 -> 5 available; 5 accounts => fair share 1
+        monitor = self._monitor(remaining=10, last_checked=past, gaps={"elonmusk": 240})
+        self.assertEqual(monitor._page_budget("elonmusk", remaining_accounts=5), 1)

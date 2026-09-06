@@ -24,6 +24,11 @@ class LiveStatusTests(unittest.TestCase):
             support_request_count=1,
             error=None,
         )
+        from tests.test_live_pipeline import _api_manager_with_budget
+
+        monitor.api_manager = _api_manager_with_budget(
+            {"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}}
+        )
         monitor._get_live_user_id = MagicMock(return_value="1")
         monitor._fetch_live_endpoint = MagicMock(
             return_value={"endpoint": "UserTweets", "status": "failed", "pages": []}

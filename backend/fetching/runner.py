@@ -77,6 +77,10 @@ def _search_def(search) -> dict:
         # 2-3 ended on `success_search_window_crossed`, not on running out of
         # results. Hardcoding 24h capped a search whose query spans months.
         "rolling_hours": max(1, int(search.rolling_hours)),
+        # The engine's due-check reads this. Omitting it made every search use
+        # the priority-3 default (1800s), so a dispatcher-claimed run whose
+        # Search.interval_seconds is shorter no-ops after last_checked_at moves.
+        "poll_interval_seconds": max(1, int(search.interval_seconds)),
     }
 
 

@@ -42,6 +42,12 @@ class SearchTimelinePathResolutionTests(unittest.TestCase):
         self.assertEqual(policy["pagination_depth"], 3)
         self.assertEqual(policy["pagination_safety_cap_pages"], 50)
 
+    def test_policy_caps_a_thirty_day_window_at_six_hours(self):
+        """war/iran were stored at 720h and could never finish a Latest walk."""
+        self.monitor.config = {"api_config": {"pagination_safety_cap_pages": 50}}
+        policy = self.monitor._policy_for_search({"rolling_hours": 720})
+        self.assertEqual(policy["rolling_hours"], 6)
+
     def test_search_headers_do_not_override_endpoint_transaction_id(self):
         self.monitor.api_manager = type(
             "Manager",

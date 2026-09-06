@@ -6,6 +6,8 @@ import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
+from fetcher.clock import utc_now, utc_now_iso
+
 from fetching.ingest import ingest_search_hits, upsert_tweet
 from fetching.tasks import (
     _backfill_queue,
@@ -262,3 +264,80 @@ def test_backfill_stops_dispatching_once_every_account_is_archived():
     with patch("fetching.tasks._run_cycle") as run:
         assert backfill_historical_all() == 0
         run.assert_not_called()
+
+
+
+@pytest.mark.django_db
+def test_backfill_queue_reopens_a_stale_wall_probe():
+    """A parked account with a wall cursor older than a month is due again."""
+    TwitterUser.objects.create(handle="Parked", tracking=True, priority=1)
+    _archive(
+        "Parked",
+        backfill_complete=True,
+        backfill_depth_reason="provider_depth_limit",
+        backfill_cursor="wall-c",
+        backfill_completed_at=(utc_now() - timedelta(days=31)).isoformat() + "Z",
+    )
+
+    assert _backfill_queue(10) == ["Parked"]
+
+
+@pytest.mark.django_db
+def test_backfill_queue_leaves_a_recently_parked_account_alone():
+    TwitterUser.objects.create(handle="Parked", tracking=True, priority=1)
+    _archive(
+        "Parked",
+        backfill_complete=True,
+        backfill_depth_reason="provider_depth_limit",
+        backfill_cursor="wall-c",
+        backfill_completed_at=utc_now_iso(),
+    )
+
+    assert _backfill_queue(10) == []
+
+
+@pytest.mark.django_db
+def test_backfill_queue_does_not_rewalk_a_parked_account_with_no_cursor():
+    """Existing parked rows cleared their cursor. Restarting from the top
+    would be the deep-history grind this parking exists to stop."""
+    TwitterUser.objects.create(handle="Parked", tracking=True, priority=1)
+    _archive(
+        "Parked",
+        backfill_complete=True,
+        backfill_depth_reason="provider_depth_limit",
+        backfill_completed_at=(utc_now() - timedelta(days=31)).isoformat() + "Z",
+    )
+
+    assert _backfill_queue(10) == []
+
+
+
+@pytest.mark.django_db
+def test_backfill_queue_does_not_let_a_probe_displace_a_walking_account():
+    TwitterUser.objects.create(handle="Walking", tracking=True, priority=7)
+    TwitterUser.objects.create(handle="Parked", tracking=True, priority=1)
+    _archive(
+        "Parked",
+        backfill_complete=True,
+        backfill_depth_reason="provider_depth_limit",
+        backfill_cursor="wall-c",
+        backfill_completed_at=(utc_now() - timedelta(days=31)).isoformat() + "Z",
+    )
+
+    assert _backfill_queue(1) == ["Walking"]
+
+
+def test_due_depth_probes_accepts_the_engine_clock():
+    """utc_now() is naive. The default path uses timezone.now() (aware).
+    Passing the engine clock used to TypeError on the subtract."""
+    from fetching.accounts import due_depth_probes
+
+    archive = {
+        "parked": {
+            "backfill_complete": True,
+            "backfill_depth_reason": "provider_depth_limit",
+            "backfill_cursor": "wall-c",
+            "backfill_completed_at": (utc_now() - timedelta(days=31)).isoformat() + "Z",
+        }
+    }
+    assert due_depth_probes(archive, now=utc_now()) == ["parked"]
