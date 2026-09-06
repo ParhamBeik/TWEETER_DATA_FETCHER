@@ -308,6 +308,7 @@ def _fetch_or_skip_endpoint(
 
     state = storage.get_endpoint_state(username, endpoint)
     backfill_cursor = state.get("backfill_cursor")
+    probing_wall = bool(state.get("backfill_complete") and backfill_cursor)
     if backfill_cursor:
         CONSOLE.info(f"@{username} {endpoint} resuming archive walk at page {int(state.get('backfill_pages_done', 0)) + 1}")
     elif state.get("backfill_complete"):
@@ -338,7 +339,7 @@ def _fetch_or_skip_endpoint(
         account=username,
         user_id=user_id,
         endpoint=endpoint,
-        max_pages=PAGES_PER_TICK,
+        max_pages=1 if probing_wall else PAGES_PER_TICK,
         window_days=None,
         cutoff=cutoff,
         force_refetch=not backfill_cursor,
@@ -391,7 +392,9 @@ def _record_backfill_progress(
         "success_timeline_exhausted": DEPTH_PROVIDER_LIMIT,
     }.get(outcome)
     finished = depth_reason is not None
-    cursor = result.get("last_cursor")
+    # last_cursor is __END__ on a completed exhausted walk (shared with live).
+    # bottom_cursor is the last real page cursor X still offered -- the wall.
+    cursor = result.get("bottom_cursor") or result.get("last_cursor")
     # A tick that fetched nothing made no progress. The queue sorts on this so an
     # account that cannot advance (dead session, permanent 404) sinks to the back
     # instead of blocking every account behind it -- which is exactly how one
@@ -411,27 +414,38 @@ def _record_backfill_progress(
         # reached_date_floor with no way to find them again.
         "backfill_floor_date": (cutoff.strftime("%Y-%m-%d") if cutoff else None),
     }
-    # Only ever *set* completion here, never clear it: this function sees one
-    # tick, and a non-terminal tick carries no evidence that the account is
-    # incomplete. Clearing belongs at the one place a new walk starts (see
-    # _fetch_or_skip_endpoint), which is what keeps the flag from contradicting
-    # the cursor beside it without un-completing finished archives.
+    # Completion is set here. The one case that clears it is a monthly wall
+    # probe that collected tweets -- that is evidence the provider limit moved.
+    # A true-end or date-floor archive is still never un-completed by a tick.
+    parked_at_wall = previous.get("backfill_depth_reason") == DEPTH_PROVIDER_LIMIT
     if finished:
         meta["backfill_complete"] = True
         meta["backfill_depth_reason"] = depth_reason
-        meta["backfill_cursor"] = None
         meta["backfill_completed_at"] = utc_now_iso()
         if depth_reason == DEPTH_PROVIDER_LIMIT:
+            # Keep the wall cursor so a later monthly probe can ask for one more
+            # page instead of walking the timeline from the top again.
+            wall = cursor if cursor and str(cursor) not in {"__START__", "__END__"} else previous.get("backfill_cursor")
+            if wall and str(wall) not in {"__START__", "__END__"}:
+                meta["backfill_cursor"] = str(wall)
             CONSOLE.warning(
                 f"@{username} {endpoint} stopped at X's serving depth after "
                 f"{pages_done} page(s) -- this is as deep as the API goes, "
                 f"not the account's first tweet"
             )
         else:
+            meta["backfill_cursor"] = None
             CONSOLE.success(
                 f"@{username} {endpoint} archive walk complete after "
                 f"{pages_done} page(s) ({depth_reason})"
             )
+    elif fetched and parked_at_wall:
+        # A probe that collected tweets means the wall moved. Re-open the walk.
+        meta["backfill_complete"] = False
+        meta["backfill_depth_reason"] = None
+        meta["backfill_completed_at"] = None
+        if cursor and str(cursor) not in {"__START__", "__END__"}:
+            meta["backfill_cursor"] = str(cursor)
     elif cursor and str(cursor) not in {"__START__", "__END__"}:
         meta["backfill_cursor"] = str(cursor)
     # Any other outcome (a hard failure before the first page) leaves the stored

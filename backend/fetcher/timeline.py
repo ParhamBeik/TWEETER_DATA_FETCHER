@@ -437,8 +437,9 @@ class FetcherEngine:
             pages: List[Dict[str, Any]],
             last_cursor: Optional[str],
             raw_batch: Path,
+            bottom_cursor: Optional[str] = None,
         ) -> Dict[str, Any]:
-            return {
+            result = {
                 "account": account,
                 "endpoint": endpoint,
                 "status": status,
@@ -463,6 +464,9 @@ class FetcherEngine:
                     "pages": list(page_output_paths),
                 },
             }
+            if bottom_cursor and str(bottom_cursor) not in {"__START__", "__END__"}:
+                result["bottom_cursor"] = str(bottom_cursor)
+            return result
 
         def record_http_error(response, cursor_value: Optional[str], attempt_number: int) -> None:
             nonlocal last_http_status
@@ -504,6 +508,7 @@ class FetcherEngine:
             pages: List[Dict[str, Any]],
             cursor_value: Optional[str],
             raw_batch: Path,
+            bottom_cursor: Optional[str] = None,
         ) -> Dict[str, Any]:
             state_status = "completed" if status == "completed" else status
             state_cursor = "__END__" if status == "completed" else (cursor_value if cursor_value else "__START__")
@@ -539,6 +544,7 @@ class FetcherEngine:
                 pages=pages,
                 last_cursor=state_cursor,
                 raw_batch=raw_batch,
+                bottom_cursor=bottom_cursor,
             )
 
         query_id = self.api_manager.get_query_id(endpoint)
@@ -1063,6 +1069,7 @@ class FetcherEngine:
                     pages=all_items,
                     cursor_value="__END__",
                     raw_batch=batch_dir,
+                    bottom_cursor=next_cursor,
                 )
 
             if next_cursor:

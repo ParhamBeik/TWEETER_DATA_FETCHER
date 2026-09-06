@@ -218,6 +218,21 @@ class ArchiveWalkTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "completed")
 
+    def test_an_exhausted_walk_exposes_the_wall_cursor_for_a_later_probe(self):
+        """last_cursor stays __END__ (live shares that field). The last real
+        bottom cursor X still offered has to travel separately or the monthly
+        probe has nothing to resume from."""
+        self._serve(
+            [_page(tweets=20, cursor="c1", offset=0)]
+            + [_page(tweets=0, cursor=f"empty{n}") for n in range(EMPTY_PAGE_STREAK)]
+        )
+
+        result = self._walk()
+
+        self.assertEqual(result["outcome"], "success_timeline_exhausted")
+        self.assertEqual(result["last_cursor"], "__END__")
+        self.assertEqual(result["bottom_cursor"], f"empty{EMPTY_PAGE_STREAK - 1}")
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -231,16 +246,20 @@ class ArchiveCompletionTests(unittest.TestCase):
     wrong is silent: the account simply never gets collected again.
     """
 
-    def _record(self, outcome, *, status="completed", pages=5, previous=None, cutoff=None):
+    def _record(self, outcome, *, status="completed", pages=5, previous=None, cutoff=None,
+                last_cursor="c9", bottom_cursor=None):
         from fetcher.historical import _record_backfill_progress
 
         saved = {}
         storage = MagicMock()
         storage.update_endpoint_state = lambda account, endpoint, meta=None, **_: saved.update(meta or {})
+        payload = {
+            "status": status, "outcome": outcome, "pages_fetched": pages, "last_cursor": last_cursor,
+        }
+        if bottom_cursor is not None:
+            payload["bottom_cursor"] = bottom_cursor
         _record_backfill_progress(
-            storage, "business", "UserTweets", previous or {},
-            {"status": status, "outcome": outcome, "pages_fetched": pages, "last_cursor": "c9"},
-            cutoff=cutoff,
+            storage, "business", "UserTweets", previous or {}, payload, cutoff=cutoff,
         )
         return saved
 
@@ -266,11 +285,13 @@ class ArchiveCompletionTests(unittest.TestCase):
         @elonmusk be reported fully archived holding three months of history.
         The walk still stops -- retrying cannot beat a provider limit -- but the
         reason has to survive, or the gap is invisible."""
-        saved = self._record("success_timeline_exhausted")
+        saved = self._record(
+            "success_timeline_exhausted", last_cursor="__END__", bottom_cursor="c9",
+        )
 
         self.assertIs(saved["backfill_complete"], True)
         self.assertEqual(saved["backfill_depth_reason"], "provider_depth_limit")
-        self.assertIsNone(saved["backfill_cursor"])
+        self.assertEqual(saved["backfill_cursor"], "c9")
 
     def test_reaching_the_true_end_of_pagination_ends_the_walk(self):
         saved = self._record("success_true_end")
@@ -333,6 +354,36 @@ class ArchiveCompletionTests(unittest.TestCase):
         )
 
         self.assertEqual(saved["backfill_stalled_ticks"], 0)
+
+
+    def test_a_wall_probe_that_collected_tweets_reopens_the_walk(self):
+        """The wall moved. Parking must not hide the newly served pages."""
+        saved = self._record(
+            "partial_safety_cap_reached", status="partial", pages=3,
+            previous={
+                "backfill_complete": True,
+                "backfill_depth_reason": "provider_depth_limit",
+                "backfill_cursor": "c9",
+            },
+        )
+
+        self.assertIs(saved["backfill_complete"], False)
+        self.assertIsNone(saved["backfill_depth_reason"])
+
+    def test_a_wall_probe_that_never_talked_to_x_does_not_start_the_month_clock(self):
+        """Quota pause or a failed first request is not a verdict."""
+        saved = self._record(
+            "paused_for_quota", status="partial", pages=0,
+            previous={
+                "backfill_complete": True,
+                "backfill_depth_reason": "provider_depth_limit",
+                "backfill_cursor": "c9",
+                "backfill_completed_at": "old",
+            },
+        )
+
+        self.assertNotIn("backfill_completed_at", saved)
+        self.assertNotIn("backfill_complete", saved)
 
 
 class ArchiveFloorTests(unittest.TestCase):

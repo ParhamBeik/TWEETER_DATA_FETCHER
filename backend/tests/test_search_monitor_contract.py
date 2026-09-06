@@ -266,10 +266,76 @@ def test_the_mark_only_ever_moves_forward(workspace):
     assert _state_of(monitor)["test::latest"]["newest_seen_at"] == future
 
 
+def _stalled_browser(pages: list[dict]) -> MagicMock:
+    """A browser that opened, scrolled, and ran out of pages to produce."""
+    return MagicMock(
+        ok=True, error=None, stop_reason="stalled",
+        target_pages={"SearchTimeline": pages}, route="search_url",
+        support_request_count=0, route_retry_count=0,
+    )
+
+
+def test_a_depth_limited_run_advances_the_mark(workspace):
+    """The deadlock this mark used to cause.
+
+    A broad query cannot exhaust its window inside one run, so it always ended
+    `partial_browser_stalled`; a partial could not advance the mark; and with
+    the mark pinned the next run scrolled back to the same ageing boundary and
+    stalled again. Two searches spent ~4,600 browser page loads a day re-reading
+    tweets they already had. A run that started at the newest result and paged
+    down until the browser ran dry did see the top, so it may move the mark.
+    """
+    previous = (utc_now() - timedelta(days=3)).isoformat() + "Z"
+    monitor = build_monitor(
+        workspace, state={"test::latest": {"newest_seen_at": previous, "last_checked_at": "old"}}
+    )
+    stamp = utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y")
+    monitor.fetcher.bootstrap_browser_context.return_value = _stalled_browser(
+        [_search_page("2", stamp, "c2")]
+    )
+    monitor._request_page = MagicMock(return_value=http_page(created_at=stamp, cursor="c1"))
+
+    report = monitor.monitor_search({**SEARCH_DEF, "pagination_depth": 3})
+
+    assert report["status"] == "partial"
+    assert report["metadata"]["exhausted_reason"] == "partial_browser_stalled"
+    state = _state_of(monitor)["test::latest"]
+    assert state["newest_seen_at"] > previous
+    # The timer moves with the mark: a query that can never complete was
+    # otherwise eligible again on the very next cycle, ignoring its interval.
+    assert state["last_checked_at"] != "old"
+
+
+def test_a_depth_limited_run_under_top_still_cannot_advance_the_mark(workspace):
+    """Under Top, page order is relevance -- page 3 can hold something newer
+    than page 1, so "newest seen" says nothing about what was covered.
+    """
+    previous = (utc_now() - timedelta(days=3)).isoformat() + "Z"
+    monitor = build_monitor(
+        workspace, state={"test::latest": {"newest_seen_at": previous}},
+    )
+    monitor.search_state = {"test::top": {"newest_seen_at": previous, "last_checked_at": "old"}}
+    stamp = utc_now().strftime("%a %b %d %H:%M:%S +0000 %Y")
+    monitor.fetcher.bootstrap_browser_context.return_value = _stalled_browser(
+        [_search_page("2", stamp, "c2")]
+    )
+    monitor._request_page = MagicMock(return_value=http_page(created_at=stamp, cursor="c1"))
+
+    report = monitor.monitor_search({**SEARCH_DEF, "product": "Top", "pagination_depth": 3})
+
+    # Same depth-limited ending as the Latest case above, so the product gate
+    # is what holds the mark back here and not some other rejection.
+    assert report["metadata"]["exhausted_reason"] == "partial_browser_stalled"
+    state = _state_of(monitor)["test::top"]
+    assert state["newest_seen_at"] == previous
+    assert state["last_checked_at"] == "old"
+
+
 def test_a_partial_run_never_advances_the_mark(workspace):
-    """A partial run has not proven it saw the top of the results. Trusting its
-    newest tweet would leave a hole no later run goes back for -- and nothing
-    at the time would look wrong.
+    """A partial run that never got the browser open has not proven it saw the
+    top of the results. It lands in the same `partial_browser_*` bucket as a
+    genuine stall, so the bootstrap flag -- not the reason alone -- is what
+    separates "ran out of depth" from "saw nothing it can vouch for".
     """
     previous = (utc_now() - timedelta(days=3)).isoformat() + "Z"
     monitor = build_monitor(
@@ -334,7 +400,7 @@ def test_the_report_carries_what_the_runner_ingests(workspace):
         "status", "endpoint_status", "metadata", "counts", "outputs",
     }
     assert report["metadata"]["transport"] == "http"
-    assert report["metadata"]["rolling_hours"] == 24
+    assert report["metadata"]["rolling_hours"] == 6
     assert report["metadata"]["window_start_utc"].endswith("Z")
 
 

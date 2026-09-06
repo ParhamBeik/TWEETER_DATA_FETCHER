@@ -37,18 +37,32 @@ def _in_views_era(created_at) -> bool:
     return created_at >= VIEWS_ERA_START
 
 
-def check_metrics(*, created_at, likes=0, retweets=0, replies=0, views=0) -> list[str]:
+def check_metrics(
+    *, created_at, likes=0, retweets=0, replies=0, views=0, source_views=None
+) -> list[str]:
     """Names of the invariants this tweet violates. Empty means plausible.
 
     Returns names rather than raising: one bad row is a data-quality signal to
     count, not a reason to abort a batch that is otherwise fine.
+
+    `source_views` is the view count of the post these engagement figures
+    actually describe, when that is a different post from the row itself. Only a
+    repost has one: X hands back the wrapper's own view count (a few hundred --
+    the times *this* repost was rendered) beside the original's like, reply and
+    repost counts (tens of thousands). Comparing those two numbers is a category
+    error rather than a data fault, and it accounted for every single flagged
+    row in production -- 5,911 of 5,911, with not one plain tweet, quote or
+    reply among them. Given the original's views the ratio compares one post
+    against itself again and means something.
 
     Strict keywords, no **kwargs catch-all: both callers pass these by name, and
     swallowing a typo would silently read the field as 0 and then *invent* an
     `engagement_without_views` violation out of it.
     """
     counts = {"likes": int(likes or 0), "retweets": int(retweets or 0), "replies": int(replies or 0)}
-    views = int(views or 0)
+    # The denominator belongs to whichever post the counts came from. Falling
+    # back to the row's own views keeps every non-repost on the original path.
+    views = int(source_views or 0) or int(views or 0)
     if not _in_views_era(created_at):
         return []
 
@@ -65,6 +79,44 @@ def check_metrics(*, created_at, likes=0, retweets=0, replies=0, views=0) -> lis
     return violations
 
 
+def source_views_of(row) -> int:
+    """Views of the post whose engagement figures `row` carries, or 0.
+
+    Non-zero only for a repost that captured its original, which the ingest
+    path already stores at `extras.retweeted_tweet.metrics.views` -- every one
+    of the 5,911 mismatched rows in production had it. Duck-typed on purpose so
+    this module stays importable without Django.
+    """
+    if getattr(row, "type", None) != "Retweet":
+        return 0
+    extras = getattr(row, "extras", None)
+    original = extras.get("retweeted_tweet") if isinstance(extras, dict) else None
+    metrics = original.get("metrics") if isinstance(original, dict) else None
+    if not isinstance(metrics, dict):
+        return 0
+    try:
+        return int(metrics.get("views") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def violations_for(row) -> list[str]:
+    """`check_metrics` for a stored row, resolving its own comparison basis.
+
+    One function so the batch summary and the offending-row count cannot drift
+    apart: they used to build the same keyword set at two call sites, and a
+    denominator added to one of them would have quietly skipped the other.
+    """
+    return check_metrics(
+        created_at=row.created_at,
+        likes=row.likes,
+        retweets=row.retweets,
+        replies=row.replies,
+        views=row.views,
+        source_views=source_views_of(row),
+    )
+
+
 def summarize(rows) -> dict[str, int]:
     """Violation counts across an ingest batch, for the ingest warning line.
 
@@ -73,19 +125,14 @@ def summarize(rows) -> dict[str, int]:
     """
     totals: dict[str, int] = {}
     for row in rows:
-        for name in check_metrics(
-            created_at=row.created_at,
-            likes=row.likes,
-            retweets=row.retweets,
-            replies=row.replies,
-            views=row.views,
-        ):
+        for name in violations_for(row):
             totals[name] = totals.get(name, 0) + 1
     return totals
 
 
 if __name__ == "__main__":  # runnable self-check
     from datetime import timedelta
+    from types import SimpleNamespace
 
     pre = datetime(2019, 5, 1, tzinfo=timezone.utc)
     post = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -109,4 +156,36 @@ if __name__ == "__main__":  # runnable self-check
         "engagement_without_views"
     ]
     assert check_metrics(created_at=VIEWS_ERA_START - timedelta(seconds=1), likes=1, views=0) == []
+
+    # A repost judged against the original's views, which is the post its like
+    # count came from. The production shape: 8,937 likes, 210 wrapper views.
+    assert check_metrics(
+        created_at=post, likes=8937, retweets=1328, replies=570, views=210, source_views=645503
+    ) == []
+    # A repost whose original really was over-liked still reports.
+    assert check_metrics(created_at=post, likes=50, views=210, source_views=10) == [
+        "likes_exceed_views"
+    ]
+    # No original captured: fall back to the row's own views rather than
+    # excusing the row, so a genuine parse fault is still visible.
+    assert check_metrics(created_at=post, likes=50, views=10, source_views=0) == [
+        "likes_exceed_views"
+    ]
+
+    repost = SimpleNamespace(
+        type="Retweet", created_at=post, likes=8937, retweets=1328, replies=570, views=210,
+        extras={"retweeted_tweet": {"metrics": {"views": 645503}}},
+    )
+    plain = SimpleNamespace(
+        type="Tweet", created_at=post, likes=50, retweets=0, replies=0, views=10, extras={},
+    )
+    assert source_views_of(repost) == 645503
+    assert source_views_of(plain) == 0
+    assert violations_for(repost) == []
+    assert violations_for(plain) == ["likes_exceed_views"]
+    assert summarize([repost, plain]) == {"likes_exceed_views": 1}
+    # A repost with no captured original, and a malformed one, both degrade to
+    # the row's own views instead of raising mid-batch.
+    assert source_views_of(SimpleNamespace(type="Retweet", extras={})) == 0
+    assert source_views_of(SimpleNamespace(type="Retweet", extras={"retweeted_tweet": None})) == 0
     print("metric_gates self-check OK")

@@ -378,10 +378,7 @@ def _log_metric_violations(rows: list[Tweet]) -> None:
     if violations:
         # Offending rows, not violation count: one row can trip three
         # invariants at once, which is how "1500/1000 row(s) failed" happens.
-        offenders = sum(1 for row in rows if metric_gates.check_metrics(
-            created_at=row.created_at, likes=row.likes, retweets=row.retweets,
-            replies=row.replies, views=row.views,
-        ))
+        offenders = sum(1 for row in rows if metric_gates.violations_for(row))
         logger.warning(
             "ingest: %d/%d row(s) failed an engagement sanity check: %s",
             offenders, len(rows),
