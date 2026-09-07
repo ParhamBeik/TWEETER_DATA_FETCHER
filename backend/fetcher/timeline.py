@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -55,8 +56,18 @@ DEFAULT_HISTORICAL_MAX_PAGES = 15
 # advance the backfill watermark -- refetches the same account from page 1 on
 # every single tick, forever. Observed in production: one account burning the
 # whole shared UserTweets budget every 15 minutes and starving live polling to
-# zero. Two consecutive tweet-less pages is the end of the timeline.
-EMPTY_PAGE_STREAK = 2
+# zero.
+#
+# Two was too tight, and the cost of the two errors is wildly asymmetric: an
+# extra page costs one request, while a false stop marks the account complete and
+# removes it from the queue until a monthly probe. A live probe of @geoconfirmed
+# found three consecutive tweet-less pages with tweets on both sides -- under a
+# threshold of 2 that account was parked after page 2 holding 15 of its posts.
+# (Most of those pages were an extraction bug, not X: see
+# TweetSetProcessor._entry_tweets. The threshold is raised anyway, because the
+# signal is a heuristic about someone else's API and it should not be one page
+# away from being wrong.)
+EMPTY_PAGE_STREAK = max(2, int(os.environ.get("TDF_EMPTY_PAGE_STREAK", "5")))
 
 # Outcomes that prove pagination reached the actual end of an account's
 # timeline. `success_window_complete` is deliberately NOT one of them: it only
