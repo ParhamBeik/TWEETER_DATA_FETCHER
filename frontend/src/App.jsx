@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 import {
   Activity,
   ChartNoAxesColumn,
@@ -22,6 +22,7 @@ import Accounts from "./pages/Accounts";
 import Ops from "./pages/Ops";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import LegacyRedirect from "./LegacyRedirect";
 import { Skeleton } from "@/ui/controls";
 
 // Only these two pull in recharts, and it is the single largest thing in the
@@ -58,6 +59,13 @@ const NAV = [
 ];
 
 const STAFF_NAV = [{ to: "/ops", label: "Ops", icon: Activity, hint: "Runs and session" }];
+
+function LegacySearchRedirect() {
+  const { searchId } = useParams();
+  return (
+    <LegacyRedirect from={`/searches/${searchId}`} to={`/search/${searchId}`} target="Search" />
+  );
+}
 
 function RequireAuth({ children }) {
   const { authed, status } = useAuth();
@@ -214,8 +222,38 @@ export default function App() {
           <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Navigate to="/feed" replace />} />
-            <Route path="/pulse" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/cycles" element={<Navigate to="/ops" replace />} />
+            <Route
+              path="/pulse"
+              element={
+                <RequireAuth>
+                  <LegacyRedirect from="/pulse" to="/dashboard" target="Dashboard" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/cycles"
+              element={
+                <RequireAuth>
+                  <LegacyRedirect from="/cycles" to="/ops" target="Ops" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/searches"
+              element={
+                <RequireAuth>
+                  <LegacyRedirect from="/searches" to="/search" target="Search" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/searches/:searchId"
+              element={
+                <RequireAuth>
+                  <LegacySearchRedirect />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/feed"
               element={

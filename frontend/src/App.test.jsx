@@ -112,11 +112,21 @@ describe("authenticated operators", () => {
   });
 
   it.each([
-    ["/pulse", "dashboard page"],
-    ["/cycles", "ops page"],
-  ])("forwards the old %s bookmark", async (route, expected) => {
+    ["/pulse", "Dashboard"],
+    ["/cycles", "Ops"],
+    ["/searches", "Search"],
+  ])("explains where the old %s bookmark went", async (route, target) => {
     renderApp(route);
-    expect(await screen.findByText(expected)).toBeInTheDocument();
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(target);
+    expect(notice).toHaveTextContent("Redirecting");
+  });
+
+  it("forwards /searches/:id toward the search workspace", async () => {
+    renderApp("/searches/12");
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("Search");
+    expect(within(notice).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search/12");
   });
 
   it("falls back to the feed for an unknown route", async () => {
