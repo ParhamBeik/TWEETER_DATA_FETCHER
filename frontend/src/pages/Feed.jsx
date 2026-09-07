@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Archive, ArrowUp, Download, Image, X } from "lucide-react";
+import { Archive, ArrowUp, ChevronDown, Download, Image, X } from "lucide-react";
 import { api, authorizedFetch } from "../api";
 import { AccountPicker, Segmented, ToggleChips, useAccounts } from "../filters";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
+import { useMediaQuery } from "../useMediaQuery";
 import { Button } from "@/ui/button";
 import { Chip, Empty, ErrorNote } from "@/ui/controls";
 import { Input, Select } from "@/ui/field";
@@ -83,6 +84,16 @@ function feedQuery(filters) {
   return params;
 }
 
+function filterSummary(filters) {
+  const sort = SORTS.find((option) => option.value === filters.sort)?.label || "Latest";
+  const window =
+    WINDOWS.find((option) => option.value === filters.window)?.label || "All time";
+  return `${sort} · ${window}`;
+}
+
+const RAIL_CLASS =
+  "feed-filters order-1 lg:sticky lg:top-4 lg:order-2 lg:h-max lg:min-w-0";
+
 export default function Feed() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = readFilters(searchParams);
@@ -98,6 +109,7 @@ export default function Feed() {
   // is now a job, and a button that looks idle while one runs invites a second.
   const [exporting, setExporting] = useState("");
   const [notice, setNotice] = useState("");
+  const desktopRail = useMediaQuery("(min-width: 1024px)");
 
   // Monotonic id for the active query. A page-append that is still in flight when
   // the user re-filters belongs to the previous query, so its rows must be
@@ -259,6 +271,111 @@ export default function Feed() {
     }
   }
 
+  const filterBody = (
+    <>
+      <form
+        className="relative"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          update({ q: draftQuery });
+        }}
+      >
+        <Input
+          aria-label="Search archive"
+          placeholder="Search the archive"
+          value={draftQuery}
+          className={draftQuery ? "pr-9" : undefined}
+          onChange={(e) => setDraftQuery(e.target.value)}
+        />
+        {draftQuery ? (
+          <button
+            type="button"
+            aria-label="Clear search"
+            title="Clear search"
+            onClick={() => {
+              setDraftQuery("");
+              update({ q: "" });
+            }}
+            className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1.5 text-muted transition-colors hover:text-ink"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </form>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="eyebrow">Sort</span>
+        <Segmented
+          label="Sort"
+          options={SORTS}
+          value={filters.sort}
+          onChange={(sort) => update({ sort })}
+          className="flex w-full flex-col self-stretch sm:flex-row sm:self-start"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="eyebrow">Time window</span>
+        <Segmented
+          label="Time window"
+          options={WINDOWS}
+          value={filters.window}
+          onChange={(window) => update({ window })}
+          className="flex w-full flex-wrap self-stretch"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="eyebrow">Post types</span>
+        <ToggleChips
+          label="Post types"
+          options={POST_TYPES}
+          values={filters.types}
+          onChange={(types) => update({ types })}
+        />
+        <Chip
+          pressed={filters.has_media}
+          className="mt-1 self-start"
+          onClick={() => update({ has_media: !filters.has_media })}
+        >
+          <Image className="mr-1 inline size-3" aria-hidden="true" />
+          Media only
+        </Chip>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="eyebrow">Accounts</span>
+        <AccountPicker
+          accounts={accounts}
+          selected={filters.accounts}
+          onChange={(next) => update({ accounts: next })}
+        />
+        <Select
+          aria-label="Tier"
+          className="mt-1"
+          value={filters.tier}
+          onChange={(e) => update({ tier: e.target.value })}
+        >
+          <option value="">All tiers</option>
+          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+            <option key={n} value={n}>
+              Priority {n}
+            </option>
+          ))}
+        </Select>
+        <Chip
+          pressed={filters.include_untracked}
+          className="mt-1 self-start"
+          onClick={() => update({ include_untracked: !filters.include_untracked })}
+        >
+          <Archive className="mr-1 inline size-3" aria-hidden="true" />
+          Include untracked
+        </Chip>
+      </div>
+    </>
+  );
+
   return (
     <section className="flex flex-col gap-5">
       <PageHead
@@ -290,7 +407,7 @@ export default function Feed() {
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
         <div className="order-2 min-w-0 lg:order-1">
           {error && <ErrorNote className="mb-3">{error}</ErrorNote>}
           {/* A truncated export is a correct answer to a different question,
@@ -331,123 +448,23 @@ export default function Feed() {
         {/* Sticky rail rather than a bar across the top: the filters stay
             reachable through a long scroll, and the reading column keeps a
             measure that does not stretch to the window. */}
-        {/* A details element on purpose: on a phone the full control stack is
-            ~480px, so the first post used to start below the fold. Collapsed it
-            is one row; on desktop the CSS in index.css hides the summary and
-            forces the panel open, so nothing changes there.
-            No `open` attribute: setting it collapsed the phone case back open
-            again and put the first post 885px down, which is the whole thing
-            this element exists to prevent. Desktop is handled entirely in CSS. */}
-        <details className="feed-filters order-1 lg:sticky lg:top-4 lg:order-2 lg:h-max">
-          <summary className="mb-3 cursor-pointer list-none rounded-sm border border-line px-3 py-2 text-sm text-fg-muted lg:hidden">
-            Filters and sort
-          </summary>
-          <div className="feed-filters-body flex flex-col gap-4">
-          {/* Debounced, so typing searches on its own. Enter-only meant a
-              typed query did nothing until you guessed to press it, and
-              emptying the box left the old results on screen. */}
-          <form
-            className="relative"
-            role="search"
-            onSubmit={(e) => {
-              e.preventDefault();
-              update({ q: draftQuery });
-            }}
-          >
-            <Input
-              aria-label="Search archive"
-              placeholder="Search the archive"
-              value={draftQuery}
-              className={draftQuery ? "pr-9" : undefined}
-              onChange={(e) => setDraftQuery(e.target.value)}
-            />
-            {draftQuery ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                title="Clear search"
-                onClick={() => {
-                  setDraftQuery("");
-                  update({ q: "" });
-                }}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-1.5 text-muted transition-colors hover:text-ink"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </form>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Sort</span>
-            <Segmented
-              label="Sort"
-              options={SORTS}
-              value={filters.sort}
-              onChange={(sort) => update({ sort })}
-              className="self-start"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Time window</span>
-            <Segmented
-              label="Time window"
-              options={WINDOWS}
-              value={filters.window}
-              onChange={(window) => update({ window })}
-              className="self-start"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Post types</span>
-            <ToggleChips
-              label="Post types"
-              options={POST_TYPES}
-              values={filters.types}
-              onChange={(types) => update({ types })}
-            />
-            <Chip
-              pressed={filters.has_media}
-              className="mt-1 self-start"
-              onClick={() => update({ has_media: !filters.has_media })}
-            >
-              <Image className="mr-1 inline size-3" aria-hidden="true" />
-              Media only
-            </Chip>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow">Accounts</span>
-            <AccountPicker
-              accounts={accounts}
-              selected={filters.accounts}
-              onChange={(next) => update({ accounts: next })}
-            />
-            <Select
-              aria-label="Tier"
-              className="mt-1"
-              value={filters.tier}
-              onChange={(e) => update({ tier: e.target.value })}
-            >
-              <option value="">All tiers</option>
-              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                <option key={n} value={n}>
-                  Priority {n}
-                </option>
-              ))}
-            </Select>
-            <Chip
-              pressed={filters.include_untracked}
-              className="mt-1 self-start"
-              onClick={() => update({ include_untracked: !filters.include_untracked })}
-            >
-              <Archive className="mr-1 inline size-3" aria-hidden="true" />
-              Include untracked
-            </Chip>
-          </div>
-          </div>
-        </details>
+        {/* Phones use a collapsed <details> so the first post stays above the
+            fold. Desktop renders a plain aside — relying on CSS to override a
+            closed details hid the summary and the panel together when the
+            override failed, which made sort unreachable with no affordance. */}
+        {desktopRail ? (
+          <aside className={RAIL_CLASS}>
+            <div className="feed-filters-body flex flex-col gap-4">{filterBody}</div>
+          </aside>
+        ) : (
+          <details className={RAIL_CLASS}>
+            <summary className="mb-3 flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm border border-line px-3 py-2 text-sm text-fg-muted">
+              <span>Filters and sort · {filterSummary(filters)}</span>
+              <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
+            </summary>
+            <div className="feed-filters-body flex flex-col gap-4">{filterBody}</div>
+          </details>
+        )}
       </div>
     </section>
   );

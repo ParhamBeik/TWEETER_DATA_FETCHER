@@ -13,6 +13,10 @@ vi.mock("../api", async () => {
   return { ...actual, api: vi.fn() };
 });
 
+vi.mock("../useMediaQuery", () => ({
+  useMediaQuery: () => true,
+}));
+
 const page = (results, next = null) => ({ results, next });
 const tweet = (id, text) => ({ id, tweet_id: id, account: "elonmusk", text, type: "Tweet" });
 

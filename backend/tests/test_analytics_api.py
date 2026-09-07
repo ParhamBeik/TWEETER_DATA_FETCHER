@@ -137,6 +137,34 @@ def test_analytics_accept_the_shared_window_and_account_filters(client):
     assert client.get("/api/analytics/topics/?dimension=both").status_code == 200
 
 
+@pytest.mark.django_db
+def test_accounts_analytics_respects_account_filter(client):
+    from django.utils import timezone
+
+    TwitterUser.objects.create(handle="jack", tracking=True)
+    TwitterUser.objects.create(handle="elon", tracking=True)
+    now = timezone.now()
+    for handle, tweet_id in (("jack", "1"), ("elon", "2")):
+        upsert_tweet({
+            "rest_id": tweet_id,
+            "author_id": tweet_id,
+            "account": handle,
+            "text": f"post from {handle}",
+            "created_at": now.strftime("%a %b %d %H:%M:%S +0000 %Y"),
+            "likes": 10 if handle == "jack" else 1,
+            "retweets": 0,
+            "replies": 0,
+            "quotes": 0,
+        })
+
+    all_rows = client.get("/api/analytics/accounts/?range=7d").data["results"]
+    assert {row["account"] for row in all_rows} == {"elon", "jack"}
+
+    jack_rows = client.get("/api/analytics/accounts/?range=7d&account=jack").data["results"]
+    assert len(jack_rows) == 1
+    assert jack_rows[0]["account"] == "jack"
+
+
 postgres_only = pytest.mark.skipif(
     "connection.vendor != 'postgresql'",
     reason="topic mining and velocity deltas are raw Postgres SQL",

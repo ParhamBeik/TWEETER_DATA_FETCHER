@@ -41,9 +41,15 @@ describe("budget rail", () => {
 
   it("exposes the gauge as a meter for assistive technology", async () => {
     render(<BudgetRail />);
-    const meter = await screen.findByRole("meter", { name: /UserTweets requests remaining/ });
+    const meter = await screen.findByRole("meter", { name: /Timeline requests remaining/ });
     expect(meter).toHaveAttribute("aria-valuenow", "12");
     expect(meter).toHaveAttribute("aria-valuemax", "50");
+  });
+
+  it("shows a friendly label for timeline quota", async () => {
+    render(<BudgetRail />);
+    expect(await screen.findByText("Timeline")).toBeInTheDocument();
+    expect(screen.queryByText("UserTweetsAndReplies")).toBeNull();
   });
 
   it("names the collector that is spending right now", async () => {
