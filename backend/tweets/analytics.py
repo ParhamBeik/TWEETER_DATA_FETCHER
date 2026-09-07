@@ -901,13 +901,18 @@ class AccountsAnalyticsView(APIView):
 
     def get(self, request):
         window = window_from(request)
+        handles = accounts_from(request)
         # Exclude retweets so accounts are ranked strictly on their own authored content,
         # rather than crediting other people's viral posts they happened to repost.
+        scoped = _for_accounts(
+            Tweet.objects.filter(
+                account__in=TwitterUser.objects.filter(tracking=True).values("handle")
+            ).exclude(type="Retweet"),
+            handles,
+        )
         rows = (
             _in_window(
-                Tweet.objects.filter(
-                    account__in=TwitterUser.objects.filter(tracking=True).values("handle")
-                ).exclude(type="Retweet"),
+                scoped,
                 window,
             )
             .values("account")

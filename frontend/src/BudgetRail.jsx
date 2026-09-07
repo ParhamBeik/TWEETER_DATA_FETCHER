@@ -43,20 +43,35 @@ const FILL = {
   danger: "bg-danger",
 };
 
+// GraphQL endpoint names are wire identifiers. The collectors only spend
+// UserTweets (timeline posts); UserTweetsAndReplies is transport-only and must
+// not appear as if it were a live budget.
+const ENDPOINT_LABELS = {
+  UserTweets: "Timeline",
+  SearchTimeline: "Search",
+  UserByScreenName: "Profiles",
+  TweetDetail: "Tweet detail",
+};
+
+function endpointLabel(endpoint) {
+  return ENDPOINT_LABELS[endpoint] || endpoint;
+}
+
 function Gauge({ endpoint, remaining, limit, resetsInSeconds }) {
   const share = limit > 0 ? Math.max(0, Math.min(1, remaining / limit)) : 0;
   const lit = limit > 0 ? Math.round(share * TICKS) : 0;
   const role = tone(share);
+  const label = endpointLabel(endpoint);
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <span className="font-mono text-2xs uppercase tracking-wider text-fg-dim">{endpoint}</span>
+      <span className="font-mono text-2xs uppercase tracking-wider text-fg-dim">{label}</span>
       <span
         className="flex items-center gap-px"
         role="meter"
         aria-valuenow={remaining}
         aria-valuemin={0}
         aria-valuemax={limit}
-        aria-label={`${endpoint} requests remaining`}
+        aria-label={`${label} requests remaining`}
       >
         {Array.from({ length: TICKS }, (_, index) => (
           <span
@@ -93,7 +108,9 @@ export default function BudgetRail() {
       .catch(() => setReachable(false));
   }, RAIL_POLL_MS);
 
-  const limits = (pipeline?.rate_limits || []).filter((row) => row.limit > 0);
+  const limits = (pipeline?.rate_limits || []).filter(
+    (row) => row.limit > 0 && row.endpoint !== "UserTweetsAndReplies",
+  );
   const running = pipeline?.running || [];
 
   return (

@@ -494,7 +494,10 @@ export default function Analyze() {
       <div className="flex flex-wrap items-center gap-3">
         <Segmented label="Time range" options={RANGES} value={range} onChange={setRange} />
         <Segmented label="Bucket" options={BUCKETS} value={bucket} onChange={setBucket} />
-        <AccountPicker accounts={accounts} selected={selected} onChange={setSelected} />
+        <div className="flex flex-col gap-1.5">
+          <span className="eyebrow">Accounts</span>
+          <AccountPicker accounts={accounts} selected={selected} onChange={setSelected} />
+        </div>
         <Chip
           pressed={live}
           className="ml-auto"
