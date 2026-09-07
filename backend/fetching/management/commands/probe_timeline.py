@@ -18,6 +18,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from fetching.redaction import _literal_secrets, redact_text
 from fetching.runner import SCRATCH_PREFIX, _restore_state, _write_config
 
 
@@ -49,6 +50,7 @@ class Command(BaseCommand):
             env = dict(os.environ)
             env["TDF_PROJECT_ROOT"] = str(root)
             env["TDF_CONFIG"] = str(config_path)
+            env["TDF_EMPTY_PAGE_STREAK"] = str(settings.FETCH_EMPTY_PAGE_STREAK)
             env["PYTHONPATH"] = str(settings.BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
 
             process = subprocess.run(
@@ -60,8 +62,14 @@ class Command(BaseCommand):
                 ],
                 env=env,
                 cwd=str(root),
+                capture_output=True,
                 text=True,
             )
+            literals = _literal_secrets()
+            if process.stdout:
+                self.stdout.write(redact_text(process.stdout, literals=literals))
+            if process.stderr:
+                self.stderr.write(redact_text(process.stderr, literals=literals))
             if process.returncode != 0:
                 raise CommandError(f"probe exited with code {process.returncode}")
         finally:

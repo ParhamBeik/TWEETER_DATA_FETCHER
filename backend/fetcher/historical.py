@@ -368,6 +368,16 @@ def _record_backfill_progress(
     fetched = int(result.get("pages_fetched", 0) or 0)
     outcome = str(result.get("outcome") or "")
     pages_done = int(previous.get("backfill_pages_done", 0) or 0) + fetched
+    raw_pages = result.get("pages") if isinstance(result.get("pages"), list) else []
+    collected_tweets = bool(
+        TweetSetProcessor().extract_tweets_from_raw(
+            raw_pages, username=username, source_endpoint=endpoint
+        )
+    ) if raw_pages else False
+    try:
+        empty_streak = max(0, int(result.get("empty_page_streak") or 0))
+    except (TypeError, ValueError):
+        empty_streak = 0
     # Completion is decided by the outcome, never by the status. A run that
     # merely satisfied a rolling window also reports status="completed" while
     # still holding a live cursor, and treating that as the end is how an active
@@ -381,9 +391,10 @@ def _record_backfill_progress(
     #  - success_true_end: X ran out of cursor. The account's first tweet.
     #  - success_timeline_exhausted: X kept offering a cursor but stopped
     #    returning tweets. This is X's serving depth, not the account's first
-    #    tweet -- it fires after two empty pages, and treating it as "we have
-    #    everything" is what put 45 of 64 accounts at exactly 45 pages and let
-    #    @elonmusk be reported fully archived with three months of history.
+    #    tweet -- it fires after EMPTY_PAGE_STREAK consecutive tweet-less pages,
+    #    and treating it as "we have everything" is what put 45 of 64 accounts
+    #    at exactly 45 pages and let @elonmusk be reported fully archived with
+    #    three months of history.
     #    It still ends the walk (retrying cannot get past a provider limit) but
     #    it is recorded as a provider limit, not as completeness.
     depth_reason = {
@@ -413,6 +424,12 @@ def _record_backfill_progress(
         # FETCH_ARCHIVE_EARLIEST_DATE silently invalidates every account marked
         # reached_date_floor with no way to find them again.
         "backfill_floor_date": (cutoff.strftime("%Y-%m-%d") if cutoff else None),
+        # Trailing tweet-less pages, as the engine counted them. Zero only when
+        # this tick declared an end -- a leftover bite that walked from real
+        # posts into the void still owes the next tick those empty pages.
+        # `collected_tweets` is the wrong gate: it is true if *any* page in the
+        # bite held a tweet, which is the usual leftover at the tweet/void edge.
+        "backfill_empty_streak": 0 if finished else empty_streak,
     }
     # Completion is set here. The one case that clears it is a monthly wall
     # probe that collected tweets -- that is evidence the provider limit moved.
@@ -439,8 +456,11 @@ def _record_backfill_progress(
                 f"@{username} {endpoint} archive walk complete after "
                 f"{pages_done} page(s) ({depth_reason})"
             )
-    elif fetched and parked_at_wall:
+    elif parked_at_wall and collected_tweets:
         # A probe that collected tweets means the wall moved. Re-open the walk.
+        # `pages_fetched` is the wrong signal: a one-page cursor-only probe still
+        # "fetched" a page, cannot reach EMPTY_PAGE_STREAK, and would un-park
+        # every still-walled account into a 25-page void walk.
         meta["backfill_complete"] = False
         meta["backfill_depth_reason"] = None
         meta["backfill_completed_at"] = None

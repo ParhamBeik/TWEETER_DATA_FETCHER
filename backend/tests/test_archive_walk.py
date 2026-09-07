@@ -233,6 +233,16 @@ class ArchiveWalkTests(unittest.TestCase):
         self.assertEqual(result["last_cursor"], "__END__")
         self.assertEqual(result["bottom_cursor"], f"empty{EMPTY_PAGE_STREAK - 1}")
 
+    def test_empty_page_streak_resumes_across_ticks(self):
+        """Quota-short ticks used to reset the streak, so a threshold of 5 never fired."""
+        self.state["backfill_empty_streak"] = EMPTY_PAGE_STREAK - 1
+        get = self._serve([_page(tweets=0, cursor="c9")])
+
+        result = self._walk(resume_cursor="c8", force_refetch=False)
+
+        self.assertEqual(result["outcome"], "success_timeline_exhausted")
+        self.assertEqual(get.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -247,7 +257,7 @@ class ArchiveCompletionTests(unittest.TestCase):
     """
 
     def _record(self, outcome, *, status="completed", pages=5, previous=None, cutoff=None,
-                last_cursor="c9", bottom_cursor=None):
+                last_cursor="c9", bottom_cursor=None, raw_pages=None, empty_page_streak=0):
         from fetcher.historical import _record_backfill_progress
 
         saved = {}
@@ -255,6 +265,8 @@ class ArchiveCompletionTests(unittest.TestCase):
         storage.update_endpoint_state = lambda account, endpoint, meta=None, **_: saved.update(meta or {})
         payload = {
             "status": status, "outcome": outcome, "pages_fetched": pages, "last_cursor": last_cursor,
+            "pages": raw_pages or [],
+            "empty_page_streak": empty_page_streak,
         }
         if bottom_cursor is not None:
             payload["bottom_cursor"] = bottom_cursor
@@ -280,18 +292,20 @@ class ArchiveCompletionTests(unittest.TestCase):
 
     def test_running_out_of_tweets_is_recorded_as_the_providers_limit(self):
         """X offering a cursor but no tweets is its serving depth, not the
-        account's first tweet. It fires after two empty pages, and calling it
+        account's first tweet. It fires after EMPTY_PAGE_STREAK empty pages, and calling it
         completeness is what put 45 of 64 accounts at exactly 45 pages and let
         @elonmusk be reported fully archived holding three months of history.
         The walk still stops -- retrying cannot beat a provider limit -- but the
         reason has to survive, or the gap is invisible."""
         saved = self._record(
             "success_timeline_exhausted", last_cursor="__END__", bottom_cursor="c9",
+            empty_page_streak=5,
         )
 
         self.assertIs(saved["backfill_complete"], True)
         self.assertEqual(saved["backfill_depth_reason"], "provider_depth_limit")
         self.assertEqual(saved["backfill_cursor"], "c9")
+        self.assertEqual(saved["backfill_empty_streak"], 0)
 
     def test_reaching_the_true_end_of_pagination_ends_the_walk(self):
         saved = self._record("success_true_end")
@@ -359,7 +373,8 @@ class ArchiveCompletionTests(unittest.TestCase):
     def test_a_wall_probe_that_collected_tweets_reopens_the_walk(self):
         """The wall moved. Parking must not hide the newly served pages."""
         saved = self._record(
-            "partial_safety_cap_reached", status="partial", pages=3,
+            "partial_safety_cap_reached", status="partial", pages=1,
+            raw_pages=[_page(tweets=5, cursor="c10")],
             previous={
                 "backfill_complete": True,
                 "backfill_depth_reason": "provider_depth_limit",
@@ -369,6 +384,37 @@ class ArchiveCompletionTests(unittest.TestCase):
 
         self.assertIs(saved["backfill_complete"], False)
         self.assertIsNone(saved["backfill_depth_reason"])
+
+    def test_a_wall_probe_of_empty_pages_stays_parked(self):
+        """Fetching a cursor-only page is not evidence the wall moved."""
+        saved = self._record(
+            "partial_safety_cap_reached", status="partial", pages=1,
+            raw_pages=[_page(tweets=0, cursor="c10")],
+            previous={
+                "backfill_complete": True,
+                "backfill_depth_reason": "provider_depth_limit",
+                "backfill_cursor": "c9",
+            },
+        )
+
+        self.assertNotIn("backfill_complete", saved)
+        self.assertNotIn("backfill_depth_reason", saved)
+
+    def test_quota_pause_keeps_the_empty_page_streak(self):
+        """A leftover bite that walked from tweets into the void must keep the
+        trailing empty count. Zeroing on 'any tweet this tick' is the same
+        reset this field exists to stop."""
+        saved = self._record(
+            "paused_for_quota", status="partial", pages=4, empty_page_streak=3,
+            raw_pages=[
+                _page(tweets=5, cursor="c1"),
+                _page(tweets=0, cursor="c2"),
+                _page(tweets=0, cursor="c3"),
+                _page(tweets=0, cursor="c4"),
+            ],
+        )
+
+        self.assertEqual(saved["backfill_empty_streak"], 3)
 
     def test_a_wall_probe_that_never_talked_to_x_does_not_start_the_month_clock(self):
         """Quota pause or a failed first request is not a verdict."""

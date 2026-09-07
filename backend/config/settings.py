@@ -317,7 +317,16 @@ FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR"
 # many costs a single request, one page too few marks the account complete and
 # drops it from the queue for a month. Floored at 2 by the engine. Passed to the
 # subprocess as TDF_EMPTY_PAGE_STREAK.
-FETCH_EMPTY_PAGE_STREAK = int(os.environ.get("FETCH_EMPTY_PAGE_STREAK", "5"))
+try:
+    FETCH_EMPTY_PAGE_STREAK = int(os.environ.get("FETCH_EMPTY_PAGE_STREAK", "5"))
+except (TypeError, ValueError) as exc:
+    raise ImproperlyConfigured(
+        f"FETCH_EMPTY_PAGE_STREAK={os.environ.get('FETCH_EMPTY_PAGE_STREAK')!r} is not an integer"
+    ) from exc
+if FETCH_EMPTY_PAGE_STREAK < 2:
+    raise ImproperlyConfigured(
+        f"FETCH_EMPTY_PAGE_STREAK={FETCH_EMPTY_PAGE_STREAK} is below the engine floor of 2"
+    )
 # How far back the archive walk is willing to go, as an ISO date. This is a
 # deliberate storage ceiling, not a technical limit: an unbounded walk over 64
 # accounts collects millions of tweets nobody asked for. Reaching it is a real

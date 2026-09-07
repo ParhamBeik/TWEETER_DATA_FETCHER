@@ -433,6 +433,12 @@ class FetcherEngine:
         started_at = utc_now_iso()
         attempts = 0
         empty_page_streak = 0
+        if resume_cursor:
+            prior = self.storage_manager.get_endpoint_state(account, endpoint)
+            try:
+                empty_page_streak = max(0, int(prior.get("backfill_empty_streak") or 0))
+            except (TypeError, ValueError):
+                empty_page_streak = 0
         error_samples: List[Dict[str, Any]] = []
         last_http_status: Optional[int] = None
         latest_window_coverage: Optional[Dict[str, Any]] = None
@@ -468,6 +474,7 @@ class FetcherEngine:
                 "started_at": started_at,
                 "finished_at": utc_now_iso(),
                 "window_coverage": latest_window_coverage,
+                "empty_page_streak": empty_page_streak,
                 "transport": transport,
                 "bootstrap_route": self.last_bootstrap.route if self.last_bootstrap else None,
                 "output_paths": {
