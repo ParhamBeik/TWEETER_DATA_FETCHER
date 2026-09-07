@@ -56,42 +56,65 @@ class TweetSetProcessor:
                 for entry in entries:
                     if not isinstance(entry, dict):
                         continue
-
-                    tweet_candidate = self._extract_tweet_from_entry(entry)
-                    if not tweet_candidate:
-                        continue
-
-                    tweet_candidate = self._normalize_tweet(tweet_candidate, username=username, source_endpoint=source_endpoint)
-                    key = self._tweet_key(tweet_candidate)
-                    if key:
-                        result[key] = tweet_candidate
-
-                    content = entry.get("content", {})
-                    if isinstance(content, dict):
-                        for module_item in content.get("items", []) if isinstance(content.get("items"), list) else []:
-                            if not isinstance(module_item, dict):
-                                continue
-                            item = module_item.get("item", {})
-                            if not isinstance(item, dict):
-                                continue
-                            module_tweet = self._extract_tweet_from_item(item)
-                            if not module_tweet:
-                                continue
-                            module_tweet = self._normalize_tweet(module_tweet, username=username, source_endpoint=source_endpoint)
-                            module_key = self._tweet_key(module_tweet)
-                            if module_key:
-                                result[module_key] = module_tweet
+                    for tweet_obj in self._entry_tweets(entry):
+                        tweet = self._normalize_tweet(
+                            tweet_obj, username=username, source_endpoint=source_endpoint
+                        )
+                        key = self._tweet_key(tweet)
+                        if key:
+                            result[key] = tweet
 
         return result
 
-    def _extract_tweet_from_entry(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        content = entry.get("content", {})
+    def _entry_tweets(self, entry: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Every tweet carried by one timeline entry.
+
+        X serves a profile timeline as two different entry shapes and both hold
+        real posts:
+
+          - `TimelineTimelineItem`  -> one tweet under `content.itemContent`
+          - `TimelineTimelineModule` -> a self-thread, N tweets under
+            `content.items[].item.itemContent`
+
+        Modules used to be unreachable. The item lookup ran first and `continue`d
+        the whole entry when it came back empty -- which is exactly what a module
+        entry does, since a module has no `content.itemContent` -- so every
+        threaded post was dropped on every page of every account. A page that
+        happened to hold only conversations then extracted zero tweets and looked
+        like the end of the timeline, which is how accounts that post in threads
+        got parked after two pages as "X's serving depth".
+
+        Yielding from both shapes independently is the fix; the caller dedupes by
+        key, so an entry that somehow carries both is harmless.
+        """
+        found: List[Dict[str, Any]] = []
+        content = entry.get("content")
         if not isinstance(content, dict):
-            return None
-        item_content = content.get("itemContent", {})
-        if not isinstance(item_content, dict):
-            return None
-        return self._extract_tweet_from_item(item_content)
+            return found
+
+        item_content = content.get("itemContent")
+        if isinstance(item_content, dict):
+            tweet = self._extract_tweet_from_item(item_content)
+            if tweet:
+                found.append(tweet)
+
+        items = content.get("items")
+        for module_item in items if isinstance(items, list) else ():
+            if not isinstance(module_item, dict):
+                continue
+            item = module_item.get("item")
+            if not isinstance(item, dict):
+                continue
+            # `item.itemContent`, not `item`: the tweet payload sits one level
+            # below, and passing the wrapper made this branch a silent no-op even
+            # on the rare entry that did reach it.
+            module_content = item.get("itemContent")
+            if not isinstance(module_content, dict):
+                continue
+            tweet = self._extract_tweet_from_item(module_content)
+            if tweet:
+                found.append(tweet)
+        return found
 
     def _extract_tweet_from_item(self, item_content: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         tweet_results = item_content.get("tweet_results", {})

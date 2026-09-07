@@ -312,6 +312,12 @@ FETCH_HISTORICAL_PAGES_PER_TICK = int(os.environ.get("FETCH_HISTORICAL_PAGES_PER
 # live poller (which reserves 5 more for itself). With no floor the backfill
 # drained the bucket every tick and live deferred 100% of its accounts.
 FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "20"))
+# Consecutive tweet-less pages that end a walk. This is a guess about someone
+# else's API, and the two ways of being wrong are not symmetric: one page too
+# many costs a single request, one page too few marks the account complete and
+# drops it from the queue for a month. Floored at 2 by the engine. Passed to the
+# subprocess as TDF_EMPTY_PAGE_STREAK.
+FETCH_EMPTY_PAGE_STREAK = int(os.environ.get("FETCH_EMPTY_PAGE_STREAK", "5"))
 # How far back the archive walk is willing to go, as an ISO date. This is a
 # deliberate storage ceiling, not a technical limit: an unbounded walk over 64
 # accounts collects millions of tweets nobody asked for. Reaching it is a real

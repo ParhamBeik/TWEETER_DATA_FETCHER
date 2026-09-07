@@ -24,7 +24,7 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from fetching.accounts import archive_progress
+from fetching.accounts import archive_progress, silent_accounts
 # parse_since already turns "24h"/"30d" into a timedelta for `manage.py
 # fetch_report`; one spelling of the range syntax for the CLI and the API both.
 from fetching.management.commands.fetch_report import parse_since
@@ -514,6 +514,7 @@ class PipelineView(APIView):
 
         progress = archive_progress()
         stalled = [row for row in progress["walking"] if row["stalled_ticks"] > 0]
+        silent = silent_accounts(now=now)
         return Response({
             "now": now.isoformat(),
             "subsystems": subsystems,
@@ -530,6 +531,11 @@ class PipelineView(APIView):
                 "stalled": len(stalled),
                 "walking": progress["walking"][:12],
             },
+            # Accounts every poll reports as healthy that have stopped producing
+            # anything. Without this the console showed 41 days of green for an
+            # account whose timeline had been frozen the whole time.
+            "silent": silent[:12],
+            "silent_count": len(silent),
             "quarantined": list(
                 TwitterUser.objects.filter(quarantined=True).values(
                     "handle", "quarantine_reason", "quarantined_at"

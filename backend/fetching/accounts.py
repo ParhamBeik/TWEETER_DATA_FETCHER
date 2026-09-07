@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Count
+from django.db.models import Count, Max
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -258,6 +258,74 @@ def due_depth_probes(archive: dict | None = None, *, now=None) -> list[str]:
             continue
         due.append(handle)
     return due
+
+
+# How many of an account's own posting gaps may pass with nothing collected
+# before the silence is worth reporting, and the floor under that for accounts
+# that post many times an hour.
+SILENCE_GAP_MULTIPLE = 12
+SILENCE_MIN_HOURS = 6
+
+
+def silent_accounts(*, now=None) -> list[dict]:
+    """Tracked accounts we keep polling successfully that have gone quiet.
+
+    Every fetch of @realdonaldtrump for 41 days reported `completed`, because
+    completeness only ever asked whether pagination had walked back *past* the
+    window start -- which a page of stale tweets satisfies trivially. Nothing
+    asked the one question an operator cares about: is anything still arriving.
+    The poll is not broken and there is nothing to retry; what was missing is the
+    signal, so this is a measurement rather than a fix to the walk.
+
+    Silence is judged against each account's own measured cadence instead of a
+    flat number of days: six hours without a post is alarming for @reuters and
+    unremarkable for a tier-7 account that posts twice a month.
+    """
+    now = now or timezone.now()
+    live = live_state_map()
+    users = list(TwitterUser.objects.filter(tracking=True, quarantined=False))
+    newest = {
+        str(row["account"]).lower(): row["newest"]
+        for row in Tweet.objects.filter(
+            account__in=[user.handle.lower() for user in users]
+        ).values("account").annotate(newest=Max("created_at"))
+    }
+
+    silent: list[dict] = []
+    for user in users:
+        key = user.handle.lower()
+        state = live.get(key, {})
+        # Only accounts the poller believes it is handling. One that has never
+        # been checked is a different problem and would drown this signal.
+        last_checked = _parse_when(state.get("last_checked_at"))
+        if last_checked is None:
+            continue
+        cadence = int(
+            user.observed_median_gap_seconds
+            or user.poll_interval_seconds
+            or policy_for(user.priority)["poll_interval_seconds"]
+        )
+        tolerance = timedelta(
+            seconds=max(cadence * SILENCE_GAP_MULTIPLE, SILENCE_MIN_HOURS * 3600)
+        )
+        latest = newest.get(key)
+        quiet_for = None if latest is None else now - latest
+        if latest is not None and quiet_for < tolerance:
+            continue
+        silent.append({
+            "handle": user.handle,
+            "priority": user.priority,
+            "last_tweet_at": latest,
+            "quiet_hours": None if quiet_for is None else round(quiet_for.total_seconds() / 3600, 1),
+            "tolerance_hours": round(tolerance.total_seconds() / 3600, 1),
+            "last_checked_at": last_checked,
+            "last_status": state.get("last_status") or "",
+        })
+    # Longest silence first, and an account that has never produced a single
+    # tweet leads: there is no "quiet for N hours" to rank it by, and it is the
+    # worse case.
+    silent.sort(key=lambda row: (row["quiet_hours"] is not None, -(row["quiet_hours"] or 0)))
+    return silent
 
 
 RECENT_TWEET_HOURS = 24
