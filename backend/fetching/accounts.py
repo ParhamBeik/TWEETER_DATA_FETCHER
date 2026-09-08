@@ -68,6 +68,23 @@ def interval_for(priority: int, gap_seconds: int | None) -> int:
     return max(low, min(high, int(gap_seconds)))
 
 
+# One spare request so a 429 still has somewhere to land. The archive floor
+# already reserved one seat per due live account; stacking a larger reserve
+# on top of that leftover is how 20 "for live" became 15 slots.
+LIVE_RATE_RESERVE = 1
+USER_TWEETS_WINDOW_LIMIT = 50
+
+
+def archive_quota_floor(due_count: int, *, reserve: int = LIVE_RATE_RESERVE, limit: int = USER_TWEETS_WINDOW_LIMIT) -> int:
+    """Requests the archive walk must leave in the shared UserTweets bucket.
+
+    One seat per live account that is already due, plus live's own reserve,
+    never more than the window. When nobody is due this collapses to the
+    reserve, which is the leftover the archive is allowed to spend.
+    """
+    return min(int(limit), max(0, int(due_count)) + int(reserve))
+
+
 def tracked_accounts_payload(cap: int | None = None) -> dict:
     """CLI accounts.json buckets from tracked TwitterUser rows."""
     limit = cap if cap is not None else settings.FETCH_MAX_ACCOUNTS_PER_RUN
@@ -122,6 +139,29 @@ def _parse_when(value: Any) -> datetime | None:
     if timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, dt_timezone.utc)
     return parsed
+
+
+def due_live_handles(*, now=None) -> list[str]:
+    """Tracked accounts the live poller would admit as due right now.
+
+    Same inputs the engine uses (last_checked_at vs the account's interval).
+    The archive walk sizes its quota floor from this list so it cannot spend
+    the seats those accounts need.
+    """
+    now = now or timezone.now()
+    if timezone.is_naive(now):
+        now = timezone.make_aware(now, dt_timezone.utc)
+    live = live_state_map()
+    due: list[str] = []
+    for user in TwitterUser.objects.filter(tracking=True, quarantined=False).order_by("priority", "id"):
+        state = live.get(user.handle.lower(), {})
+        if state.get("quarantined") is True:
+            continue
+        interval = int(user.poll_interval_seconds or policy_for(user.priority)["poll_interval_seconds"])
+        last = _parse_when(state.get("last_checked_at"))
+        if last is None or (now - last).total_seconds() >= interval:
+            due.append(user.handle)
+    return due
 
 
 def sync_quarantine_from_live_state() -> int:

@@ -107,3 +107,42 @@ def test_the_measured_cadence_reaches_the_engine_config():
 
     assert records["business"]["poll_interval_seconds"] == 5400
     assert "poll_interval_seconds" not in records["unmeasured"]
+
+
+def test_archive_floor_is_one_seat_per_due_live_account():
+    from fetching.accounts import LIVE_RATE_RESERVE, archive_quota_floor
+
+    assert archive_quota_floor(0) == LIVE_RATE_RESERVE
+    assert archive_quota_floor(49) == 50
+    assert archive_quota_floor(10, reserve=1) == 11
+    assert archive_quota_floor(100) == 50
+
+
+@pytest.mark.django_db
+def test_due_live_handles_are_the_accounts_past_their_interval():
+    from fetching.accounts import due_live_handles
+    from tweets.models import KeyValueState
+
+    now = timezone.now()
+    TwitterUser.objects.create(
+        handle="fresh", tracking=True, priority=1, poll_interval_seconds=900
+    )
+    TwitterUser.objects.create(
+        handle="stale", tracking=True, priority=1, poll_interval_seconds=900
+    )
+    TwitterUser.objects.create(handle="never", tracking=True, priority=2, poll_interval_seconds=1800)
+    row, _ = KeyValueState.objects.get_or_create(
+        namespace="request_state",
+        name="historical_live:live_state.json",
+        defaults={"data": {}},
+    )
+    row.data = {
+        "fresh": {"last_checked_at": now.isoformat(), "last_status": "completed"},
+        "stale": {
+            "last_checked_at": (now - timedelta(seconds=901)).isoformat(),
+            "last_status": "completed",
+        },
+    }
+    row.save()
+
+    assert due_live_handles(now=now) == ["stale", "never"]

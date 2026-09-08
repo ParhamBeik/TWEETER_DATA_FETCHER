@@ -244,8 +244,8 @@ def backfill_historical_all() -> int:
     once, resuming from its own stored cursor, until it runs out of tweets. A
     tick is a bite of that walk (FETCH_HISTORICAL_PAGES_PER_TICK pages), small
     enough to finish well inside FETCH_CYCLE_TIMEOUT_SECONDS on the solo
-    worker, and it always leaves FETCH_HISTORICAL_QUOTA_FLOOR requests in the
-    shared bucket for live polling.
+    worker. The runner sizes TDF_HISTORICAL_QUOTA_FLOOR to the number of live
+    accounts already due, so the walk only spends leftover requests.
 
     This replaced a version that re-walked each account from page 1 every tick
     and could only advance its queue on a fully "completed" run. An account

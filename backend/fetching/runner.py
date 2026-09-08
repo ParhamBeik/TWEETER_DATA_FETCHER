@@ -606,7 +606,18 @@ def run_fetcher(
         # boundary as env rather than settings imports; naming them here keeps the
         # knob a single .env entry instead of two independent defaults.
         env["TDF_HISTORICAL_PAGES_PER_TICK"] = str(settings.FETCH_HISTORICAL_PAGES_PER_TICK)
-        env["TDF_HISTORICAL_QUOTA_FLOOR"] = str(settings.FETCH_HISTORICAL_QUOTA_FLOOR)
+        if subsystem == "historical":
+            from .accounts import LIVE_RATE_RESERVE, archive_quota_floor, due_live_handles
+
+            due = due_live_handles()
+            floor = archive_quota_floor(len(due), reserve=LIVE_RATE_RESERVE)
+            env["TDF_HISTORICAL_QUOTA_FLOOR"] = str(floor)
+            logger.info(
+                "historical quota floor=%s (%s live account(s) due, reserve=%s)",
+                floor, len(due), LIVE_RATE_RESERVE,
+            )
+        else:
+            env["TDF_HISTORICAL_QUOTA_FLOOR"] = str(settings.FETCH_HISTORICAL_QUOTA_FLOOR)
         env["TDF_EMPTY_PAGE_STREAK"] = str(settings.FETCH_EMPTY_PAGE_STREAK)
         env["TDF_ARCHIVE_EARLIEST_DATE"] = settings.FETCH_ARCHIVE_EARLIEST_DATE
         # cwd is the scratch root, so point the subprocess at this project for

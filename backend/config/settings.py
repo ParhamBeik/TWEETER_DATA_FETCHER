@@ -271,15 +271,12 @@ else:
 # Redis _cycle_lock prevents overlapping workers, so ticks may be shorter than
 # the cycle timeout. The live scheduler admits only the current rate-budget slice.
 #
-# Priority is archive completeness over live freshness: the worker runs -P
-# solo --concurrency=1, so every task is serialized, and scheduling frequency
-# alone determines who gets worker time regardless of how fast each cycle
-# runs. Live used to tick 6x more often than historical/search (300s vs
-# 1800s) and crowded them out simply by being queued far more often. Live is
-# now on the same 1800s cadence as search; historical ticks far more
-# frequently (300s) than either, since it's the thing we now want to make
-# the most progress.
-FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "1800"))
+# The live poller and the archive walk share one UserTweets bucket
+# (50 requests / 15 minutes). Live takes every account that is already due;
+# the archive walk sizes its stop from that due count and only spends what
+# remains. A constant "leave 20 for live" leftover was smaller than the due
+# set, so live deferred most of the fleet every cycle.
+FETCH_LIVE_INTERVAL_SECONDS = int(os.environ.get("FETCH_LIVE_INTERVAL_SECONDS", "300"))
 # Historical backfill used to try every tracked account in one run every
 # FETCH_HISTORICAL_INTERVAL_SECONDS and get SIGKILLed by FETCH_CYCLE_TIMEOUT_SECONDS
 # partway through -- the worker runs -P solo --concurrency=1, so one unbounded
@@ -308,10 +305,10 @@ FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", 
 # retried from page 1 forever. Passed to the engine subprocess by
 # fetching.runner.run_fetcher as TDF_HISTORICAL_PAGES_PER_TICK.
 FETCH_HISTORICAL_PAGES_PER_TICK = int(os.environ.get("FETCH_HISTORICAL_PAGES_PER_TICK", "25"))
-# Requests the archive walk must leave in the shared UserTweets bucket for the
-# live poller (which reserves 5 more for itself). With no floor the backfill
-# drained the bucket every tick and live deferred 100% of its accounts.
-FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "20"))
+# Requests the archive walk must leave when it cannot see the live due-set
+# (CLI runs). The Django runner overwrites this with one seat per due live
+# account plus live's reserve.
+FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "1"))
 # Consecutive tweet-less pages that end a walk. This is a guess about someone
 # else's API, and the two ways of being wrong are not symmetric: one page too
 # many costs a single request, one page too few marks the account complete and

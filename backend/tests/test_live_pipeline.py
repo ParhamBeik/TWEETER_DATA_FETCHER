@@ -168,7 +168,7 @@ class LivePipelineTests(unittest.TestCase):
         monitor.fetcher = MagicMock()
         monitor.fetcher.pagination_safety_cap_pages = 1
         monitor.fetcher.recorder = MagicMock()
-        monitor.api_manager = _api_manager_with_budget({"UserTweets": {"limit": 7, "remaining": 7, "reset": 0}})
+        monitor.api_manager = _api_manager_with_budget({"UserTweets": {"limit": 7, "remaining": 3, "reset": 0}})
         monitor.live_storage = MagicMock()
         monitor.live_storage.scheduler_state.return_value = {"next_account": "two"}
         monitor._get_live_user_id = MagicMock(side_effect=["2", "3"])
@@ -314,6 +314,46 @@ class LivePageBudgetTests(unittest.TestCase):
 
     def test_fair_share_caps_a_busy_account_when_the_bucket_is_thin(self):
         past = (utc_now() - timedelta(hours=8)).isoformat() + "Z"
-        # remaining 10, reserve 5 -> 5 available; 5 accounts => fair share 1
+        # remaining 10, reserve 1 -> 9 available; 5 accounts => fair share 1
         monitor = self._monitor(remaining=10, last_checked=past, gaps={"elonmusk": 240})
         self.assertEqual(monitor._page_budget("elonmusk", remaining_accounts=5), 1)
+
+
+class LiveArchiveBudgetStarvationTests(unittest.TestCase):
+    """After the archive leaves one seat per due live account, a full
+    UserTweets window must cover the due fleet. Unit-level scheduler
+    arithmetic -- no HTTP."""
+
+    @patch("fetcher.live.get_priority_policy")
+    def test_full_bucket_covers_the_due_fleet(self, policy_mock):
+        import time
+
+        policy_mock.return_value = {"priority": 3, "live_window_hours": 16}
+        accounts = [f"acct{i}" for i in range(49)]
+        monitor = LiveMonitor.__new__(LiveMonitor)
+        monitor.accounts = accounts
+        monitor.should_fetch_account = lambda username: True
+        from fetcher.config import DEFAULT_PRIORITY_POLICIES
+
+        monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
+        monitor.account_map = {}
+        monitor.console = MagicMock()
+        monitor.fetcher = MagicMock()
+        monitor.fetcher.recorder = MagicMock()
+        monitor.api_manager = _api_manager_with_budget(
+            {"UserTweets": {"limit": 50, "remaining": 50, "reset": int(time.time()) + 600}}
+        )
+        monitor.live_storage = MagicMock()
+        monitor.live_storage.scheduler_state.return_value = {}
+        monitor.live_storage.account_state.return_value = {}
+        monitor._get_live_user_id = MagicMock(return_value="1")
+        monitor._record_resolution_success = MagicMock()
+        monitor._fetch_live_endpoint = MagicMock(return_value={"status": "completed", "pages": []})
+        monitor._process_sets = MagicMock(return_value={"4_union": []})
+        monitor._handle_new_tweets = MagicMock(return_value={"new": 0, "duplicates": 0})
+
+        report = monitor.run_cycle()
+
+        self.assertEqual(report["summary"]["eligible"], 49)
+        self.assertEqual(report["summary"]["checked"], 49)
+        self.assertEqual(report["summary"]["deferred"], 0)

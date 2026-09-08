@@ -44,10 +44,9 @@ CONSOLE = PipelineConsole("historical")
 # whole fleet keeps moving. Set from Django settings by fetching.runner.
 PAGES_PER_TICK = max(1, int(os.environ.get("TDF_HISTORICAL_PAGES_PER_TICK", "25")))
 
-# Requests the archive walk must leave in the shared UserTweets bucket for the
-# live poller, which reserves 5 more on top of this for itself. Without a floor
-# the deep walk drained the bucket every tick and live deferred every account.
-QUOTA_FLOOR = max(0, int(os.environ.get("TDF_HISTORICAL_QUOTA_FLOOR", "20")))
+# Requests the archive walk must leave in the shared UserTweets bucket for live
+# polling. The Django runner overwrites this with one seat per due live account.
+QUOTA_FLOOR = max(0, int(os.environ.get("TDF_HISTORICAL_QUOTA_FLOOR", "1")))
 
 
 DEFAULT_ARCHIVE_EARLIEST_DATE = "2024-01-01"

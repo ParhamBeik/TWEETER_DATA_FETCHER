@@ -209,7 +209,7 @@ class LiveMonitor:
 
     ENDPOINTS = ("UserTweets",)
     QUARANTINE_FAILURE_THRESHOLD = 3
-    RATE_LIMIT_RESERVE = 5
+    RATE_LIMIT_RESERVE = 1
     # Page budget for an account whose posting rate has not been measured yet
     # (fewer than six timestamped tweets in the window -- see
     # fetching.accounts.median_gap_seconds). Two pages covers roughly 40 tweets,
