@@ -5,6 +5,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Cron and an operator can both invoke this script. Keep the lock here so they
+# coordinate instead of relying on every caller to remember a wrapper.
+LOCK_FILE="${BACKUP_LOCK_FILE:-/var/lock/twitter-saas-backup.lock}"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "backup already running; skipped" >&2
+  exit 0
+fi
+
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT_DIR="${BACKUP_DIR:-$ROOT/backups}"
 mkdir -p "$OUT_DIR"
