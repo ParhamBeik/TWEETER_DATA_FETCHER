@@ -374,7 +374,7 @@ export default function Ops() {
           )}
         </Panel>
 
-        <Panel className="h-max">
+        <Panel className="h-max min-w-0">
           {selected ? (
             <>
               <PanelHead
