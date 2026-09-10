@@ -14,6 +14,7 @@ frontend/dist/
 # been tested there -- the only runs on record are GitHub's own dependency
 # graph job.
 .claude/
+.cursor/
 .vscode/
 .DS_Store
 
@@ -47,4 +48,3 @@ graphify-out/
 # Engine scratch output when a test builds a StorageManager without a temp root
 backend/data/
 data/
-
