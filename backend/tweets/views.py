@@ -126,7 +126,7 @@ def feed_queryset(params):
     tracked = list(
         TwitterUser.objects.filter(tracking=True).values_list("handle", "priority")
     )
-    handle_to_priority = {handle: priority for handle, priority in tracked}
+    handle_to_priority = dict(tracked)
     # Posts whose account has since been untracked are still archived (Tweet has
     # no TTL) but used to be unreachable from every screen while still being
     # counted in "archive total". Default stays tracked-only so the feed keeps

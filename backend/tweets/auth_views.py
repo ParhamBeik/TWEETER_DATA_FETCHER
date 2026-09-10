@@ -17,7 +17,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -169,6 +169,50 @@ class LogoutView(APIView):
 class MeView(APIView):
     def get(self, request):
         return Response(user_payload(request.user))
+
+
+class AuthConfigView(APIView):
+    """Public flags the signed-out screens need before anyone logs in.
+
+    Production closes signup (`ALLOW_REGISTRATION=0`). The login page used to
+    keep offering "Create an account" anyway, which led to a 403 after the form
+    was filled. This is how the console knows to hide that path.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response({"allow_registration": bool(settings.ALLOW_REGISTRATION)})
+
+
+def probe_database() -> bool:
+    """True when the durable store answers. Isolated so tests can fail it."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        return True
+    except Exception:
+        return False
+
+
+class HealthView(APIView):
+    """Liveness for compose, deploy, and anything that should not hit /admin/.
+
+    Unauthenticated, unthrottled, and silent on failure: a probe that can be
+    429'd or that names the exception is how an attacker restarts the web
+    container. 503 here is a deliberate "not ready", not an unhandled 5xx.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = []
+
+    def get(self, request):
+        if not probe_database():
+            return Response({"status": "unhealthy"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"status": "ok"})
 
 
 def _first_message(errors: dict[str, list[str]]) -> str:

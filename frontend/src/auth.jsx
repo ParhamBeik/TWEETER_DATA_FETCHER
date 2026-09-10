@@ -87,3 +87,27 @@ export function useAuth() {
   if (context === null) throw new Error("useAuth must be used inside an AuthProvider");
   return context;
 }
+
+/** Whether the signed-out screens should offer signup.
+
+  Production closes registration. Fail open if the probe cannot run, so a local
+  API blip does not hide the form; the register endpoint is still the gate.
+*/
+export function useRegistrationOpen() {
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/config/")
+      .then((res) => (res.ok ? res.json() : { allow_registration: true }))
+      .then((data) => {
+        if (!cancelled) setOpen(Boolean(data.allow_registration));
+      })
+      .catch(() => {
+        /* fail open */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return open;
+}

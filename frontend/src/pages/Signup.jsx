@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { useAuth } from "../auth";
+import { useAuth, useRegistrationOpen } from "../auth";
 import AuthLayout, { PasswordField } from "./AuthLayout";
 
 // Mirrors the server's validators closely enough to be useful while typing.
@@ -35,6 +35,7 @@ export default function Signup() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const { signIn } = useAuth();
+  const allowRegistration = useRegistrationOpen();
   const navigate = useNavigate();
 
   const checks = getPasswordChecks(password, confirmation);
@@ -64,6 +65,21 @@ export default function Signup() {
 
   const firstOf = (field) => fieldErrors[field]?.[0];
 
+  if (!allowRegistration) {
+    return (
+      <AuthLayout
+        eyebrow="Registration closed"
+        title="Ask an operator for an account"
+        subtitle="New signups are turned off on this deployment. An existing operator can create an account for you."
+        footer={
+          <>
+            Already have an account? <Link className="text-accent hover:underline" to="/login">Sign in</Link>
+          </>
+        }
+      />
+    );
+  }
+
   return (
     <AuthLayout
       eyebrow="Get started"
@@ -87,10 +103,16 @@ export default function Signup() {
             placeholder="pick a username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
+            aria-invalid={Boolean(firstOf("username"))}
+            aria-describedby={firstOf("username") ? "username-error" : undefined}
             autoFocus
             required
           />
-          {firstOf("username") && <span className="text-xs text-danger">{firstOf("username")}</span>}
+          {firstOf("username") && (
+            <span id="username-error" className="text-xs text-danger">
+              {firstOf("username")}
+            </span>
+          )}
         </label>
 
         <label className="flex flex-col gap-1">
@@ -104,8 +126,14 @@ export default function Signup() {
             placeholder="you@example.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            aria-invalid={Boolean(firstOf("email"))}
+            aria-describedby={firstOf("email") ? "email-error" : undefined}
           />
-          {firstOf("email") && <span className="text-xs text-danger">{firstOf("email")}</span>}
+          {firstOf("email") && (
+            <span id="email-error" className="text-xs text-danger">
+              {firstOf("email")}
+            </span>
+          )}
         </label>
 
         <PasswordField
@@ -116,6 +144,7 @@ export default function Signup() {
           value={password}
           onChange={setPassword}
           error={firstOf("password")}
+          describedBy="password-rules"
           hint={password && <em className="not-italic text-2xs text-fg-dim">{strengthFor(checks, password)}</em>}
         />
 
@@ -128,7 +157,7 @@ export default function Signup() {
           onChange={setConfirmation}
         />
 
-        <div className="rounded-sm border border-line p-3">
+        <div id="password-rules" className="rounded-sm border border-line p-3">
           <p>Password requirements</p>
           <ul>
             {checks.map(({ id, label, ok }) => (

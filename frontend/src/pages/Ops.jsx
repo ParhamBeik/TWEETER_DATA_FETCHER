@@ -230,7 +230,11 @@ export default function Ops() {
               </p>
             )}
           </div>
-          <form onSubmit={saveSession} className="flex flex-col gap-2">
+          <form
+            className="flex flex-col gap-2"
+            aria-label="Replace X session"
+            onSubmit={saveSession}
+          >
             <label className="eyebrow" htmlFor="session-json">
               Replace session
             </label>
@@ -277,7 +281,11 @@ export default function Ops() {
         </Select>
       </div>
 
-      {status && <p className="annunciator border-l-accent text-sm text-fg-muted">{status}</p>}
+      {status && (
+        <p className="annunciator border-l-accent text-sm text-fg-muted" role="status">
+          {status}
+        </p>
+      )}
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
@@ -287,8 +295,11 @@ export default function Ops() {
             className="px-3 py-2"
           />
           {runs.length === 0 ? (
-            <p className="p-3 text-xs text-fg-muted">No fetch runs yet.</p>
+            <p className="p-3 text-xs text-fg-muted" role="status">
+              No fetch runs yet.
+            </p>
           ) : (
+            <nav aria-label="Fetch runs">
             <ul className="flex flex-col divide-y divide-line">
               {runs.map((run) => {
                 const tone = RUN_TONE[run.status] || TONE.idle;
@@ -336,6 +347,7 @@ export default function Ops() {
                         size="sm"
                         variant="quiet"
                         className="mb-1 ml-2"
+                        aria-label={`Retry ${run.subsystem}`}
                         onClick={() => trigger(run.subsystem)}
                       >
                         retry
@@ -345,6 +357,7 @@ export default function Ops() {
                 );
               })}
             </ul>
+            </nav>
           )}
           {next && (
             <div className="border-t border-line p-2">

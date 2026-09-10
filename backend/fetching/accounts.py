@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone as dt_timezone
+from itertools import pairwise
 from typing import Any
 
 from django.conf import settings
@@ -45,7 +46,7 @@ def median_gap_seconds(times: list) -> int | None:
     if len(ordered) < MIN_SAMPLE_TWEETS:
         return None
     gaps = sorted(
-        (later - earlier).total_seconds() for earlier, later in zip(ordered, ordered[1:])
+        (later - earlier).total_seconds() for earlier, later in pairwise(ordered)
     )
     middle = len(gaps) // 2
     value = gaps[middle] if len(gaps) % 2 else (gaps[middle - 1] + gaps[middle]) / 2

@@ -188,7 +188,7 @@ class Command(BaseCommand):
                     endpoints, blob, sync_keys, tracked, all_accounts=options["all_accounts"]
                 )
                 blob_changed = False
-                for key, display in list(reopened.items()):
+                for key in list(reopened):
                     ep = endpoints.get(key)
                     if ep is not None:
                         ep_data = ep.data if isinstance(ep.data, dict) else {}
@@ -206,7 +206,7 @@ class Command(BaseCommand):
                             "UserTweets": void_false_depth_stop(user_tweets),
                         }
                         blob_changed = True
-                for key, (display, _why) in skipped.items():
+                for key in skipped:
                     ep = endpoints.get(key)
                     ep_data = ep.data if ep is not None and isinstance(ep.data, dict) else {}
                     account_key = sync_keys.get(key)

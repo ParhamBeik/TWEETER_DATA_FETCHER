@@ -111,6 +111,7 @@ export function AccountPicker({ accounts, selected, onChange }) {
       <Popover.Trigger
         className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line px-2.5 text-xs text-fg-muted hover:border-line-strong hover:text-fg"
         aria-haspopup="listbox"
+        aria-label={`Accounts: ${summary}`}
       >
         {summary}
       </Popover.Trigger>

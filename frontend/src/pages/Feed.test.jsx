@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -64,6 +64,11 @@ describe("Feed initial render", () => {
   it("shows an empty state when nothing matches", async () => {
     renderFeed();
     expect(await screen.findByText("No posts match these filters")).toBeInTheDocument();
+  });
+
+  it("names the filters landmark", async () => {
+    renderFeed();
+    expect(await screen.findByRole("complementary", { name: "Feed filters" })).toBeInTheDocument();
   });
 
   it("shows the server error instead of a blank page when the feed fails", async () => {
@@ -409,6 +414,31 @@ describe("Feed QA regressions", () => {
     await user.type(screen.getByLabelText("Search archive"), "trump");
     // Debounced: the request arrives on its own, with no submit.
     await waitFor(() => expect(lastFeedPath()).toContain("q=trump"), { timeout: 2000 });
+  });
+
+  it("does not let the pending debounce revert a filter changed while typing", async () => {
+    // The 350ms timer used to apply its patch to the filters captured when it
+    // was set, so a chip clicked inside that window was written back to its old
+    // value the moment the query landed.
+    renderFeed();
+    await waitFor(() => expect(feedCalls().length).toBe(1));
+
+    // fireEvent, not userEvent: both events have to land inside the same 350ms
+    // window, and userEvent's awaits let the debounce fire between them.
+    fireEvent.change(screen.getByLabelText("Search archive"), { target: { value: "trump" } });
+    fireEvent.click(screen.getByRole("button", { name: "This week" }));
+
+    await waitFor(
+      () => {
+        const path = lastFeedPath();
+        expect(path).toContain("q=trump");
+        expect(path).toContain("window=week");
+      },
+      { timeout: 2000 },
+    );
+    // And it stays there: the debounce must not fire a second, older window.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(lastFeedPath()).toContain("window=week");
   });
 
   it("clears the query when the box is emptied", async () => {

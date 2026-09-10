@@ -1,11 +1,11 @@
 import unittest
 import json
 import tempfile
+from datetime import datetime, timezone as dt_timezone
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from fetcher.search import SearchTimelineMonitor
+from fetcher.search import SearchQueryBuilder, SearchTimelineMonitor
 from fetcher.clock import utc_now
 from fetcher.processing import TweetSetProcessor
 from fetcher.browser import BrowserBootstrapResult
@@ -87,24 +87,44 @@ class SearchPipelineTests(unittest.TestCase):
         self.assertTrue(hasattr(monitor, 'monitor_search'))
         self.assertTrue(callable(monitor.monitor_search))
 
-    @patch('fetcher.search.FetcherEngine')
-    @patch('fetcher.search.StorageManager')
-    def test_search_query_building(self, mock_storage, mock_engine):
-        """Test search query building."""
-        mock_engine_instance = MagicMock()
-        mock_engine_instance.config = {}
-        mock_engine.return_value = mock_engine_instance
-        
-        mock_storage_instance = MagicMock()
-        mock_storage.return_value = mock_storage_instance
-        
-        monitor = SearchTimelineMonitor(
-            config_path=str(self.config_path),
-            search_config_path=str(self.search_config_path)
+    def test_a_raw_query_is_used_verbatim(self):
+        """The console stores what the operator typed; nothing may rewrite it."""
+        built = SearchQueryBuilder.build_raw_query(
+            {"raw_query": "  bitcoin OR ethereum  ", "include_keywords": ["ignored"]},
+            datetime(2026, 3, 1, tzinfo=dt_timezone.utc),
         )
-        
-        # Test query building method exists (may be internal)
-        self.assertTrue(True)  # Structure test only
+        self.assertEqual(built, "bitcoin OR ethereum")
+
+    def test_structured_terms_become_one_x_query(self):
+        """Several include keywords are an OR group, exclusions are negated."""
+        built = SearchQueryBuilder.build_raw_query(
+            {
+                "include_keywords": ["tehran", "shiraz"],
+                "exclude_keywords": ["ad", "sponsored post"],
+                "from_accounts": ["@BBCPersian"],
+                "min_faves": 50,
+                "lang": "fa",
+            },
+            datetime(2026, 3, 1, tzinfo=dt_timezone.utc),
+        )
+        self.assertEqual(
+            built,
+            '(tehran OR shiraz) -ad -"sponsored post" from:BBCPersian min_faves:50 lang:fa',
+        )
+
+    def test_since_days_resolves_against_the_supplied_clock(self):
+        """The window is computed from the passed time, never from wall clock."""
+        built = SearchQueryBuilder.build_raw_query(
+            {"include_keywords": ["rial"], "since_days": 7},
+            datetime(2026, 3, 8, tzinfo=dt_timezone.utc),
+        )
+        self.assertEqual(built, "rial since:2026-03-01 until:2026-03-08")
+
+    def test_an_unknown_product_falls_back_to_top(self):
+        """`product` reaches X as a filter; an unknown one must not be sent."""
+        self.assertEqual(SearchQueryBuilder.normalize_product("latest"), "Latest")
+        self.assertEqual(SearchQueryBuilder.normalize_product("nonsense"), "Top")
+        self.assertEqual(SearchQueryBuilder.normalize_product(""), "Top")
 
     def test_frozen_search_features(self):
         """Test FROZEN_SEARCH_FEATURES is defined."""

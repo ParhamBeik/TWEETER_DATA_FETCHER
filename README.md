@@ -56,6 +56,16 @@ celery -A config beat -l info                               # third shell
 cd ../frontend && npm install && npm run dev                # http://localhost:5173
 ```
 
+Vite proxies `/api` to `http://127.0.0.1:8000` by default. If that port already
+belongs to another app, run this API on a free port and point the proxy at it
+without touching 8000. 8001 is often taken on a machine that already runs
+another local Django app; pick whatever is free:
+
+```bash
+python manage.py runserver 8002
+VITE_API_PROXY=http://127.0.0.1:8002 npm run dev -- --port 5174
+```
+
 ## The X session
 
 One server-side X session serves every user; app users never supply X
@@ -82,6 +92,8 @@ operator endpoints below (marked *staff*) need `is_staff`, granted in
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/api/health/` | liveness: `{status: ok}` when Postgres answers; 503 otherwise. No auth |
+| GET | `/api/auth/config/` | `{allow_registration}` for the signed-out screens. No auth |
 | POST | `/api/auth/register/` \| `/login/` | returns `{access, refresh, user}` |
 | POST | `/api/auth/refresh/` | rotates the pair; the spent refresh token is blacklisted |
 | POST | `/api/auth/logout/` | blacklists the refresh token |
@@ -123,7 +135,7 @@ rate-limit sleep in one cannot block the others:
 
 | Task | Default interval | Env var |
 | --- | --- | --- |
-| live poll (all due accounts) | 30 min | `FETCH_LIVE_INTERVAL_SECONDS` |
+| live poll (all due accounts) | 5 min | `FETCH_LIVE_INTERVAL_SECONDS` |
 | historical archive walk (1 account/tick) | 5 min | `FETCH_HISTORICAL_INTERVAL_SECONDS` |
 | search dispatch (queues whoever is due) | 5 min | `FETCH_SEARCH_DISPATCH_SECONDS` |
 | recompute poll intervals | daily | — |
@@ -145,7 +157,10 @@ so the split between them is explicit:
 
 Search hits are purged after 30 days, run records after 90, and the live
 poller's "already seen" ledger after 30 — it is round-tripped through Postgres
-on every fetch run, so it is not allowed to grow without limit.
+on every fetch run, so it is not allowed to grow without limit. Raw GraphQL
+pages currently expire after **3 days**. That is a temporary ceiling while
+`raw_page_census` log lines measure which run statuses are worth keeping;
+do not restore a 30-day raw-page clock until that measurement exists.
 
 ### Two collectors, two tables
 
@@ -207,3 +222,29 @@ the way the other services on the same box already are:
 ```
 
 Until that line exists there are no backups, however green the deploy looks.
+
+Check a dump without restoring it:
+
+```bash
+./scripts/verify_backup.sh                   # newest file in backups/
+./scripts/verify_backup.sh backups/foo.sql.gz
+```
+
+Restore is a host operation and **overwrites the live database**. Restore to a
+throwaway name first, then cut over only after you have read rows you expect:
+
+```bash
+gunzip -c backups/twitter_saas_YYYYMMDDThhmmssZ.sql.gz \
+  | docker compose exec -T postgres psql -U postgres twitter_saas_restore_check
+```
+
+Do not pipe a dump into the live `twitter_saas` database from muscle memory.
+
+Verify frontend caching against a running nginx deployment:
+
+```bash
+python3 scripts/check_frontend_cache.py https://your-console-host
+```
+
+This checks shell revalidation, the built JavaScript cache header, and missing
+asset/media/static/export responses. Run it after changing the nginx cache rules.

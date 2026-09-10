@@ -78,10 +78,6 @@ def _cursor_ref(cursor: Optional[str]) -> Optional[str]:
     return hashlib.sha256(str(cursor).encode("utf-8")).hexdigest()[:12] if cursor else None
 
 
-def _agent_debug_log(hypothesis: str, location: str, event: str, fields: Dict[str, Any]) -> None:
-    logger.debug("%s %s %s %s", hypothesis, location, event, fields)
-
-
 # Search query building ------------------------------------------------------
 
 
@@ -502,7 +498,6 @@ class SearchTimelineMonitor:
         errors: List[Dict[str, Any]] = []
         attempts = 0
         context_refreshed = False
-        cursor_refreshed = False
         active_headers = dict(frozen_headers)
         for attempt in range(max_attempts):
             attempts += 1
@@ -515,11 +510,8 @@ class SearchTimelineMonitor:
                     "variables": self._compact_json(variables),
                     "features": features_json,
                 }
-                # #region agent log
-                _agent_debug_log(
-                    "A",
-                    "search_timeline.py:_request_page",
-                    "request_attempt",
+                logger.debug(
+                    "search request_attempt %s",
                     {
                         "attempt": attempt + 1,
                         "has_cursor": bool(cursor),
@@ -527,7 +519,6 @@ class SearchTimelineMonitor:
                         "graphql_url_tail": graphql_url[-80:],
                     },
                 )
-                # #endregion
                 response = self.api_manager.perform_get(
                     endpoint=endpoint,
                     url=graphql_url,
@@ -1049,11 +1040,8 @@ class SearchTimelineMonitor:
         page_output_paths = parsed["page_output_paths"]
         exhausted_reason = parsed["exhausted_reason"]
         pages_on_disk = len(list(batch_dir.glob("page_*.json")))
-        # #region agent log
-        _agent_debug_log(
-            "C",
-            "search_timeline.py:monitor_search",
-            "run_complete",
+        logger.debug(
+            "search run_complete %s",
             {
                 "exhausted_reason": exhausted_reason,
                 "pages_saved_disk": pages_on_disk,
@@ -1063,7 +1051,6 @@ class SearchTimelineMonitor:
                 "endpoint_health": self.api_manager.get_endpoint_health("SearchTimeline"),
             },
         )
-        # #endregion
         metadata = {
             "pages_requested": requested_depth,
             "safety_cap_pages": page_cap,

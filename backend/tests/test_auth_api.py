@@ -247,3 +247,48 @@ def test_a_staff_user_can_operate_the_fetcher():
     user.save(update_fields=["is_staff"])
 
     assert authed(user).get("/api/session/").status_code == 200
+
+
+# --- Public probes the signed-out UI and the deploy healthcheck depend on ---
+
+
+@pytest.mark.django_db
+def test_health_is_public_and_ok():
+    """Integration: compose curls this URL; it must work with no session."""
+    resp = APIClient().get("/api/health/")
+
+    assert resp.status_code == 200
+    assert resp.data == {"status": "ok"}
+
+
+@pytest.mark.django_db
+def test_health_ignores_a_garbage_bearer_token():
+    """A probe must not 401 because JWT authentication ran on it."""
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION="Bearer not-a-token")
+    assert client.get("/api/health/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_health_is_unhealthy_when_the_database_does_not_answer(monkeypatch):
+    """Unit: the deploy probe must 503 without naming the exception."""
+    monkeypatch.setattr("tweets.auth_views.probe_database", lambda: False)
+    resp = APIClient().get("/api/health/")
+
+    assert resp.status_code == 503
+    assert resp.data == {"status": "unhealthy"}
+
+
+def test_auth_config_reports_open_registration():
+    resp = APIClient().get("/api/auth/config/")
+
+    assert resp.status_code == 200
+    assert resp.data == {"allow_registration": True}
+
+
+@override_settings(ALLOW_REGISTRATION=False)
+def test_auth_config_reports_closed_registration():
+    resp = APIClient().get("/api/auth/config/")
+
+    assert resp.status_code == 200
+    assert resp.data == {"allow_registration": False}

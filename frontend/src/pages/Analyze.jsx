@@ -24,7 +24,6 @@ import {
 } from "../filters";
 import { absoluteTime, compact, relativeTime } from "../format";
 import TweetCard from "../TweetCard";
-import { Button } from "@/ui/button";
 import { Chip, Empty, ErrorNote, Skeleton } from "@/ui/controls";
 import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";
 import { Tab, TabList, TabPanel, Tabs } from "@/ui/tabs";
@@ -230,7 +229,11 @@ function Velocity({ data, bucket }) {
         />
         <PanelBody>
           {series.length ? (
-            <div className="h-64">
+            <div
+              className="h-64"
+              role="img"
+              aria-label="Engagement gained per time bucket"
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke={LINE} vertical={false} />
@@ -298,7 +301,7 @@ function Narratives({ data, stale }) {
           long it expects to be. */}
       {!showing && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-fg-dim">
+          <p className="text-xs text-fg-dim" role="status">
             Comparing posts against each other — this takes a few seconds.
           </p>
           <Skeleton className="h-20" />
@@ -368,6 +371,9 @@ function Accounts({ data }) {
           </Empty>
         ) : (
           <table className="w-full">
+            <caption className="sr-only">
+              Tracked accounts ranked by average engagement per post
+            </caption>
             <thead>
               <tr className="border-b border-line text-left">
                 <th scope="col" className="pb-2 pr-3 eyebrow font-normal">
@@ -491,7 +497,7 @@ export default function Analyze() {
         lede="Every panel here reads the tracked-account archive over the window you pick, and compares it against the equally long window before it."
       />
 
-      <div className="flex flex-wrap items-center gap-3">
+      <aside className="flex flex-wrap items-center gap-3" aria-label="Analyze filters">
         <Segmented label="Time range" options={RANGES} value={range} onChange={setRange} />
         <Segmented label="Bucket" options={BUCKETS} value={bucket} onChange={setBucket} />
         <div className="flex flex-col gap-1.5">
@@ -506,7 +512,7 @@ export default function Analyze() {
         >
           {live ? "● Live" : "❙❙ Paused"}
         </Chip>
-      </div>
+      </aside>
 
       {error && <ErrorNote>{error}</ErrorNote>}
 

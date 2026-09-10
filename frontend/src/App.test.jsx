@@ -199,6 +199,20 @@ describe("a non-staff reader", () => {
     renderApp("/feed");
     expect(await screen.findByRole("link", { name: "Analyze" })).toBeInTheDocument();
   });
+
+  it("sends a typed /ops URL back to the feed", async () => {
+    renderApp("/ops");
+    expect(await screen.findByText("feed page")).toBeInTheDocument();
+    expect(screen.queryByText("ops page")).toBeNull();
+  });
+
+  it("exposes a skip link to the main column", async () => {
+    renderApp("/feed");
+    expect(await screen.findByRole("link", { name: "Skip to main content" })).toHaveAttribute(
+      "href",
+      "#main-content",
+    );
+  });
 });
 
 describe("session restore", () => {
@@ -235,4 +249,22 @@ describe("session restore", () => {
 
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
+});
+
+
+it("contains mobile menu focus and restores it after Escape", async () => {
+  signedIn();
+  const user = userEvent.setup();
+  renderApp("/feed");
+  const trigger = await screen.findByRole("button", { name: "Open menu" });
+  await user.click(trigger);
+  const dialog = screen.getByRole("dialog", { name: "Menu" });
+  expect(dialog).toContainElement(document.activeElement);
+  const last = within(dialog).getByRole("button", { name: "Sign out" });
+  last.focus();
+  await user.tab();
+  expect(dialog).toContainElement(document.activeElement);
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(trigger).toHaveFocus();
 });

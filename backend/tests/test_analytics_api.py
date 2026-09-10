@@ -165,8 +165,13 @@ def test_accounts_analytics_respects_account_filter(client):
     assert jack_rows[0]["account"] == "jack"
 
 
+# The condition is an expression, not the string form pytest also accepts. A
+# string is evaluated by name lookup at setup time, so nothing -- not ruff, not
+# an editor -- can see that this module needs `connection`, and removing the
+# import as unused turned three tests into collection errors. `vendor` is a
+# class attribute on the backend wrapper, so reading it opens no connection.
 postgres_only = pytest.mark.skipif(
-    "connection.vendor != 'postgresql'",
+    connection.vendor != "postgresql",
     reason="topic mining and velocity deltas are raw Postgres SQL",
 )
 

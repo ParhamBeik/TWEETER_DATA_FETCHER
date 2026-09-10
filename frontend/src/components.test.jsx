@@ -1,7 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import InfiniteSentinel from "./InfiniteSentinel";
-import { api } from "./api";
 import { alignSeries, pivotSeries } from "./charts";
 import { absoluteTime, compact } from "./format";
 

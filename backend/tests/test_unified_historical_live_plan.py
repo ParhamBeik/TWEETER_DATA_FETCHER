@@ -6,7 +6,7 @@ from pathlib import Path
 
 from zoneinfo import ZoneInfo
 
-from fetcher.processing import RollingWindowEvaluator, TweetSetProcessor, window_cutoff
+from fetcher.processing import RollingWindowEvaluator, window_cutoff
 from fetcher.client import APIManager
 
 

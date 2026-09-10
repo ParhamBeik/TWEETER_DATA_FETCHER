@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import {
   AXIS_PROPS,
   BAR_RADIUS_Y,
@@ -61,10 +62,11 @@ function labelled(keys, names) {
   return keys.map((key) => ({ key, name: names[key] || key }));
 }
 
-function Chart({ children, empty, show, className }) {
+function Chart({ children, empty, show, loading, label, className }) {
+  if (loading) return <Skeleton className="h-64" />;
   if (!show) return <Empty title={empty} />;
   return (
-    <div className={cn("h-64", className)}>
+    <div className={cn("h-64", className)} role="img" aria-label={label}>
       <ResponsiveContainer width="100%" height="100%">
         {children}
       </ResponsiveContainer>
@@ -73,6 +75,7 @@ function Chart({ children, empty, show, className }) {
 }
 
 export default function Dashboard() {
+  const { isStaff } = useAuth();
   const [range, setRange] = useState("24h");
   const [ingestion, setIngestion] = useState(null);
   const [pipeline, setPipeline] = useState(null);
@@ -169,9 +172,18 @@ export default function Dashboard() {
         }
       />
       {error && <ErrorNote>{error}</ErrorNote>}
+      {!ingestion && !error && (
+        <p className="sr-only" role="status">
+          Loading collector health
+        </p>
+      )}
 
       <Panel>
-        <PanelBody className="grid grid-cols-2 gap-y-4 md:grid-cols-5">
+        <PanelBody
+          className="grid grid-cols-2 gap-y-4 md:grid-cols-5"
+          role="region"
+          aria-label="Collector totals"
+        >
           {/* The delta is only meaningful when there is a previous period to
               compare against. On a 13-day-old deployment the 90d view read
               "+60K vs the previous equal period", which was just the whole
@@ -242,7 +254,12 @@ export default function Dashboard() {
           lede="Posts captured per bucket, split by the collector that saw them first. Saved-search hits are counted here too, and they expire after 30 days — the archive walk and live poll are what grow the permanent archive. Posts stored before the collector was recorded are grouped as “not attributed”."
         />
         <PanelBody>
-          <Chart show={captured.rows.length} empty="Nothing captured in this window yet.">
+          <Chart
+            loading={!ingestion}
+            show={captured.rows.length}
+            empty="Nothing captured in this window yet."
+            label="Posts captured per time bucket, stacked by collector"
+          >
             <BarChart data={capturedRows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={LINE} vertical={false} />
               <XAxis dataKey="bucket" tickFormatter={axisTick} {...AXIS_PROPS} />
@@ -291,7 +308,12 @@ export default function Dashboard() {
             lede="Posts by when they were written, not when we fetched them — the backfill fills in history, the live poll only adds to the leading edge."
           />
           <PanelBody>
-            <Chart show={posted.length} empty="No dated posts in this window.">
+            <Chart
+              loading={!ingestion}
+              show={posted.length}
+              empty="No dated posts in this window."
+              label="Posts written per time bucket"
+            >
               <AreaChart data={postedRows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={LINE} vertical={false} />
                 <XAxis dataKey="bucket" tickFormatter={axisTick} {...AXIS_PROPS} />
@@ -322,7 +344,12 @@ export default function Dashboard() {
             lede="Pages fetched per bucket, by endpoint. All three collectors share the one X budget shown at the top of this screen."
           />
           <PanelBody>
-            <Chart show={spend.rows.length} empty="No request telemetry in this window yet.">
+            <Chart
+              loading={!ingestion}
+              show={spend.rows.length}
+              empty="No request telemetry in this window yet."
+              label="API requests per time bucket, stacked by endpoint"
+            >
               <BarChart data={spendRows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke={LINE} vertical={false} />
                 <XAxis dataKey="bucket" tickFormatter={axisTick} {...AXIS_PROPS} />
@@ -360,10 +387,11 @@ export default function Dashboard() {
           <PanelHead label="Now" title="What each collector is doing" />
           <PanelBody className="flex flex-col gap-3">
             {!pipeline && <Skeleton className="h-20" />}
+            <ul className="flex flex-col gap-3">
             {(pipeline?.subsystems || []).map((row) => {
               const tone = row.running > 0 ? TONE.active : TONE.idle;
               return (
-                <div key={row.subsystem} className={cn("annunciator border-l-2", toneEdge(tone))}>
+                <li key={row.subsystem} className={cn("annunciator border-l-2", toneEdge(tone))}>
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <strong className="text-sm">
                       {SUBSYSTEM_LABEL[row.subsystem] || row.subsystem}
@@ -402,9 +430,10 @@ export default function Dashboard() {
                   ) : (
                     <p className="mt-1 text-xs text-fg-dim">Has not run yet.</p>
                   )}
-                </div>
+                </li>
               );
             })}
+            </ul>
 
             <div className="mt-1 border-t border-line pt-3">
               <p className="eyebrow">Endpoint health</p>
@@ -414,8 +443,10 @@ export default function Dashboard() {
                     {endpoint}: {String(state).replace(/_/g, " ")}
                   </Badge>
                 ))}
-                {!Object.keys(pipeline?.endpoint_health || {}).length && (
-                  <span className="text-xs text-fg-dim">Nothing reported yet.</span>
+                {pipeline && !Object.keys(pipeline.endpoint_health || {}).length && (
+                  <span className="text-xs text-fg-dim" role="status">
+                    Nothing reported yet.
+                  </span>
                 )}
               </div>
             </div>
@@ -434,7 +465,7 @@ export default function Dashboard() {
               role="meter"
               aria-valuenow={archive.complete || 0}
               aria-valuemin={0}
-              aria-valuemax={archive.tracked || 0}
+              aria-valuemax={Math.max(archive.tracked || 0, 1)}
               aria-label="Accounts fully archived"
             >
               <span
@@ -489,9 +520,11 @@ export default function Dashboard() {
               </div>
             )}
 
-            <Link className="mt-auto text-xs text-accent hover:underline" to="/ops">
-              Open run history and controls →
-            </Link>
+            {isStaff && (
+              <Link className="mt-auto text-xs text-accent hover:underline" to="/ops">
+                Open run history and controls →
+              </Link>
+            )}
           </PanelBody>
         </Panel>
       </div>

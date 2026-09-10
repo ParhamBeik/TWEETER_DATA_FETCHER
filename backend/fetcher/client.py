@@ -649,7 +649,7 @@ class APIManager:
         """Load endpoint health status"""
         return self._request_state_store().load(
             "endpoint_health.json",
-            {endpoint: EndpointHealth.HEALTHY for endpoint in self.DEFAULT_LIMITS},
+            dict.fromkeys(self.DEFAULT_LIMITS, EndpointHealth.HEALTHY),
         )
     
     def _save_endpoint_health(self):

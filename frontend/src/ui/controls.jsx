@@ -112,6 +112,7 @@ export function Skeleton({ className }) {
 export function Empty({ title, children, action, className }) {
   return (
     <div
+      role="status"
       className={cn(
         "flex flex-col items-start gap-2 rounded-sm border border-dashed border-line px-4 py-8",
         className,

@@ -98,6 +98,12 @@ describe("the query rail", () => {
     expect(screen.getByText("91")).toBeInTheDocument();
   });
 
+  it("exposes the query rail as navigation", async () => {
+    routeApi({ searches: [saved(1), saved(2)] });
+    renderWorkspace("/search");
+    expect(await screen.findByRole("navigation", { name: "Saved searches" })).toBeInTheDocument();
+  });
+
   it("says when each query next runs", async () => {
     routeApi();
     renderWorkspace("/search");

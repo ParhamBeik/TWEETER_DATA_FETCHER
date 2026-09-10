@@ -253,7 +253,7 @@ def _self_check() -> None:
 
     # Hashtags clear a lower bar than mined phrases: the same support that is too
     # thin for a phrase is a deliberate label when someone typed it.
-    thin = dict(docs=3, authors=2, previous_docs=0)
+    thin = {"docs": 3, "authors": 2, "previous_docs": 0}
     assert not rank_terms(
         [TermStats("thin", "phrase", **thin)], total_docs=891, previous_total_docs=1000
     ), "a 3-post phrase is still below the phrase floor"

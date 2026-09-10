@@ -15,7 +15,11 @@ vi.mock("../api", async () => {
 });
 
 const signIn = vi.fn();
-vi.mock("../auth", () => ({ useAuth: () => ({ signIn }) }));
+const registrationOpen = vi.fn(() => true);
+vi.mock("../auth", () => ({
+  useAuth: () => ({ signIn }),
+  useRegistrationOpen: () => registrationOpen(),
+}));
 
 const navigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -44,6 +48,7 @@ beforeEach(() => {
   navigate.mockClear();
   signIn.mockClear();
   api.mockReset();
+  registrationOpen.mockReturnValue(true);
 });
 
 describe("password checks", () => {
@@ -178,5 +183,12 @@ describe("Signup form", () => {
   it("offers a route back to the login page", () => {
     renderSignup();
     expect(screen.getByRole("link", { name: /Sign in/i })).toHaveAttribute("href", "/login");
+  });
+
+  it("replaces the form when registration is closed", () => {
+    registrationOpen.mockReturnValue(false);
+    renderSignup();
+    expect(screen.getByText(/Ask an operator for an account/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Create account/ })).toBeNull();
   });
 });

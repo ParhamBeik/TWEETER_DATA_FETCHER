@@ -225,7 +225,11 @@ export default function SearchWorkspace() {
         }
       />
 
-      {notice && <p className="annunciator border-l-accent text-sm text-fg-muted">{notice}</p>}
+      {notice && (
+        <p className="annunciator border-l-accent text-sm text-fg-muted" role="status">
+          {notice}
+        </p>
+      )}
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div className="grid gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
@@ -241,16 +245,18 @@ export default function SearchWorkspace() {
               No saved queries yet. Create one to start collecting from X search.
             </p>
           ) : (
-            <ul className="flex flex-col py-1">
-              {searches.map((row) => (
-                <QueryRow
-                  key={row.id}
-                  search={row}
-                  active={String(row.id) === String(searchId)}
-                  onSelect={() => navigate(`/search/${row.id}`)}
-                />
-              ))}
-            </ul>
+            <nav aria-label="Saved searches">
+              <ul className="flex flex-col py-1">
+                {searches.map((row) => (
+                  <QueryRow
+                    key={row.id}
+                    search={row}
+                    active={String(row.id) === String(searchId)}
+                    onSelect={() => navigate(`/search/${row.id}`)}
+                  />
+                ))}
+              </ul>
+            </nav>
           )}
         </Panel>
 
@@ -328,11 +334,7 @@ export default function SearchWorkspace() {
               </TabPanel>
 
               <TabPanel value="workflow" className="pt-4">
-                <Workflow
-                  search={selected}
-                  running={selected.schedule?.state}
-                  onRunNow={() => act("refresh", "Run queued.")}
-                />
+                <Workflow search={selected} onRunNow={() => act("refresh", "Run queued.")} />
               </TabPanel>
             </Tabs>
           </div>

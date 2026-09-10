@@ -35,6 +35,8 @@ HOSTILE_VALUES = [
 
 # Every GET route, mapped to every query parameter its view reads.
 GET_ROUTES = {
+    "/api/health/": [],
+    "/api/auth/config/": [],
     "/api/feed/": [
         "account", "tier", "since", "until", "window", "run_id", "q", "types",
         "has_media", "include_untracked", "sort", "cursor", "limit", "offset",

@@ -40,7 +40,6 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "rest_framework.authtoken",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "tweets",
@@ -214,11 +213,12 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = _SECURE_SSL
 SECURE_HSTS_PRELOAD = _SECURE_SSL
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CONTENT_TYPE_NOSNIFF = True
-# SECURE_SSL_REDIRECT stays off deliberately, and `manage.py check --deploy`
-# will keep saying so. Caddy already answers :80 with a redirect, so Django
-# redirecting as well only adds a hop -- and if the proxy header were ever
-# misconfigured, an app-level redirect turns that into an infinite loop instead
-# of a page served over the wrong scheme.
+# SECURE_SSL_REDIRECT stays off deliberately. Caddy already answers :80 with a
+# redirect, so Django redirecting as well only adds a hop -- and if the proxy
+# header were ever misconfigured, an app-level redirect turns that into an
+# infinite loop instead of a page served over the wrong scheme. W008 is silenced
+# because that warning assumes Django is the thing doing the redirect.
+SILENCED_SYSTEM_CHECKS = ["security.W008"]
 # Django >= 4 checks the Origin header against this list on every unsafe request,
 # and an https:// origin never matches an http:// ALLOWED_HOSTS entry -- so
 # without it the admin login form 403s the moment it is served over HTTPS.

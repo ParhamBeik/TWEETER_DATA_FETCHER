@@ -1,14 +1,10 @@
 """Unit tests for historical pipeline orchestration and two-pass logic."""
 
-import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
-from unittest.mock import Mock, patch, MagicMock
 
-from fetcher.timeline import FetcherEngine
 from fetcher.clock import utc_now_iso
 
 

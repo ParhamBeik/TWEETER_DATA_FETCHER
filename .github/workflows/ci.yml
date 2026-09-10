@@ -47,16 +47,33 @@ jobs:
           # says nothing about the image if the image runs another.
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install requirements
+        # The dev file holds the tools that check the code but never run inside
+        # it, so they stay out of the production image (backend/Dockerfile
+        # installs requirements.txt verbatim).
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Audit pinned Python dependencies
+        run: pip-audit -r requirements.txt
 
       - name: Byte-compile every source tree
         # Catches syntax errors in modules no test happens to import.
         run: python -m compileall -q config fetcher fetching tweets tests
+
+      - name: Lint
+        # compileall proves a module parses; it says nothing about a name that
+        # no longer exists on a branch no test covers, an import left behind by
+        # a refactor, or a mutable default argument. The first run of this found
+        # a `# noqa`-free unused import that pytest was resolving by name inside
+        # a skipif string. Rules and the reasoning for each exclusion are in
+        # backend/pyproject.toml.
+        run: ruff check .
 
       - name: Check for missing migrations
         # A model edited without `makemigrations` boots fine locally and then
@@ -64,6 +81,22 @@ jobs:
         run: python manage.py makemigrations --check --dry-run
         env:
           DJANGO_SETTINGS_MODULE: config.settings_test
+
+      - name: Django deploy checks
+        # Same layout as production: TLS terminates upstream, so W008 is silenced
+        # in settings. A dummy secret is enough; this job never talks to users.
+        run: python manage.py check --deploy --fail-level WARNING
+        env:
+          DJANGO_SECRET_KEY: ci-deploy-check-key-not-for-production-use-abcdef12
+          DJANGO_DEBUG: "0"
+          DJANGO_SECURE_SSL: "1"
+          DJANGO_ALLOWED_HOSTS: example.test
+          CSRF_TRUSTED_ORIGINS: https://example.test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_DB: twitter_saas_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
 
       - name: Run the suite
         # pytest.ini pins DJANGO_SETTINGS_MODULE=config.settings_test, which
@@ -98,6 +131,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        # Hooks rules, not formatting. A stale useEffect dependency list passes
+        # both the suite and the build and then shows up as a filter chip that
+        # silently reverts itself; frontend/eslint.config.js says which rules
+        # are on and why the React Compiler ones are not.
+        run: npm run lint
 
       - name: Run the component suite
         run: npm test

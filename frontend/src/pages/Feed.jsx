@@ -176,6 +176,37 @@ export default function Feed() {
     return () => clearInterval(timer);
   }, [key, filters.sort]);
 
+  // Apply a filter patch to whatever the URL holds *now*, not to the filters
+  // this render closed over.
+  //
+  // The search box debounces by 350ms, so `update({q})` fires from a timer set
+  // one or more renders ago. Building the next URL from the captured `filters`
+  // object meant a chip clicked during that window was silently reverted:
+  // type "bitcoin", click "This week" within 350ms, and the debounce wrote back
+  // the old window along with the new query. Reading the live params inside the
+  // updater removes the stale closure rather than racing it.
+  const update = useCallback(
+    (patch) => {
+      setSearchParams(
+        (current) => {
+          const nextFilters = { ...readFilters(current), ...patch };
+          const params = new URLSearchParams();
+          if (nextFilters.sort !== DEFAULTS.sort) params.set("sort", nextFilters.sort);
+          if (nextFilters.window !== DEFAULTS.window) params.set("window", nextFilters.window);
+          if (nextFilters.q) params.set("q", nextFilters.q);
+          if (nextFilters.types.length) params.set("types", nextFilters.types.join(","));
+          if (nextFilters.tier) params.set("tier", nextFilters.tier);
+          if (nextFilters.has_media) params.set("has_media", "1");
+          if (nextFilters.include_untracked) params.set("include_untracked", "1");
+          for (const handle of nextFilters.accounts) params.append("account", handle);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
   // Typing searches on its own after a pause. Without this the box only
   // responded to Enter, with nothing on screen saying so, and clearing it left
   // the previous results in place.
@@ -183,27 +214,13 @@ export default function Feed() {
     if (draftQuery === filters.q) return undefined;
     const timer = setTimeout(() => update({ q: draftQuery }), 350);
     return () => clearTimeout(timer);
-  }, [draftQuery, filters.q]);
+  }, [draftQuery, filters.q, update]);
 
   // A filter change from elsewhere (back button, cleared chip) has to be
   // reflected in the box, or the two disagree about what is being searched.
   useEffect(() => {
     setDraftQuery(filters.q);
   }, [filters.q]);
-
-  function update(patch) {
-    const nextFilters = { ...filters, ...patch };
-    const params = new URLSearchParams();
-    if (nextFilters.sort !== DEFAULTS.sort) params.set("sort", nextFilters.sort);
-    if (nextFilters.window !== DEFAULTS.window) params.set("window", nextFilters.window);
-    if (nextFilters.q) params.set("q", nextFilters.q);
-    if (nextFilters.types.length) params.set("types", nextFilters.types.join(","));
-    if (nextFilters.tier) params.set("tier", nextFilters.tier);
-    if (nextFilters.has_media) params.set("has_media", "1");
-    if (nextFilters.include_untracked) params.set("include_untracked", "1");
-    for (const handle of nextFilters.accounts) params.append("account", handle);
-    setSearchParams(params, { replace: true });
-  }
 
   function showPending() {
     setTweets((current) => [...pending, ...current]);
@@ -390,6 +407,7 @@ export default function Feed() {
             <Button
               size="sm"
               disabled={Boolean(exporting)}
+              aria-busy={exporting === "jsonl"}
               onClick={() => downloadExport("jsonl")}
             >
               <Download className="size-3.5" aria-hidden="true" />
@@ -398,6 +416,7 @@ export default function Feed() {
             <Button
               size="sm"
               disabled={Boolean(exporting)}
+              aria-busy={exporting === "csv"}
               onClick={() => downloadExport("csv")}
             >
               <Download className="size-3.5" aria-hidden="true" />
@@ -453,7 +472,7 @@ export default function Feed() {
             closed details hid the summary and the panel together when the
             override failed, which made sort unreachable with no affordance. */}
         {desktopRail ? (
-          <aside className={RAIL_CLASS}>
+          <aside className={RAIL_CLASS} aria-label="Feed filters">
             <div className="feed-filters-body flex flex-col gap-4">{filterBody}</div>
           </aside>
         ) : (

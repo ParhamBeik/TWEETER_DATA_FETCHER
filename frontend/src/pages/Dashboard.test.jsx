@@ -13,6 +13,12 @@ vi.mock("../api", async () => {
   return { ...actual, api: vi.fn() };
 });
 
+const authState = { isStaff: true, authed: true };
+vi.mock("../auth", async () => {
+  const actual = await vi.importActual("../auth");
+  return { ...actual, useAuth: () => authState };
+});
+
 // Recharts measures its container, which jsdom reports as 0x0 and then renders
 // nothing. Charts are not the subject of these tests; the data plumbing is.
 vi.mock("recharts", async () => {
@@ -113,6 +119,7 @@ function mockEndpoints({ flow = ingestion(), state = pipeline() } = {}) {
 
 beforeEach(() => {
   api.mockReset();
+  authState.isStaff = true;
   mockEndpoints();
 });
 
@@ -209,6 +216,14 @@ describe("Dashboard stat tiles", () => {
     renderPulse();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
+
+  it("does not claim the charts are empty while the series is still loading", () => {
+    api.mockReturnValue(new Promise(() => {}));
+    renderPulse();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading collector health");
+    expect(screen.queryByText("Nothing captured in this window yet.")).toBeNull();
+    expect(screen.queryByText("No dated posts in this window.")).toBeNull();
+  });
 });
 
 describe("Dashboard collection attribution", () => {
@@ -235,6 +250,15 @@ describe("Dashboard collection attribution", () => {
     renderPulse();
     expect(
       await screen.findByText("No request telemetry in this window yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("names the collection-flow chart for a screen reader", async () => {
+    renderPulse();
+    expect(
+      await screen.findByRole("img", {
+        name: "Posts captured per time bucket, stacked by collector",
+      }),
     ).toBeInTheDocument();
   });
 });
@@ -313,5 +337,19 @@ describe("Pulse backfill panel", () => {
     expect(
       screen.queryByText("Every tracked account is fully archived."),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers the ops shortcut only to staff", async () => {
+    renderPulse();
+    expect(
+      await screen.findByRole("link", { name: /Open run history and controls/ }),
+    ).toHaveAttribute("href", "/ops");
+  });
+
+  it("hides the ops shortcut from a read-only account", async () => {
+    authState.isStaff = false;
+    renderPulse();
+    await screen.findByText("+42 new");
+    expect(screen.queryByRole("link", { name: /Open run history and controls/ })).toBeNull();
   });
 });

@@ -1,0 +1,58 @@
+# Ruff configuration. There is no build backend here on purpose: the backend is
+# deployed by copying the tree into an image (see backend/Dockerfile), not by
+# installing a package, and declaring one would imply a packaging story that
+# does not exist.
+#
+# `compileall` in CI catches a syntax error. It does not catch an import that is
+# no longer used, a name that no longer exists on the branch nobody tests, a
+# mutable default argument, or an `except` that throws away the original
+# traceback. That gap is what this file closes.
+
+[tool.ruff]
+target-version = "py313"   # matches backend/Dockerfile and the CI matrix
+line-length = 100
+extend-exclude = [".venv", "**/migrations"]
+
+[tool.ruff.lint]
+# A correctness gate, not a style one. Deliberately excluded:
+#
+#   E/W  pycodestyle -- whitespace opinions over 12k lines of working code.
+#   UP   pyupgrade   -- 600+ typing.List -> list rewrites that change nothing at
+#                       runtime and would bury every real diff.
+#   I    isort       -- the import blocks here are grouped by meaning
+#                       (Django, then this project's engine) rather than
+#                       alphabetically, and that grouping is intentional.
+#
+# Kept: the rules that describe a bug.
+select = [
+    "F",     # pyflakes: undefined names, unused imports, unused locals
+    "E9",    # syntax and IO errors
+    "B",     # bugbear: mutable defaults, raise-without-from, ...
+    "C4",    # comprehension misuse
+    "PIE",   # unnecessary pass/dict-literal duplication
+    "RUF",   # ruff's own correctness set
+]
+ignore = [
+    # `zip(a, b)` without strict= is fine where the two are slices of one list.
+    "B905",
+    # `permission_classes = [IsStaff]`, `renderer_classes`, `select = [...]` --
+    # a list literal on a Django/DRF class is the framework's own API, not an
+    # accidental shared mutable. Annotating 52 of them ClassVar would be noise.
+    "RUF012",
+    # `a + [b]` reads fine and this is not a hot loop.
+    "RUF005",
+    # `dict(account=..., endpoint=...)` reads better than a literal when the
+    # result is immediately splatted back out as keyword arguments.
+    "C408",
+    # The `# noqa: E402` / `# noqa: F405` comments on the settings modules and
+    # the engine entrypoints predate ruff and explain, to a reader, why an
+    # import sits below code. pycodestyle's E402 is not in `select`, so ruff
+    # reads those directives as unused -- deleting them would remove the
+    # explanation to satisfy a linter that was never asked the question.
+    "RUF100",
+    # Ambiguous unicode in a string is the *point* in a project that stores
+    # tweets: the text clean-up tests carry real X output verbatim.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]

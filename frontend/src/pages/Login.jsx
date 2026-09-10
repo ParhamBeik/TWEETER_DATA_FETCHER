@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { useAuth } from "../auth";
+import { useAuth, useRegistrationOpen } from "../auth";
 import AuthLayout, { PasswordField } from "./AuthLayout";
 
 export default function Login() {
@@ -10,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const { signIn } = useAuth();
+  const allowRegistration = useRegistrationOpen();
   const navigate = useNavigate();
 
   async function submit(event) {
@@ -41,9 +42,13 @@ export default function Login() {
       subtitle="Your research workspace is ready when you are."
       error={error}
       footer={
-        <>
-          New to Signal Archive? <Link className="text-accent hover:underline" to="/signup">Create an account</Link>
-        </>
+        allowRegistration ? (
+          <>
+            New to Signal Archive? <Link className="text-accent hover:underline" to="/signup">Create an account</Link>
+          </>
+        ) : (
+          <>Need an account? Ask an operator to create one.</>
+        )
       }
     >
       <form className="flex flex-col gap-4" onSubmit={submit} noValidate>

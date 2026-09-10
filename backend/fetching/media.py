@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -23,7 +22,7 @@ from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
-from tweets.models import MediaAsset, PendingMedia, Tweet, TwitterUser
+from tweets.models import MediaAsset, PendingMedia, TwitterUser
 
 logger = logging.getLogger(__name__)
 

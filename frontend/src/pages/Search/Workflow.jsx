@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/api";
 import { cn } from "@/lib/cn";
 import { absoluteTime, compact, duration, relativeTime } from "@/format";
@@ -88,7 +88,7 @@ function Run({ run }) {
  * showed neither. When a query went quiet there was no screen that could say
  * whether it was paused, queued behind another fetch, or simply not due yet.
  */
-export default function Workflow({ search, onRunNow, running }) {
+export default function Workflow({ search, onRunNow }) {
   const [runs, setRuns] = useState(null);
   const [schedule, setSchedule] = useState(search.schedule);
   const [error, setError] = useState("");

@@ -183,14 +183,14 @@ describe("run list and detail", () => {
     routeApi({ runs: [run({ run_id: "ok" }), run({ run_id: "bad", status: "failed" })] });
     render(<Ops />);
     await screen.findByText("failed");
-    expect(screen.getAllByRole("button", { name: "retry" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Retry live" })).toHaveLength(1);
   });
 
   it("re-queues the subsystem from a failed run's retry action", async () => {
     const user = userEvent.setup();
     routeApi({ runs: [run({ status: "failed", subsystem: "search" })] });
     render(<Ops />);
-    await user.click(await screen.findByRole("button", { name: "retry" }));
+    await user.click(await screen.findByRole("button", { name: "Retry search" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/cycles/", {
       method: "POST",
       body: { subsystem: "search" },
@@ -201,6 +201,13 @@ describe("run list and detail", () => {
     routeApi({ runs: [run()] });
     render(<Ops />);
     expect(await screen.findByText("Pick a run")).toBeInTheDocument();
+  });
+
+  it("names the session form and the run list", async () => {
+    routeApi({ runs: [run()] });
+    render(<Ops />);
+    expect(await screen.findByRole("form", { name: "Replace X session" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Fetch runs" })).toBeInTheDocument();
   });
 
   it("shows the log excerpt when a run is inspected", async () => {

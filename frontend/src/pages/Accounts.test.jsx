@@ -12,6 +12,12 @@ vi.mock("../api", async () => {
   return { ...actual, api: vi.fn() };
 });
 
+const authState = { isStaff: true, authed: true };
+vi.mock("../auth", async () => {
+  const actual = await vi.importActual("../auth");
+  return { ...actual, useAuth: () => authState };
+});
+
 const account = (handle, over = {}) => ({
   handle,
   priority: 3,
@@ -38,6 +44,7 @@ function routeApi({ accounts = [], analytics = [], tweets = { results: [], next:
 // calls, running the api mock with no arguments after every test.
 beforeEach(() => {
   api.mockReset();
+  authState.isStaff = true;
 });
 
 describe("Accounts roster", () => {
@@ -156,7 +163,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("elonmusk")] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@elonmusk" });
-    await user.click(screen.getByRole("button", { name: "Fetch" }));
+    await user.click(screen.getByRole("button", { name: "Fetch @elonmusk" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/elonmusk/fetch/", { method: "POST" }));
     expect(await screen.findByText("Queued live + historical for @elonmusk.")).toBeInTheDocument();
   });
@@ -166,7 +173,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("elonmusk")] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@elonmusk" });
-    await user.click(screen.getByRole("button", { name: "Disable" }));
+    await user.click(screen.getByRole("button", { name: "Disable @elonmusk" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/elonmusk/", {
       method: "PATCH",
       body: { tracking: false },
@@ -178,7 +185,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("elonmusk", { tracking: false })] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@elonmusk" });
-    await user.click(screen.getByRole("button", { name: "Enable" }));
+    await user.click(screen.getByRole("button", { name: "Enable @elonmusk" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/elonmusk/", {
       method: "PATCH",
       body: { tracking: true },
@@ -189,7 +196,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("ok"), account("blocked", { quarantined: true })] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@ok" });
-    expect(screen.getAllByRole("button", { name: "Unquarantine" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Unquarantine @blocked" })).toHaveLength(1);
   });
 
   it("clears quarantine through the row action", async () => {
@@ -197,7 +204,7 @@ describe("row actions", () => {
     routeApi({ accounts: [account("blocked", { quarantined: true })] });
     render(<Accounts />);
     await screen.findByRole("button", { name: "@blocked" });
-    await user.click(screen.getByRole("button", { name: "Unquarantine" }));
+    await user.click(screen.getByRole("button", { name: "Unquarantine @blocked" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("/accounts/blocked/", {
       method: "PATCH",
       body: { quarantined: false },
@@ -300,5 +307,32 @@ describe("comparison tray", () => {
     const tray = screen.getByText("Compare accounts").closest("section");
     expect(within(tray).getAllByText(/^@/)).toHaveLength(4);
     expect(within(tray).queryByText("@a")).toBeNull();
+  });
+});
+
+describe("Accounts accessibility", () => {
+  it("names the roster table and the track form", async () => {
+    routeApi({ accounts: [account("elonmusk")] });
+    render(<Accounts />);
+    expect(await screen.findByRole("form", { name: "Track an account" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Tracked accounts, tiers and collection health" }),
+    ).toBeInTheDocument();
+  });
+
+  it("announces roster loading as a status, not as an empty table", async () => {
+    api.mockImplementation(() => new Promise(() => {}));
+    render(<Accounts />);
+    expect(await screen.findByText("Loading accounts…")).toHaveAttribute("role", "status");
+  });
+
+  it("hides write controls from a read-only account", async () => {
+    authState.isStaff = false;
+    routeApi({ accounts: [account("elonmusk")] });
+    render(<Accounts />);
+    expect(await screen.findByRole("button", { name: "@elonmusk" })).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Track an account" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fetch @elonmusk" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Tier for @elonmusk" })).toBeNull();
   });
 });

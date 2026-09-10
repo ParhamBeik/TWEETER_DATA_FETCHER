@@ -277,7 +277,7 @@ def auto_refresh_session(
                         page.goto(url, timeout=timeout_per_page * 1000, wait_until="networkidle")
                         
                         # Scroll to trigger more requests
-                        for i in range(SCROLL_COUNT):
+                        for _ in range(SCROLL_COUNT):
                             page.evaluate("window.scrollBy(0, window.innerHeight)")
                             time.sleep(SCROLL_PAUSE_SECONDS)
                         

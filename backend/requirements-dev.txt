@@ -1,0 +1,16 @@
+# Tools that check the code but never run inside it.
+#
+# Separate from requirements.txt because that file builds the production image
+# (backend/Dockerfile installs it verbatim) and a linter has no business in a
+# container that serves requests. CI installs both; a developer installs this
+# one to get the same answers CI will give them.
+#
+#   pip install -r requirements-dev.txt
+#   ruff check .            # backend/pyproject.toml holds the rules
+#   pip-audit -r requirements.txt
+#
+# Pinned with ~= for the same reason the runtime file is: an unpinned linter
+# turns a new release into a red build on a commit that changed nothing.
+
+ruff~=0.16.6
+pip-audit~=2.10.1

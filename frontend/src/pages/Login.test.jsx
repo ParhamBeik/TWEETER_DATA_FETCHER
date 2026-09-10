@@ -16,7 +16,11 @@ vi.mock("../api", async () => {
 });
 
 const signIn = vi.fn();
-vi.mock("../auth", () => ({ useAuth: () => ({ signIn }) }));
+const registrationOpen = vi.fn(() => true);
+vi.mock("../auth", () => ({
+  useAuth: () => ({ signIn }),
+  useRegistrationOpen: () => registrationOpen(),
+}));
 
 const navigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -43,6 +47,7 @@ beforeEach(() => {
   navigate.mockClear();
   signIn.mockClear();
   api.mockReset();
+  registrationOpen.mockReturnValue(true);
 });
 
 describe("Login form", () => {
@@ -86,6 +91,13 @@ describe("Login form", () => {
       "href",
       "/signup",
     );
+  });
+
+  it("hides the signup link when registration is closed", () => {
+    registrationOpen.mockReturnValue(false);
+    renderLogin();
+    expect(screen.getByText(/Ask an operator to create one/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Create an account/i })).toBeNull();
   });
 });
 

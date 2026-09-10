@@ -77,6 +77,7 @@ REST_FRAMEWORK = {  # noqa: F405
 }
 
 import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402  (re-imported explicitly; the star import above hides it)
 
 MEDIA_ROOT = Path(tempfile.mkdtemp(prefix="twitter-saas-media-"))
 MEDIA_URL = "/media/"

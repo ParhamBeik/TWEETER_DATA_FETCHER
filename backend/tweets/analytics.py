@@ -361,9 +361,10 @@ class IngestionView(APIView):
             .values("source_subsystem")
             .annotate(count=Count("id"))
         }
-        search_captured = _in_window(hits, window, "ingested_at").count()
-        if search_captured:
-            by_subsystem["search"] = by_subsystem.get("search", 0) + search_captured
+        # captured_search above is this same COUNT over SearchTweet; it used to
+        # be issued twice per request to the Pulse dashboard, which polls.
+        if captured_search:
+            by_subsystem["search"] = by_subsystem.get("search", 0) + captured_search
 
         return Response({
             "since": window.since.isoformat(),

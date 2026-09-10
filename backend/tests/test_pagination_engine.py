@@ -1,6 +1,6 @@
 import unittest
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -29,7 +29,6 @@ class PaginationEngineTests(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
-        import json
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_cursor_walking_logic(self):

@@ -21,7 +21,6 @@ import time
 import uuid
 from collections import Counter, deque
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 

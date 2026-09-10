@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import InfiniteSentinel from "../InfiniteSentinel";
 import TweetCard from "../TweetCard";
 import { cn } from "@/lib/cn";
@@ -21,6 +22,7 @@ const TH = "pb-2 pr-3 text-left eyebrow font-normal";
 const TD = "py-2 pr-3 align-top text-xs";
 
 export default function Accounts() {
+  const { isStaff } = useAuth();
   const [accounts, setAccounts] = useState([]);
   const [analytics, setAnalytics] = useState({});
   const [compare, setCompare] = useState([]);
@@ -63,6 +65,10 @@ export default function Accounts() {
   useEffect(() => {
     const timer = setTimeout(() => loadAccounts(rosterQuery), rosterQuery ? 300 : 0);
     return () => clearTimeout(timer);
+    // loadAccounts is passed the query explicitly rather than reading it from
+    // the closure, and everything else it touches is a ref or a setter, so the
+    // identity it happens to have on this render carries no state to go stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rosterQuery]);
 
   async function addAccount(e) {
@@ -141,32 +147,42 @@ export default function Accounts() {
         lede="A tier sets how much of the shared X budget an account may spend. The interval beside it is what the collector actually measured from how often that account posts."
       />
 
-      <form className="flex flex-wrap items-end gap-2" onSubmit={addAccount}>
-        <Input
-          className="w-52"
-          aria-label="Account handle"
-          placeholder="handle, e.g. elonmusk"
-          value={handle}
-          onChange={(e) => setHandle(e.target.value)}
-        />
-        <Select
-          className="w-28"
-          aria-label="Priority tier"
-          value={priority}
-          onChange={(e) => setPriority(e.target.value)}
+      {isStaff && (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          aria-label="Track an account"
+          onSubmit={addAccount}
         >
-          {TIERS.map((n) => (
-            <option key={n} value={n}>
-              Priority {n}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit" variant="primary" disabled={!handle.trim()}>
-          Track account
-        </Button>
-      </form>
+          <Input
+            className="w-52"
+            aria-label="Account handle"
+            placeholder="handle, e.g. elonmusk"
+            value={handle}
+            onChange={(e) => setHandle(e.target.value)}
+          />
+          <Select
+            className="w-28"
+            aria-label="Priority tier"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+          >
+            {TIERS.map((n) => (
+              <option key={n} value={n}>
+                Priority {n}
+              </option>
+            ))}
+          </Select>
+          <Button type="submit" variant="primary" disabled={!handle.trim()}>
+            Track account
+          </Button>
+        </form>
+      )}
 
-      {status && <p className="annunciator border-l-accent text-sm text-fg-muted">{status}</p>}
+      {status && (
+        <p className="annunciator border-l-accent text-sm text-fg-muted" role="status">
+          {status}
+        </p>
+      )}
       {error && <ErrorNote>{error}</ErrorNote>}
 
       {compare.length > 0 && (
@@ -223,6 +239,7 @@ export default function Accounts() {
           </div>
           <PanelBody className="overflow-x-auto">
             <table className="w-full min-w-[46rem]">
+              <caption className="sr-only">Tracked accounts, tiers and collection health</caption>
               <thead>
                 <tr className="border-b border-line">
                   <th scope="col" className={TH}>Account</th>
@@ -258,18 +275,22 @@ export default function Accounts() {
                       )}
                     </td>
                     <td className={TD}>
-                      <Select
-                        aria-label={`Tier for @${a.handle}`}
-                        className="w-24"
-                        value={a.priority}
-                        onChange={(e) => patch(a.handle, { priority: Number(e.target.value) })}
-                      >
-                        {TIERS.map((n) => (
-                          <option key={n} value={n}>
-                            P{n}
-                          </option>
-                        ))}
-                      </Select>
+                      {isStaff ? (
+                        <Select
+                          aria-label={`Tier for @${a.handle}`}
+                          className="w-24"
+                          value={a.priority}
+                          onChange={(e) => patch(a.handle, { priority: Number(e.target.value) })}
+                        >
+                          {TIERS.map((n) => (
+                            <option key={n} value={n}>
+                              P{n}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <span>P{a.priority}</span>
+                      )}
                     </td>
                     <td className={cn(TD, "font-mono tabular")}>
                       {duration(a.poll_interval_seconds)}
@@ -302,31 +323,46 @@ export default function Accounts() {
                       />
                     </td>
                     <td className={cn(TD, "whitespace-nowrap")}>
-                      <Button size="sm" variant="quiet" onClick={() => fetchNow(a.handle)}>
-                        Fetch
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="quiet"
-                        onClick={() => patch(a.handle, { tracking: !a.tracking })}
-                      >
-                        {a.tracking ? "Disable" : "Enable"}
-                      </Button>
-                      {a.quarantined && (
-                        <Button
-                          size="sm"
-                          variant="quiet"
-                          onClick={() => patch(a.handle, { quarantined: false })}
-                        >
-                          Unquarantine
-                        </Button>
+                      {isStaff && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="quiet"
+                            aria-label={`Fetch @${a.handle}`}
+                            onClick={() => fetchNow(a.handle)}
+                          >
+                            Fetch
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="quiet"
+                            aria-label={`${a.tracking ? "Disable" : "Enable"} @${a.handle}`}
+                            onClick={() => patch(a.handle, { tracking: !a.tracking })}
+                          >
+                            {a.tracking ? "Disable" : "Enable"}
+                          </Button>
+                          {a.quarantined && (
+                            <Button
+                              size="sm"
+                              variant="quiet"
+                              aria-label={`Unquarantine @${a.handle}`}
+                              onClick={() => patch(a.handle, { quarantined: false })}
+                            >
+                              Unquarantine
+                            </Button>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {!rosterLoaded && <p className="mt-3 text-xs text-fg-muted">Loading accounts…</p>}
+            {!rosterLoaded && (
+              <p className="mt-3 text-xs text-fg-muted" role="status">
+                Loading accounts…
+              </p>
+            )}
             {rosterLoaded && accounts.length === 0 && rosterQuery && (
               <Empty className="mt-3" title={`No account matches "${rosterQuery}"`}>
                 Search covers every author the collector has ever seen, tracked or not.
@@ -334,7 +370,9 @@ export default function Accounts() {
             )}
             {rosterLoaded && accounts.length === 0 && !rosterQuery && (
               <Empty className="mt-3" title="No tracked accounts yet">
-                Add a handle above to start collecting its timeline.
+                {isStaff
+                  ? "Add a handle above to start collecting its timeline."
+                  : "An operator has to add a handle before anything appears here."}
               </Empty>
             )}
           </PanelBody>
@@ -342,8 +380,13 @@ export default function Accounts() {
 
         <div className="min-w-0">
           {selected ? (
-            <>
+            <section aria-label={`Timeline for @${selected}`}>
               <p className="eyebrow mb-2">Timeline · @{selected}</p>
+              {loading && tweets.length === 0 && (
+                <p className="sr-only" role="status">
+                  Loading timeline
+                </p>
+              )}
               <div className="rounded-sm bg-paper">
                 {tweets.map((t) => (
                   <TweetCard key={t.id} tweet={t} />
@@ -359,7 +402,7 @@ export default function Accounts() {
                   The first fetch for this account may still be running.
                 </Empty>
               )}
-            </>
+            </section>
           ) : (
             <Empty title="Pick an account">
               Select a handle to read what the collector has captured from it.

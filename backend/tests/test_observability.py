@@ -67,7 +67,7 @@ class EventRecorderTests(unittest.TestCase):
     
     def test_recorder_creates_logs_directory(self):
         """EventRecorder ensures logs directory exists."""
-        recorder = EventRecorder(self.logs_dir, subsystem="historical_live")
+        EventRecorder(self.logs_dir, subsystem="historical_live")
         self.assertTrue((self.logs_dir / "events.jsonl").parent.exists())
 
     def test_exception_url_query_is_redacted(self):

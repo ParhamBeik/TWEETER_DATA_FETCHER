@@ -602,7 +602,7 @@ class LiveMonitor:
     def run_continuous(self, only_accounts: Optional[List[str]] = None, check_interval: int = 60) -> None:
         self.console.banner("Starting v4 live monitor. Press Ctrl+C to stop.")
         while True:
-            report = self.run_cycle(only_accounts=only_accounts)
+            self.run_cycle(only_accounts=only_accounts)
             sim = self.config.get("anti_bot_simulation", {})
             if sim.get("enabled", True):
                 delays = sim.get("delays_seconds", {})
@@ -630,7 +630,7 @@ def main() -> None:
     args = parse_args()
     monitor = LiveMonitor(config_path=args.config)
     if args.once:
-        report = monitor.run_cycle(only_accounts=args.accounts)
+        monitor.run_cycle(only_accounts=args.accounts)
     else:
         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
 

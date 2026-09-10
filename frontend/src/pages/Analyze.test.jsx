@@ -366,3 +366,47 @@ describe("Analyze narratives", () => {
     expect(link).toHaveAttribute("href", "https://x.com/alice/status/1");
   });
 });
+
+describe("Analyze accessibility", () => {
+  it("names the filter landmark", async () => {
+    renderAnalyze();
+    expect(
+      await screen.findByRole("complementary", { name: "Analyze filters" }),
+    ).toBeInTheDocument();
+  });
+
+  it("names the velocity chart", async () => {
+    const user = userEvent.setup();
+    renderAnalyze();
+    await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("tab", { name: "Velocity" }));
+    expect(
+      await screen.findByRole("img", { name: "Engagement gained per time bucket" }),
+    ).toBeInTheDocument();
+  });
+
+  it("captions the accounts ranking table", async () => {
+    const user = userEvent.setup();
+    mockAnalytics({
+      accounts: {
+        results: [
+          {
+            account: "elonmusk",
+            posts: 4,
+            average_engagement: 12,
+            total_engagement: 48,
+            replies: 1,
+          },
+        ],
+      },
+    });
+    renderAnalyze();
+    await waitFor(() => expect(analyticsPaths().length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("tab", { name: "Accounts" }));
+    expect(
+      await screen.findByRole("table", {
+        name: "Tracked accounts ranked by average engagement per post",
+      }),
+    ).toBeInTheDocument();
+  });
+});

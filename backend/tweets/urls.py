@@ -12,7 +12,15 @@ from .analytics import (
     TopicsView,
     VelocityView,
 )
-from .auth_views import LoginView, LogoutView, MeView, RefreshView, RegisterView
+from .auth_views import (
+    AuthConfigView,
+    HealthView,
+    LoginView,
+    LogoutView,
+    MeView,
+    RefreshView,
+    RegisterView,
+)
 from .views import (
     AccountTimelineView,
     AccountViewSet,
@@ -32,11 +40,13 @@ router.register("searches", SearchViewSet, basename="search")
 router.register("accounts", AccountViewSet, basename="account")
 
 urlpatterns = [
+    path("health/", HealthView.as_view(), name="health"),
     path("auth/register/", RegisterView.as_view(), name="register"),
     path("auth/login/", LoginView.as_view(), name="login"),
     path("auth/refresh/", RefreshView.as_view(), name="refresh"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("auth/me/", MeView.as_view(), name="me"),
+    path("auth/config/", AuthConfigView.as_view(), name="auth-config"),
     path("feed/", FeedView.as_view(), name="feed"),
     path("export/", ExportView.as_view(), name="export"),
     path("export/<int:pk>/", ExportDetailView.as_view(), name="export-detail"),

@@ -13,8 +13,6 @@ from tweets.models import (
     ExportJob,
     FetchRun,
     Search,
-    SearchHit,
-    SearchTweet,
     Tweet,
     TwitterUser,
     XSession,
@@ -58,7 +56,7 @@ def _tweet(account, rest_id, created):
 
 @pytest.mark.django_db
 def test_feed_serves_tracked_accounts_newest_first(client_user):
-    client, user = client_user
+    client, _user = client_user
     TwitterUser.objects.create(handle="jack", tracking=True, priority=1)
 
     _tweet("jack", "1", "Wed Oct 10 20:19:24 +0000 2018")
@@ -177,7 +175,7 @@ def test_recent_fetch_runs_expose_status_and_failure_ledger(client_user):
 
 @pytest.mark.django_db
 def test_create_search_enqueues_and_subscribes(client_user):
-    client, user = client_user
+    client, _user = client_user
     with patch("fetching.tasks.run_search.delay") as delay:
         resp = client.post(
             "/api/searches/", {"raw_query": "openai", "product": "Latest"}, format="json"
@@ -190,7 +188,7 @@ def test_create_search_enqueues_and_subscribes(client_user):
 
 @pytest.mark.django_db
 def test_search_list_filters_by_product(client_user):
-    client, user = client_user
+    client, _user = client_user
     Search.objects.create(name="a", slug="a", raw_query="a", product="Top")
     Search.objects.create(name="b", slug="b", raw_query="b", product="Latest")
     resp = client.get("/api/searches/?product=Latest")
@@ -199,8 +197,8 @@ def test_search_list_filters_by_product(client_user):
 
 @pytest.mark.django_db
 def test_search_list_is_operator_wide(client_user):
-    client, user = client_user
-    other = User.objects.create_user(username="eve", password="pw")
+    client, _user = client_user
+    User.objects.create_user(username="eve", password="pw")
     Search.objects.create(name="mine", slug="mine", raw_query="mine")
     Search.objects.create(name="eves", slug="eves", raw_query="eves")
     resp = client.get("/api/searches/")

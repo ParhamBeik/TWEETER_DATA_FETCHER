@@ -6,6 +6,10 @@
 # The project name is pinned: it decides the volume prefix, so leaving it to be
 # derived from the directory name would orphan twitter-saas_pgdata (the live
 # database) the moment this file moved.
+#
+# Backups are not scheduled here. `scripts/backup_pg.sh` is a host cron job;
+# adding a compose service that writes dumps would make `docker compose up`
+# start taking live snapshots, which this file must not do.
 name: twitter-saas
 
 x-logging: &logging
@@ -86,7 +90,7 @@ services:
       - media_data:/app/media
       - static_data:/app/staticfiles
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/admin/login/ > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

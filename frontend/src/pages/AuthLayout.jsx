@@ -38,15 +38,27 @@ const CONTROL =
   "w-full rounded-sm border border-line bg-ink-850 px-2.5 py-2 text-sm text-fg " +
   "placeholder:text-fg-dim hover:border-line-strong focus:border-accent focus:outline-none";
 
-export function TextField({ label, hint, error, className, ...props }) {
+export function TextField({ label, hint, error, className, name, ...props }) {
+  const errorId = error && name ? `${name}-error` : undefined;
   return (
     <label className={cn("flex flex-col gap-1", className)}>
       <span className="flex items-baseline justify-between gap-2">
         <span className="eyebrow">{label}</span>
         {hint}
       </span>
-      <input aria-label={label} className={CONTROL} {...props} />
-      {error && <span className="text-xs text-danger">{error}</span>}
+      <input
+        aria-label={label}
+        name={name}
+        aria-invalid={Boolean(error)}
+        aria-describedby={errorId}
+        className={CONTROL}
+        {...props}
+      />
+      {error && (
+        <span id={errorId} className="text-xs text-danger">
+          {error}
+        </span>
+      )}
     </label>
   );
 }
@@ -62,8 +74,11 @@ export function PasswordField({
   autoComplete,
   placeholder,
   error,
+  describedBy,
 }) {
   const [revealed, setRevealed] = useState(false);
+  const errorId = error ? `${name}-error` : undefined;
+  const described = [describedBy, errorId].filter(Boolean).join(" ") || undefined;
   return (
     <label className="flex flex-col gap-1">
       <span className="flex items-baseline justify-between gap-2">
@@ -80,6 +95,8 @@ export function PasswordField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           required
+          aria-invalid={Boolean(error)}
+          aria-describedby={described}
           className={cn(CONTROL, "pr-14")}
         />
         <button
@@ -91,7 +108,11 @@ export function PasswordField({
           {revealed ? "Hide" : "Show"}
         </button>
       </span>
-      {error && <span className="text-xs text-danger">{error}</span>}
+      {error && (
+        <span id={errorId} className="text-xs text-danger">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

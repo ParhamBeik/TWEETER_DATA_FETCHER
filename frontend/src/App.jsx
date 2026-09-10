@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "./auth";
 import BudgetRail from "./BudgetRail";
+import ErrorBoundary from "./ErrorBoundary";
+import { Dialog, DialogContent, DialogTrigger } from "@/ui/dialog";
 import { Brand } from "./Logo";
 import { cn } from "@/lib/cn";
 import { Button } from "@/ui/button";
@@ -75,6 +77,13 @@ function RequireAuth({ children }) {
     return <p className="p-6 text-sm text-fg-muted">Restoring your session…</p>;
   }
   return authed ? children : <Navigate to="/login" replace />;
+}
+
+function RequireStaff({ children }) {
+  const { isStaff } = useAuth();
+  return (
+    <RequireAuth>{isStaff ? children : <Navigate to="/feed" replace />}</RequireAuth>
+  );
 }
 
 function RedirectIfAuthed({ children }) {
@@ -150,7 +159,12 @@ export default function App() {
   // during a restore; this keeps the shell from deciding first.
   if (!authed && status !== "restoring") {
     return (
-      <main className="mx-auto w-full max-w-md px-4 py-16">
+      <>
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-md px-4 py-16">
+        <ErrorBoundary>
         <Routes>
           <Route
             path="/login"
@@ -170,12 +184,18 @@ export default function App() {
           />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </ErrorBoundary>
       </main>
+      </>
     );
   }
 
   return (
+    <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
     <div className="flex min-h-screen">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <Sidebar
         isStaff={isStaff}
         user={user}
@@ -183,42 +203,43 @@ export default function App() {
         className="hidden w-56 shrink-0 lg:flex"
       />
 
-      {menuOpen && (
-        <div className="fixed inset-0 z-50 flex lg:hidden">
-          <div
-            className="absolute inset-0 bg-ink-900/80"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden="true"
-          />
-          <Sidebar
-            isStaff={isStaff}
-            user={user}
-            signOut={signOut}
-            onNavigate={() => setMenuOpen(false)}
-            className="relative w-64"
-          />
-        </div>
-      )}
+      <DialogContent
+        title="Menu"
+        description="Navigate the console."
+        className="left-0 top-0 h-dvh max-h-none w-72 translate-x-0 translate-y-0 rounded-none"
+      >
+        <Sidebar
+          isStaff={isStaff}
+          user={user}
+          signOut={signOut}
+          onNavigate={() => setMenuOpen(false)}
+          className="min-h-[calc(100dvh-9rem)] border-0"
+        />
+      </DialogContent>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b border-line px-3 py-2 lg:hidden">
+          <DialogTrigger asChild>
           <Button
             variant="quiet"
             size="icon"
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            onClick={() => setMenuOpen((was) => !was)}
+            aria-label="Open menu"
           >
             {menuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
           </Button>
+          </DialogTrigger>
           <Brand compact />
         </div>
 
         <BudgetRail />
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6">
-          {/* One boundary around the whole route table: only the two lazy
-              routes can suspend, and each already replaces this with its own
-              skeletons as soon as its chunk lands. */}
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 sm:px-6">
+          {/* One Suspense boundary around the whole route table: only the two
+              lazy routes can suspend, and each already replaces this with its
+              own skeletons as soon as its chunk lands. The error boundary sits
+              outside it because a lazy import that *rejects* -- a chunk the
+              current image no longer serves -- is thrown, not suspended. */}
+          <ErrorBoundary>
           <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Navigate to="/feed" replace />} />
@@ -305,16 +326,18 @@ export default function App() {
             <Route
               path="/ops"
               element={
-                <RequireAuth>
+                <RequireStaff>
                   <Ops />
-                </RequireAuth>
+                </RequireStaff>
               }
             />
             <Route path="*" element={<Navigate to="/feed" replace />} />
           </Routes>
           </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>
+    </Dialog>
   );
 }
