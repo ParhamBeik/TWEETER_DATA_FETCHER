@@ -215,6 +215,19 @@ def test_the_scheduler_queue_has_a_worker_that_is_not_running_fetches():
     assert owners == ["control"], f"control must have a dedicated worker, got {owners}"
 
 
+def test_workers_disable_unused_gossip_and_mingle():
+    from pathlib import Path
+
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text()
+    worker_commands = [
+        line for line in compose.splitlines()
+        if line.lstrip().startswith("command: celery -A config worker")
+    ]
+
+    assert len(worker_commands) == 4
+    assert all("--without-gossip --without-mingle" in line for line in worker_commands)
+
+
 @pytest.mark.django_db
 def test_run_search_collapses_an_overlapping_trigger():
     """Two browser bootstraps against the one shared X session must not overlap."""

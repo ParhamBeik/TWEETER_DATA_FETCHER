@@ -470,6 +470,8 @@ class LiveMonitor:
             "summary": {
                 "eligible": 0, "checked": 0, "skipped": 0, "failed": 0,
                 "quarantined": 0, "deferred": 0,
+                "successful_endpoints": 0, "partial_endpoints": 0,
+                "failed_endpoints": 0,
             },
         }
         due_accounts: List[str] = []
@@ -528,6 +530,7 @@ class LiveMonitor:
                     username, report["accounts"][username]["reason"]
                 )
                 report["summary"]["failed"] += 1
+                report["summary"]["failed_endpoints"] += 1
 
         endpoint_pages_by_account: Dict[str, Dict[str, List[Dict[str, Any]]]] = {username: {} for username in user_ids}
         mid_loop_deferred: set[str] = set()
@@ -575,8 +578,13 @@ class LiveMonitor:
             account_report["status"] = "failed" if any(status == "failed" for status in statuses) else ("partial" if any(status == "partial" for status in statuses) else "completed")
             account_report["finished_at"] = utc_now_iso()
             self._record_endpoint_result(username, account_report)
-            if account_report.get("status") != "completed":
+            if account_report["status"] == "completed":
+                report["summary"]["successful_endpoints"] += 1
+            elif account_report["status"] == "partial":
+                report["summary"]["partial_endpoints"] += 1
+            else:
                 report["summary"]["failed"] += 1
+                report["summary"]["failed_endpoints"] += 1
         report["finished_at"] = utc_now_iso()
 
         # Print summary after cycle

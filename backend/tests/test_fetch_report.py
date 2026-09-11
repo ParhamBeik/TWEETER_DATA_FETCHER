@@ -11,7 +11,15 @@ from django.core.management import call_command
 from django.utils import timezone
 
 from fetching.management.commands.fetch_report import build_report, parse_since, render
-from tweets.models import EndpointState, FetchRun, Search, Tweet, TwitterUser
+from tweets.models import (
+    EndpointState,
+    FetchRun,
+    Search,
+    SearchHit,
+    SearchTweet,
+    Tweet,
+    TwitterUser,
+)
 
 
 def test_parse_since_accepts_hours_minutes_days():
@@ -93,12 +101,10 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
         source_subsystem="historical",
         created_at=now - timedelta(days=3),
     )
-    Tweet.objects.create(
-        dedup_key="1:search",
+    search_tweet = SearchTweet.objects.create(
+        dedup_key="1:s1",
         tweet_id="s1",
         account="random",
-        source_endpoint="SearchTimeline",
-        source_subsystem="search",
         created_at=now - timedelta(hours=2),
     )
     # A row ingested before source_subsystem existed belongs to no bucket rather
@@ -110,7 +116,8 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
         source_endpoint="UserTweets",
         created_at=now - timedelta(hours=3),
     )
-    Search.objects.create(name="war", slug="war", raw_query="war", last_run_at=now)
+    search = Search.objects.create(name="war", slug="war", raw_query="war", last_run_at=now)
+    SearchHit.objects.create(search=search, search_tweet=search_tweet)
 
     report = build_report(since=now - timedelta(hours=24), now=now)
 
@@ -124,6 +131,7 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
     assert report["historical"]["first_seen"] == 1
     assert report["search"]["upserted"] == 80
     assert report["search"]["first_seen"] == 1
+    assert report["search"]["new_hits"] == 1
     assert report["archive"]["complete"] == 1
     assert report["archive"]["walking"] == [
         {
@@ -139,6 +147,7 @@ def test_report_splits_buckets_and_lists_unfinished_archives():
     assert "LIVE" in text
     assert "@elon  12p  paused_for_quota" in text
     assert "complete=1/2" in text
+    assert "new_hits=1" in text
 
 
 @pytest.mark.django_db

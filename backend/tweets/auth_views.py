@@ -26,6 +26,8 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from fetching.health import probe_broker
+
 from .params import body_mapping
 
 MAX_USERNAME_LENGTH = 150
@@ -210,7 +212,7 @@ class HealthView(APIView):
     throttle_classes = []
 
     def get(self, request):
-        if not probe_database():
+        if not probe_database() or not probe_broker():
             return Response({"status": "unhealthy"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({"status": "ok"})
 

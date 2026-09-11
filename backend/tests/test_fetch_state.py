@@ -242,6 +242,26 @@ def test_run_artifacts_persist_raw_pages_state_and_ledger():
     assert EndpointState.objects.get(account="jack", endpoint="UserTweets").data["status"] == "completed"
 
 
+def test_live_partial_report_is_not_persisted_as_completed():
+    root = Path(tempfile.mkdtemp(prefix="tdf_live_partial_"))
+    reports = root / "data" / "historical_live" / "reports"
+    reports.mkdir(parents=True)
+    (reports / "run.json").write_text(
+        json.dumps({
+            "summary": {
+                "successful_endpoints": 42,
+                "partial_endpoints": 8,
+                "failed_endpoints": 0,
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    _summary, _ledger, status = runner._collect_run_summary(root, "live", 0)
+
+    assert status == "partial"
+
+
 @pytest.mark.django_db
 def test_raw_page_keep_statuses_gates_persistence(monkeypatch):
     """The gate the census exists to inform: only listed statuses write pages.

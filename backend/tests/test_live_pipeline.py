@@ -113,18 +113,25 @@ class LivePipelineTests(unittest.TestCase):
         monitor.live_storage.scheduler_state.return_value = {}
         monitor._get_live_user_id = MagicMock(side_effect=["1", "2"])
         monitor._fetch_live_endpoint = MagicMock(
-            return_value={"status": "completed", "pages": []}
+            side_effect=[
+                {"status": "completed", "pages": []},
+                {"status": "partial", "pages": []},
+            ]
         )
         monitor._process_sets = MagicMock(return_value={"4_union": []})
         monitor._handle_new_tweets = MagicMock(
             return_value={"new": 0, "duplicates": 0}
         )
 
-        monitor.run_cycle()
+        report = monitor.run_cycle()
 
         monitor.api_manager.human_delay.assert_any_call("between_accounts")
         monitor.fetcher.bootstrap_browser_context.assert_not_called()
         monitor.live_storage.storage.save_run_report_json.assert_called_once()
+        self.assertEqual(report["summary"]["successful_endpoints"], 1)
+        self.assertEqual(report["summary"]["partial_endpoints"], 1)
+        self.assertEqual(report["summary"]["failed_endpoints"], 0)
+        self.assertEqual(report["summary"]["failed"], 0)
 
     @patch("fetcher.live.get_priority_policy")
     def test_three_resolution_failures_quarantine_target(self, policy_mock):

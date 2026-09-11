@@ -124,6 +124,7 @@ export default function Dashboard() {
   const bySubsystem = totals.by_subsystem || {};
 
   const archive = pipeline?.archive || {};
+  const queues = pipeline?.queues || {};
   const totalWalked = (archive.complete || 0) + (archive.depth_limited || 0);
   const archivePercent = archive.tracked
     ? Math.round((totalWalked / archive.tracked) * 100)
@@ -436,8 +437,16 @@ export default function Dashboard() {
             </ul>
 
             <div className="mt-1 border-t border-line pt-3">
-              <p className="eyebrow">Endpoint health</p>
+              <p className="eyebrow">Runtime health</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {pipeline && (
+                  <Badge tone={queues.available ? TONE.ok : TONE.warn}>
+                    broker: {queues.available ? "healthy" : "unavailable"}
+                  </Badge>
+                )}
+                {(queues.unexpected_default || 0) > 0 && (
+                  <Badge tone={TONE.warn}>legacy queue: {queues.unexpected_default}</Badge>
+                )}
                 {Object.entries(pipeline?.endpoint_health || {}).map(([endpoint, state]) => (
                   <Badge key={endpoint} tone={state === "healthy" ? TONE.ok : TONE.warn}>
                     {endpoint}: {String(state).replace(/_/g, " ")}

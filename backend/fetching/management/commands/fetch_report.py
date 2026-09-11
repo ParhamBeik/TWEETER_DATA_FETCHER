@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from fetching.accounts import archive_progress
 
-from tweets.models import FetchRun, Search, Tweet, TwitterUser
+from tweets.models import FetchRun, Search, SearchHit, SearchTweet, Tweet, TwitterUser
 
 _UNITS = {"m": "minutes", "h": "hours", "d": "days"}
 
@@ -85,9 +85,14 @@ def build_report(*, since, now=None) -> dict[str, Any]:
         # live and historical no longer have to be told apart by guessing from
         # how old the tweet is. Rows ingested before that column existed carry
         # "" and are counted by neither bucket.
-        first_seen = Tweet.objects.filter(
-            ingested_at__gte=since, source_subsystem=subsystem
-        ).count()
+        if subsystem == "search":
+            first_seen = SearchTweet.objects.filter(ingested_at__gte=since).count()
+            new_hits = SearchHit.objects.filter(first_seen_at__gte=since).count()
+        else:
+            first_seen = Tweet.objects.filter(
+                ingested_at__gte=since, source_subsystem=subsystem
+            ).count()
+            new_hits = None
         upserted = sum(_upserted(r) for r in subset)
         polled: set[str] = set()
         for run in subset:
@@ -97,6 +102,7 @@ def build_report(*, since, now=None) -> dict[str, Any]:
             "pages": sum(_pages(r) for r in subset),
             "upserted": upserted,
             "first_seen": first_seen,
+            "new_hits": new_hits,
             "reupserted": max(0, upserted - first_seen),
             "polled": sorted(polled),
             "deferred": sum(_report_int(r, "deferred") for r in subset),
@@ -160,6 +166,7 @@ def render(report: dict[str, Any]) -> str:
             f"statuses={bucket['statuses'] or '-'}"
         )
         if name == "search":
+            lines.append(f"  new_hits={bucket['new_hits']}")
             for query in bucket.get("queries") or []:
                 flag = "on" if query["enabled"] else "off"
                 lines.append(
@@ -176,6 +183,8 @@ def render(report: dict[str, Any]) -> str:
             f"  {archive['depth_limited']} account(s) stopped at X's serving depth"
             f" -- as deep as the API goes, not their first tweet"
         )
+        if not archive["walking"]:
+            lines.append("  archive walk idle: no account can currently page deeper")
     if archive["walking"]:
         lines.append("  still walking:")
         for row in archive["walking"]:

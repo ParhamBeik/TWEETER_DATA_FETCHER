@@ -106,7 +106,7 @@ services:
   # allows, and why it only writes fields that actually changed).
   worker_live:
     <<: *app
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q live -n live@%h
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q live -n live@%h
     healthcheck: *worker-healthcheck
     mem_limit: 512m
     # Live's UserTweets path is HTTP-only; Chromium only fires via the reactive
@@ -116,7 +116,7 @@ services:
 
   worker_historical:
     <<: *app
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q historical -n historical@%h
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q historical -n historical@%h
     healthcheck: *worker-healthcheck
     # UserTweets pagination never invokes Chromium here -- HTTP only.
     mem_limit: 384m
@@ -130,7 +130,7 @@ services:
   # retention jobs, and chunked photo downloads, hence the small allowance.
   worker_control:
     <<: *app
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q control -n control@%h
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q control -n control@%h
     healthcheck: *worker-healthcheck
     mem_limit: 256m
     volumes:
@@ -138,7 +138,7 @@ services:
 
   worker_search:
     <<: *app
-    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 -Q search -n search@%h
+    command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q search -n search@%h
     healthcheck: *worker-healthcheck
     # Deep-search Chromium capture needs ~2g: below that the renderer hard-crashes
     # mid-scroll ("Page crashed") and the run degrades to HTTP page 1. Live and

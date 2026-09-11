@@ -68,4 +68,15 @@ for attempt in $(seq 1 20); do
   sleep 3
 done
 
+# Current tasks are routed to named queues. Anything in Celery's default queue
+# is an unroutable legacy message and must make the deploy visibly fail rather
+# than sitting unnoticed forever.
+default_queue=$("${COMPOSE[@]}" exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli --no-auth-warning LLEN celery')
+if [ "$default_queue" -ne 0 ]; then
+  echo "FATAL: default Celery queue contains $default_queue legacy message(s)" >&2
+  exit 1
+fi
+
+"${COMPOSE[@]}" exec -T web python manage.py fetch_report --since 24h
+
 docker image prune -f

@@ -4,6 +4,8 @@ Integration level throughout: these assert the contract the frontend codes
 against and the boundary that keeps an open signup from handing out control of
 the shared X session, neither of which survives being mocked.
 """
+from unittest.mock import MagicMock
+
 import pytest
 from django.contrib.auth.models import User
 from django.test import override_settings
@@ -277,6 +279,31 @@ def test_health_is_unhealthy_when_the_database_does_not_answer(monkeypatch):
 
     assert resp.status_code == 503
     assert resp.data == {"status": "unhealthy"}
+
+
+@pytest.mark.django_db
+def test_health_is_unhealthy_when_the_broker_does_not_answer(monkeypatch):
+    monkeypatch.setattr("tweets.auth_views.probe_broker", lambda: False)
+    resp = APIClient().get("/api/health/")
+
+    assert resp.status_code == 503
+    assert resp.data == {"status": "unhealthy"}
+
+
+@override_settings(CELERY_BROKER_URL="redis://broker:6379/0")
+def test_queue_health_reports_named_and_legacy_depths(monkeypatch):
+    from fetching.health import queue_health
+
+    client = MagicMock()
+    client.pipeline.return_value.execute.return_value = [0, 1, 2, 3, 4]
+    monkeypatch.setattr("fetching.health.Redis.from_url", lambda *args, **kwargs: client)
+
+    health = queue_health()
+
+    assert health["depths"] == {
+        "live": 0, "historical": 1, "search": 2, "control": 3, "celery": 4,
+    }
+    assert health["unexpected_default"] == 4
 
 
 def test_auth_config_reports_open_registration():

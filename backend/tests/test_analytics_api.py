@@ -85,11 +85,15 @@ def test_window_is_clamped_and_survives_nonsense(client):
 
 
 @pytest.mark.django_db
-def test_pipeline_reports_quota_cadence_and_backfill(client):
+def test_pipeline_reports_quota_cadence_and_backfill(client, monkeypatch):
     from django.utils import timezone
 
     from tweets.models import FetchRun, KeyValueState
 
+    monkeypatch.setattr(
+        "tweets.analytics.queue_health",
+        lambda: {"available": True, "depths": {"live": 0, "celery": 2}, "unexpected_default": 2},
+    )
     TwitterUser.objects.create(handle="jack", tracking=True)
     TwitterUser.objects.create(
         handle="ghost", tracking=True, quarantined=True, quarantine_reason="dead handle"
@@ -112,6 +116,7 @@ def test_pipeline_reports_quota_cadence_and_backfill(client):
     assert quota["UserTweets"]["remaining"] == 12
     assert 0 < quota["UserTweets"]["resets_in_seconds"] <= 300
     assert body["endpoint_health"]["UserTweets"] == "healthy"
+    assert body["queues"]["unexpected_default"] == 2
 
     live = next(row for row in body["subsystems"] if row["subsystem"] == "live")
     assert live["last_run"]["ingested_tweets"] == 7
@@ -389,4 +394,3 @@ def test_case_insensitive_login(client):
     response = anon.post("/api/auth/login/", {"username": "parhambeik", "password": "secretpassword123"})
     assert response.status_code == 200
     assert response.data["user"]["username"] == "ParhamBeik"
-

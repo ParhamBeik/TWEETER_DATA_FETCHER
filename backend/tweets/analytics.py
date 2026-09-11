@@ -25,6 +25,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from fetching.accounts import archive_progress, silent_accounts
+from fetching.health import queue_health
 # parse_since already turns "24h"/"30d" into a timedelta for `manage.py
 # fetch_report`; one spelling of the range syntax for the CLI and the API both.
 from fetching.management.commands.fetch_report import parse_since
@@ -521,6 +522,7 @@ class PipelineView(APIView):
             "subsystems": subsystems,
             "rate_limits": _rate_limits(),
             "endpoint_health": _endpoint_health(),
+            "queues": queue_health(),
             "running": running,
             "archive": {
                 "complete": len(progress["complete"]),
