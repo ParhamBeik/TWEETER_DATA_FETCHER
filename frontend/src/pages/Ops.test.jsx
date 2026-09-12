@@ -221,6 +221,15 @@ describe("run list and detail", () => {
     expect(await screen.findByText("fetched 7 tweets")).toBeInTheDocument();
   });
 
+  it("wraps a long run identifier instead of widening a narrow screen", async () => {
+    const user = userEvent.setup();
+    const runId = "SAAS_340EF682FF534A01992BD4216CD8EBA0";
+    routeApi({ runs: [run({ run_id: runId })], detail: run({ run_id: runId }) });
+    render(<Ops />);
+    await user.click(await screen.findByRole("button", { name: /completed/ }));
+    expect(await screen.findByText(runId)).toHaveClass("break-all");
+  });
+
   it("renders the failure ledger for a failed run", async () => {
     const user = userEvent.setup();
     routeApi({

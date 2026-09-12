@@ -83,6 +83,13 @@ describe("password checks", () => {
 });
 
 describe("Signup form", () => {
+  it("does not show a form while registration availability is unknown", () => {
+    registrationOpen.mockReturnValue(null);
+    renderSignup();
+    expect(screen.getByRole("heading", { name: "Checking signup availability" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Username")).toBeNull();
+  });
+
   it("keeps submit disabled until the password rules pass", async () => {
     const user = userEvent.setup();
     renderSignup();

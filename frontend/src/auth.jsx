@@ -94,7 +94,7 @@ export function useAuth() {
   API blip does not hide the form; the register endpoint is still the gate.
 */
 export function useRegistrationOpen() {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(null);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/config/")
@@ -103,7 +103,7 @@ export function useRegistrationOpen() {
         if (!cancelled) setOpen(Boolean(data.allow_registration));
       })
       .catch(() => {
-        /* fail open */
+        if (!cancelled) setOpen(true);
       });
     return () => {
       cancelled = true;

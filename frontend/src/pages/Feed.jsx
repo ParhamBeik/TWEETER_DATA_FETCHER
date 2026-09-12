@@ -397,11 +397,11 @@ export default function Feed() {
     <section className="flex flex-col gap-5">
       <PageHead
         label="Feed"
-        title="Tracked accounts"
+        title="Tracked posts"
         // Naming the collector is the point: this page and the Search page look
         // alike and hold different things, and the difference used to be
         // invisible because both streams were merged into this one.
-        lede="Everything the account collector has captured from the timelines you track. Saved searches are on their own page."
+        lede="Posts collected from tracked accounts. Results from saved searches stay separate on Search."
         actions={
           <>
             <Button

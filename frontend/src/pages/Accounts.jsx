@@ -143,8 +143,8 @@ export default function Accounts() {
     <section className="flex flex-col gap-5">
       <PageHead
         label="Accounts"
-        title="Roster, tiers and collection health"
-        lede="A tier sets how much of the shared X budget an account may spend. The interval beside it is what the collector actually measured from how often that account posts."
+        title="Tracked accounts"
+        lede="Prioritize accounts and check whether each timeline is collecting normally. Polling intervals adapt to how often an account posts."
       />
 
       {isStaff && (

@@ -65,6 +65,16 @@ export default function Signup() {
 
   const firstOf = (field) => fieldErrors[field]?.[0];
 
+  if (allowRegistration === null) {
+    return (
+      <AuthLayout
+        eyebrow="One moment"
+        title="Checking signup availability"
+        subtitle="This deployment decides whether new accounts can be created."
+      />
+    );
+  }
+
   if (!allowRegistration) {
     return (
       <AuthLayout

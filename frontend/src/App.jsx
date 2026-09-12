@@ -18,23 +18,21 @@ import { Dialog, DialogContent, DialogTrigger } from "@/ui/dialog";
 import { Brand } from "./Logo";
 import { cn } from "@/lib/cn";
 import { Button } from "@/ui/button";
-import Feed from "./pages/Feed";
-import SearchWorkspace from "./pages/Search";
-import Accounts from "./pages/Accounts";
-import Ops from "./pages/Ops";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import LegacyRedirect from "./LegacyRedirect";
 import { Skeleton } from "@/ui/controls";
 
-// Only these two pull in recharts, and it is the single largest thing in the
-// bundle -- eager, it downloaded on the login screen for a chart nobody had
-// asked for yet. Both pages already render Skeletons while their data loads, so
-// the split shows the loading language they use anyway rather than inventing one.
+// Authenticated routes are loaded on demand, so the login screen does not pay
+// for tables, tweet rendering, dialogs, or charts before a session exists.
+const Feed = lazy(() => import("./pages/Feed"));
+const SearchWorkspace = lazy(() => import("./pages/Search"));
+const Accounts = lazy(() => import("./pages/Accounts"));
+const Ops = lazy(() => import("./pages/Ops"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Analyze = lazy(() => import("./pages/Analyze"));
 
-/** Matches the stat-tile rows both lazy pages open with. */
+/** A neutral route skeleton that works for reading and instrument pages. */
 function PageFallback() {
   return (
     <div className="flex flex-col gap-5">
@@ -234,11 +232,9 @@ export default function App() {
         <BudgetRail />
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-4 py-6 sm:px-6">
-          {/* One Suspense boundary around the whole route table: only the two
-              lazy routes can suspend, and each already replaces this with its
-              own skeletons as soon as its chunk lands. The error boundary sits
-              outside it because a lazy import that *rejects* -- a chunk the
-              current image no longer serves -- is thrown, not suspended. */}
+          {/* One Suspense boundary covers every authenticated route. The error
+              boundary sits outside it because a lazy import that rejects -- a
+              chunk the current image no longer serves -- is thrown, not suspended. */}
           <ErrorBoundary>
           <Suspense fallback={<PageFallback />}>
           <Routes>

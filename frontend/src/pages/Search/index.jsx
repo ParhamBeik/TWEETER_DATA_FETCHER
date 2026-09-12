@@ -213,8 +213,8 @@ export default function SearchWorkspace() {
     <section className="flex flex-col gap-5">
       <PageHead
         label="Search"
-        title="Saved queries"
-        lede="Each phrase is its own recurring job with its own schedule, history and results. Deleting one stops and removes everything behind it."
+        title="Saved searches"
+        lede="Each saved search runs on its own schedule and keeps its results separate."
         actions={
           isStaff && (
             <Button variant="primary" onClick={() => setCreating(true)}>
@@ -234,7 +234,7 @@ export default function SearchWorkspace() {
 
       <div className="grid gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <Panel className="h-max overflow-hidden">
-          <PanelHead label={`${searches?.length ?? 0} queries`} className="px-3 py-2" />
+          <PanelHead label={`${searches?.length ?? 0} searches`} className="px-3 py-2" />
           {searches === null ? (
             <div className="flex flex-col gap-1 p-3">
               <Skeleton className="h-10" />
@@ -242,7 +242,7 @@ export default function SearchWorkspace() {
             </div>
           ) : searches.length === 0 ? (
             <p className="p-3 text-xs text-fg-muted">
-              No saved queries yet. Create one to start collecting from X search.
+              No saved searches yet. Create one to start collecting from X search.
             </p>
           ) : (
             <nav aria-label="Saved searches">
@@ -261,8 +261,8 @@ export default function SearchWorkspace() {
         </Panel>
 
         {!selected ? (
-          <Empty title="Pick a query">
-            Choose a saved query to read what it found and see when it next runs.
+          <Empty title="Choose a search">
+            Select a saved search to review its results and next scheduled run.
           </Empty>
         ) : (
           <div className="flex min-w-0 flex-col gap-4">

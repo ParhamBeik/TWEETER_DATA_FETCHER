@@ -25,11 +25,11 @@ export function PanelHead({ label, title, lede, actions, className }) {
       )}
     >
       <div className="min-w-0">
-        {label && <p className="eyebrow">{label}</p>}
+        {label && <p className="eyebrow break-all">{label}</p>}
         {title && <h2 className="mt-0.5 text-md font-semibold tracking-tight">{title}</h2>}
         {lede && <p className="mt-1 max-w-prose text-xs text-fg-muted">{lede}</p>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }

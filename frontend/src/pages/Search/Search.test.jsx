@@ -129,13 +129,13 @@ describe("the query rail", () => {
   it("invites the operator to pick one before any is selected", async () => {
     routeApi();
     renderWorkspace("/search");
-    expect(await screen.findByText("Pick a query")).toBeInTheDocument();
+    expect(await screen.findByText("Choose a search")).toBeInTheDocument();
   });
 
   it("explains an empty rail rather than showing nothing", async () => {
     routeApi({ searches: [] });
     renderWorkspace("/search");
-    expect(await screen.findByText(/No saved queries yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No saved searches yet/)).toBeInTheDocument();
   });
 });
 
@@ -421,7 +421,7 @@ describe("deleting a query", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "search 2" })).toBeInTheDocument();
-    expect(screen.queryByText("Pick a query")).toBeNull();
+    expect(screen.queryByText("Choose a search")).toBeNull();
     vi.useRealTimers();
   });
 });

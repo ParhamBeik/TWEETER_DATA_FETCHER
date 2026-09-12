@@ -7,7 +7,10 @@ export const TabPanel = Primitive.Content;
 export function TabList({ className, ...props }) {
   return (
     <Primitive.List
-      className={cn("flex items-center gap-1 border-b border-line", className)}
+      className={cn(
+        "flex max-w-full items-center gap-1 overflow-x-auto border-b border-line",
+        className,
+      )}
       {...props}
     />
   );
@@ -18,7 +21,7 @@ export function Tab({ className, ...props }) {
   return (
     <Primitive.Trigger
       className={cn(
-        "-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted",
+        "-mb-px shrink-0 border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted",
         "transition-colors hover:text-fg data-[state=active]:border-accent data-[state=active]:text-fg",
         className,
       )}

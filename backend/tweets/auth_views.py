@@ -176,9 +176,9 @@ class MeView(APIView):
 class AuthConfigView(APIView):
     """Public flags the signed-out screens need before anyone logs in.
 
-    Production closes signup (`ALLOW_REGISTRATION=0`). The login page used to
-    keep offering "Create an account" anyway, which led to a 403 after the form
-    was filled. This is how the console knows to hide that path.
+    Deployments can close signup with `ALLOW_REGISTRATION=0`. This is how the
+    console knows whether to offer the registration path before the user fills
+    out the form.
     """
 
     permission_classes = [AllowAny]

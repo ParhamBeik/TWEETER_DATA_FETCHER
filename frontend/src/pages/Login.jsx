@@ -42,7 +42,7 @@ export default function Login() {
       subtitle="Your research workspace is ready when you are."
       error={error}
       footer={
-        allowRegistration ? (
+        allowRegistration === null ? null : allowRegistration ? (
           <>
             New to Signal Archive? <Link className="text-accent hover:underline" to="/signup">Create an account</Link>
           </>

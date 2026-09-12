@@ -63,7 +63,7 @@ function Gauge({ endpoint, remaining, limit, resetsInSeconds }) {
   const role = tone(share);
   const label = endpointLabel(endpoint);
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
+    <div className="flex shrink-0 items-center gap-2.5">
       <span className="font-mono text-2xs uppercase tracking-wider text-fg-dim">{label}</span>
       <span
         className="flex items-center gap-px"
@@ -114,28 +114,30 @@ export default function BudgetRail() {
   const running = pipeline?.running || [];
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line bg-ink-850 px-4 py-2 sm:px-6">
+    <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 border-b border-line bg-ink-850 px-4 py-2 sm:flex sm:flex-wrap sm:gap-x-6 sm:px-6">
       <span className="eyebrow shrink-0">X budget</span>
 
-      {limits.length > 0 ? (
-        limits.map((row) => (
-          <Gauge
-            key={row.endpoint}
-            endpoint={row.endpoint}
-            remaining={row.remaining}
-            limit={row.limit}
-            resetsInSeconds={row.resets_in_seconds}
-          />
-        ))
-      ) : (
-        <span className="text-xs text-fg-dim">
-          {reachable
-            ? "No quota reported yet — the collector writes this after its first request."
-            : "Collector state unreachable."}
-        </span>
-      )}
+      <div className="col-span-2 flex min-w-0 gap-6 overflow-x-auto sm:contents">
+        {limits.length > 0 ? (
+          limits.map((row) => (
+            <Gauge
+              key={row.endpoint}
+              endpoint={row.endpoint}
+              remaining={row.remaining}
+              limit={row.limit}
+              resetsInSeconds={row.resets_in_seconds}
+            />
+          ))
+        ) : (
+          <span className="text-xs text-fg-dim">
+            {reachable
+              ? "No quota reported yet — the collector writes this after its first request."
+              : "Collector state unreachable."}
+          </span>
+        )}
+      </div>
 
-      <span className="ml-auto flex items-center gap-3">
+      <span className="col-start-2 row-start-1 ml-auto flex items-center gap-3 sm:static">
         {running.length > 0 ? (
           <Status tone={TONE.active}>
             {running.length === 1

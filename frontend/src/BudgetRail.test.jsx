@@ -46,6 +46,12 @@ describe("budget rail", () => {
     expect(meter).toHaveAttribute("aria-valuemax", "50");
   });
 
+  it("keeps endpoint gauges in one scrollable row on narrow screens", async () => {
+    render(<BudgetRail />);
+    const meter = await screen.findByRole("meter", { name: /Timeline requests remaining/ });
+    expect(meter.closest(".overflow-x-auto")).toBeInTheDocument();
+  });
+
   it("shows a friendly label for timeline quota", async () => {
     render(<BudgetRail />);
     expect(await screen.findByText("Timeline")).toBeInTheDocument();

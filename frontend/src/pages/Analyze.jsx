@@ -154,52 +154,54 @@ function Topics({ data, params, onReload, navigate, range }) {
                 : "Either the archive is quiet, or every term is running at its usual rate. Widen the time range to compare against a longer baseline."}
             </Empty>
           ) : (
-            <table className="w-full">
-              <caption className="sr-only">
-                Terms ranked by {rank === "volume" ? "post count" : "how much their rate rose"}
-              </caption>
-              <thead>
-                <tr className="border-b border-line text-left">
-                  <th scope="col" className="pb-2 pr-3 eyebrow font-normal">
-                    Term
-                  </th>
-                  <th scope="col" className="pb-2 pr-3 text-right eyebrow font-normal">
-                    Posts
-                  </th>
-                  <th scope="col" className="pb-2 pr-3 text-right eyebrow font-normal">
-                    Accounts
-                  </th>
-                  {rank !== "volume" && (
-                    <th
-                      scope="col"
-                      className="pb-2 pr-3 text-right eyebrow font-normal"
-                      title="How unusual this term's rate is, accounting for sample size. This is the sort order."
-                    >
-                      Surge
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[22rem]">
+                <caption className="sr-only">
+                  Terms ranked by {rank === "volume" ? "post count" : "how much their rate rose"}
+                </caption>
+                <thead>
+                  <tr className="border-b border-line text-left">
+                    <th scope="col" className="pb-2 pr-3 eyebrow font-normal">
+                      Term
                     </th>
-                  )}
-                  <th scope="col" className="pb-2 pr-3 eyebrow font-normal">
-                    Against baseline
-                  </th>
-                  <th scope="col" className="pb-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <TopicRow
-                    key={`${row.kind}:${row.topic}`}
-                    row={row}
-                    rank={rank}
-                    showKind={dimension === "both"}
-                    canHide={isStaff}
-                    onHide={hide}
-                    onOpen={(topic) =>
-                      navigate(`/feed?q=${encodeURIComponent(topic)}&window=${encodeURIComponent(range || "24h")}`)
-                    }
-                  />
-                ))}
-              </tbody>
-            </table>
+                    <th scope="col" className="pb-2 pr-3 text-right eyebrow font-normal">
+                      Posts
+                    </th>
+                    <th scope="col" className="pb-2 pr-3 text-right eyebrow font-normal">
+                      Accounts
+                    </th>
+                    {rank !== "volume" && (
+                      <th
+                        scope="col"
+                        className="pb-2 pr-3 text-right eyebrow font-normal"
+                        title="How unusual this term's rate is, accounting for sample size. This is the sort order."
+                      >
+                        Surge
+                      </th>
+                    )}
+                    <th scope="col" className="pb-2 pr-3 eyebrow font-normal">
+                      Against baseline
+                    </th>
+                    <th scope="col" className="pb-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <TopicRow
+                      key={`${row.kind}:${row.topic}`}
+                      row={row}
+                      rank={rank}
+                      showKind={dimension === "both"}
+                      canHide={isStaff}
+                      onHide={hide}
+                      onOpen={(topic) =>
+                        navigate(`/feed?q=${encodeURIComponent(topic)}&window=${encodeURIComponent(range || "24h")}`)
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </PanelBody>
       </Panel>
@@ -370,7 +372,8 @@ function Accounts({ data }) {
             Widen the time range, or check the collector on the dashboard.
           </Empty>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[26rem]">
             <caption className="sr-only">
               Tracked accounts ranked by average engagement per post
             </caption>
@@ -412,7 +415,8 @@ function Accounts({ data }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
       </PanelBody>
     </Panel>

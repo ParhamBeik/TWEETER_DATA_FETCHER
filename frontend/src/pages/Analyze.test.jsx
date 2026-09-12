@@ -368,6 +368,14 @@ describe("Analyze narratives", () => {
 });
 
 describe("Analyze accessibility", () => {
+  it("contains narrow-screen controls and topic columns instead of widening the page", async () => {
+    renderAnalyze();
+    const table = await screen.findByRole("table", { name: /Terms ranked by/ });
+    expect(table.parentElement).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("tablist")).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("group", { name: "Rank by" }).parentElement).toHaveClass("flex-wrap");
+  });
+
   it("names the filter landmark", async () => {
     renderAnalyze();
     expect(
