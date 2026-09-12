@@ -319,3 +319,33 @@ def test_auth_config_reports_closed_registration():
 
     assert resp.status_code == 200
     assert resp.data == {"allow_registration": False}
+
+
+@pytest.mark.django_db
+def test_signing_in_records_last_login():
+    """SIMPLE_JWT's UPDATE_LAST_LOGIN only applies inside TokenObtainSerializer,
+    which LoginView does not use. Without an explicit call, last_login stays null
+    for every account forever and /admin/ cannot show who has actually signed in.
+    """
+    user = User.objects.create_user(username="erin", password=GOOD_PASSWORD)
+    assert user.last_login is None
+
+    resp = APIClient().post(
+        "/api/auth/login/", {"username": "erin", "password": GOOD_PASSWORD}, format="json"
+    )
+
+    assert resp.status_code == 200
+    user.refresh_from_db()
+    assert user.last_login is not None
+
+
+@pytest.mark.django_db
+def test_a_rejected_sign_in_does_not_record_last_login():
+    user = User.objects.create_user(username="erin2", password=GOOD_PASSWORD)
+
+    APIClient().post(
+        "/api/auth/login/", {"username": "erin2", "password": "wrong"}, format="json"
+    )
+
+    user.refresh_from_db()
+    assert user.last_login is None

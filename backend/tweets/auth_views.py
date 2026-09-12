@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, update_last_login
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -142,6 +142,13 @@ class LoginView(APIView):
             # One message for both "no such user" and "wrong password", so the
             # endpoint cannot be used to enumerate accounts.
             return Response({"detail": "Incorrect username or password."}, status=400)
+        # SIMPLE_JWT's UPDATE_LAST_LOGIN does nothing here: SimpleJWT applies it
+        # inside TokenObtainSerializer, and this view authenticates directly
+        # rather than going through that serializer. Without this call last_login
+        # stays null for every account forever, so /admin/ cannot answer "who has
+        # actually used this?" -- which is the question worth asking while
+        # onboarding people.
+        update_last_login(None, user)
         return Response(issue_tokens(user))
 
 
