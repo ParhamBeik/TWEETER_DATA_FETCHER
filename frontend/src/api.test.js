@@ -135,6 +135,21 @@ describe("api()", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(api("/feed/")).rejects.toThrow("Network error — the API is unreachable.");
   });
+
+  it("turns a caller-supplied deadline into an actionable timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+    })));
+
+    const request = api("/analytics/narratives/", { timeoutMs: 20 });
+    const assertion = expect(request).rejects.toThrow(
+      "Request timed out — try a shorter range or try again.",
+    );
+    await vi.advanceTimersByTimeAsync(20);
+    await assertion;
+    vi.useRealTimers();
+  });
 });
 
 describe("expired access token", () => {

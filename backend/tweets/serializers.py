@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from rest_framework import serializers
 
 from fetching.accounts import (
@@ -159,6 +161,20 @@ class BaseTweetSerializer(serializers.ModelSerializer):
             if key in seen:
                 continue
             seen.add(key)
+            if not isinstance(item, dict):
+                unique.append(item)
+                continue
+
+            # X occasionally supplies a display label such as "t.co" as the
+            # expanded URL. Browsers treat that as a relative console path;
+            # retain the canonical short URL when it is the only real target.
+            expanded = str(item.get("expanded") or "")
+            short = str(item.get("short") or "")
+            if urlparse(expanded).scheme not in {"http", "https"} and urlparse(short).scheme in {
+                "http",
+                "https",
+            }:
+                item = {**item, "expanded": short}
             unique.append(item)
         return {**entities, "urls": unique}
     reply_to = serializers.SerializerMethodField()

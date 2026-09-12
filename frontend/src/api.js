@@ -92,20 +92,28 @@ function endSession() {
   }
 }
 
-async function send(path, { method, body }) {
+async function send(path, { method, body, timeoutMs }) {
   const headers = { "Content-Type": "application/json" };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeout = controller && setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(`/api${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
     });
-  } catch {
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new Error("Request timed out — try a shorter range or try again.");
+    }
     // fetch() rejects only on network failure, where there is no status text to
     // report. Without this every offline/DNS blip surfaced as the browser's
     // opaque "Failed to fetch" in the middle of the UI.
     throw new Error("Network error — the API is unreachable.");
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -125,17 +133,17 @@ export async function authorizedFetch(url, init = {}) {
   return res;
 }
 
-export async function api(path, { method = "GET", body, retry = true } = {}) {
+export async function api(path, { method = "GET", body, retry = true, timeoutMs } = {}) {
   // A page load starts with no access token -- it is memory-only by design --
   // so sending straight away spends a request that is certain to 401 and logs a
   // console error on every cold load. Trade the refresh token in first; the
   // shared promise means several parallel calls still cause one refresh.
   if (!accessToken && retry && getRefreshToken()) await refreshSession();
-  let res = await send(path, { method, body });
+  let res = await send(path, { method, body, timeoutMs });
 
   if (res.status === 401 && retry && getRefreshToken()) {
     if (await refreshSession()) {
-      res = await send(path, { method, body });
+      res = await send(path, { method, body, timeoutMs });
     }
   }
 

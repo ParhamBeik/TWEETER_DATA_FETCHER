@@ -458,7 +458,11 @@ export default function Analyze() {
       params.set("rank", rank);
     }
     try {
-      const result = await api(`/analytics/${tab}/?${params}`);
+      const result = await api(`/analytics/${tab}/?${params}`, {
+        // Narratives is the only pairwise analytics query. Its server-side
+        // limit is 15 seconds; fail visibly if an older deployment misses it.
+        timeoutMs: tab === "narratives" ? 20_000 : undefined,
+      });
       if (request !== requestSeq.current) return;
       setData(result);
       setLoadedKey(key);
