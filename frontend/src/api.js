@@ -106,12 +106,14 @@ async function send(path, { method, body, timeoutMs }) {
     });
   } catch (error) {
     if (controller?.signal.aborted) {
-      throw new Error("Request timed out — try a shorter range or try again.");
+      throw new Error("Request timed out — try a shorter range or try again.", {
+        cause: error,
+      });
     }
     // fetch() rejects only on network failure, where there is no status text to
     // report. Without this every offline/DNS blip surfaced as the browser's
     // opaque "Failed to fetch" in the middle of the UI.
-    throw new Error("Network error — the API is unreachable.");
+    throw new Error("Network error — the API is unreachable.", { cause: error });
   } finally {
     if (timeout) clearTimeout(timeout);
   }
