@@ -90,8 +90,10 @@ export function useAuth() {
 
 /** Whether the signed-out screens should offer signup.
 
-  Production closes registration. Fail open if the probe cannot run, so a local
-  API blip does not hide the form; the register endpoint is still the gate.
+  Driven by ALLOW_REGISTRATION on the deployment, which is currently on in
+  production (docker-compose.prod.yml). Fail open if the probe cannot run, so a
+  local API blip does not hide the form; the register endpoint is still the gate,
+  and it returns 403 when registration is closed regardless of what this says.
 */
 export function useRegistrationOpen() {
   const [open, setOpen] = useState(null);

@@ -135,6 +135,19 @@ export async function authorizedFetch(url, init = {}) {
   return res;
 }
 
+// DRF's own 429 body reads "Request was throttled. Expected available in 43
+// seconds." -- accurate, but it lands on the sign-in screen as an accusation and
+// says nothing the person can act on. Rewrite it, using the Retry-After header
+// (which DRF always sets on a throttled response) when the wait is worth naming.
+export function throttleMessage(res) {
+  const seconds = Number(res.headers?.get?.("Retry-After"));
+  if (Number.isFinite(seconds) && seconds > 0) {
+    const wait = seconds < 60 ? `${Math.ceil(seconds)} seconds` : `${Math.ceil(seconds / 60)} minutes`;
+    return `Too many attempts from this network — try again in about ${wait}.`;
+  }
+  return "Too many attempts from this network — wait a moment and try again.";
+}
+
 export async function api(path, { method = "GET", body, retry = true, timeoutMs } = {}) {
   // A page load starts with no access token -- it is memory-only by design --
   // so sending straight away spends a request that is certain to 401 and logs a
@@ -158,7 +171,9 @@ export async function api(path, { method = "GET", body, retry = true, timeoutMs 
 
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
-    const error = new Error(payload.detail || res.statusText);
+    const error = new Error(
+      res.status === 429 ? throttleMessage(res) : payload.detail || res.statusText
+    );
     // Per-field messages from the register endpoint, so a form can point at the
     // input that was wrong instead of showing one banner.
     error.fieldErrors = payload.errors || null;

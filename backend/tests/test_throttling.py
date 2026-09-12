@@ -21,7 +21,15 @@ PASSWORD = "correct-horse-battery"
 
 # The production rates, restated here rather than imported so a change to them
 # has to be made deliberately in both places.
-RATES = {"anon": "60/min", "login": "5/min", "analytics": "30/min", "exports": "10/hour"}
+RATES = {
+    "anon": "240/min",
+    "login": "20/min",
+    "signup": "30/hour",
+    "analytics": "30/min",
+    "exports": "10/hour",
+}
+LOGIN_LIMIT = 20
+SIGNUP_LIMIT = 30
 
 
 @pytest.fixture
@@ -47,7 +55,7 @@ def test_repeated_failed_logins_are_throttled(throttled):
     User.objects.create_user(username="dave", password=PASSWORD)
     client = APIClient()
 
-    for _ in range(5):
+    for _ in range(LOGIN_LIMIT):
         response = client.post(
             "/api/auth/login/", {"username": "dave", "password": "wrong"}, format="json"
         )
@@ -67,7 +75,7 @@ def test_the_throttle_counts_attempts_not_failures(throttled):
     User.objects.create_user(username="dave", password=PASSWORD)
     client = APIClient()
 
-    for _ in range(5):
+    for _ in range(LOGIN_LIMIT):
         client.post(
             "/api/auth/login/", {"username": "dave", "password": PASSWORD}, format="json"
         )
@@ -80,7 +88,7 @@ def test_the_throttle_counts_attempts_not_failures(throttled):
 
 @pytest.mark.django_db
 def test_a_normal_sign_in_is_never_throttled(throttled):
-    """Five a minute has to be invisible to a person typing a password."""
+    """The ceiling has to be invisible to a person typing a password."""
     User.objects.create_user(username="dave", password=PASSWORD)
     client = APIClient()
 
@@ -140,7 +148,7 @@ def test_spoofed_x_forwarded_for_cannot_bypass_throttle(throttled, settings):
     User.objects.create_user(username="dave2", password=PASSWORD)
     client = APIClient()
 
-    for i in range(5):
+    for i in range(LOGIN_LIMIT):
         client.post(
             "/api/auth/login/",
             {"username": "dave2", "password": "wrong"},
@@ -155,6 +163,71 @@ def test_spoofed_x_forwarded_for_cannot_bypass_throttle(throttled, settings):
         HTTP_X_FORWARDED_FOR="9.9.9.9, 10.0.0.1",
     )
     assert blocked.status_code == 429
+
+
+@pytest.mark.django_db
+def test_registration_is_throttled(throttled):
+    """Open signup means anyone who finds the URL can mint accounts. Without a
+    scope of its own, registration only spends the shared per-minute anon budget,
+    which refills fast enough to script hundreds of accounts in an afternoon.
+    """
+    client = APIClient()
+
+    for i in range(SIGNUP_LIMIT):
+        response = client.post(
+            "/api/auth/register/",
+            {"username": f"newcomer{i}", "password": "correct-horse-battery"},
+            format="json",
+        )
+        assert response.status_code == 201
+
+    blocked = client.post(
+        "/api/auth/register/",
+        {"username": "one-too-many", "password": "correct-horse-battery"},
+        format="json",
+    )
+    assert blocked.status_code == 429
+    assert not User.objects.filter(username="one-too-many").exists()
+
+
+@pytest.mark.django_db
+def test_a_group_signing_up_from_one_address_is_not_throttled(throttled):
+    """The reason the ceiling is hourly and not tight: everyone on one office or
+    venue network shares a NAT'd address, so a whole room looks like a single
+    client. A rate sized for one person locks out everybody behind the router,
+    which is indistinguishable from the product being broken.
+    """
+    client = APIClient()
+
+    for i in range(12):
+        response = client.post(
+            "/api/auth/register/",
+            {"username": f"colleague{i}", "password": "correct-horse-battery"},
+            format="json",
+        )
+        assert response.status_code == 201, f"signup {i} from the shared address was rejected"
+
+
+@pytest.mark.django_db
+def test_signup_and_login_budgets_are_separate(throttled):
+    """A user who has just exhausted nothing in particular should not find sign-in
+    metered by other people's signups, and vice versa -- they are different
+    scopes precisely so one cannot starve the other.
+    """
+    User.objects.create_user(username="dave", password=PASSWORD)
+    client = APIClient()
+
+    for i in range(SIGNUP_LIMIT):
+        client.post(
+            "/api/auth/register/",
+            {"username": f"crowd{i}", "password": "correct-horse-battery"},
+            format="json",
+        )
+
+    signin = client.post(
+        "/api/auth/login/", {"username": "dave", "password": PASSWORD}, format="json"
+    )
+    assert signin.status_code == 200
 
 
 @pytest.mark.django_db

@@ -150,11 +150,24 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.ScopedRateThrottle",
     ],
+    # Every rate below is keyed on client IP, and a room of people on one office
+    # or conference network shares a single NAT'd address. The ceilings are
+    # therefore sized for "a team signing in together", not "one person": a rate
+    # tuned to an individual locks out everyone behind the same router, which
+    # looks exactly like the app being broken.
     "DEFAULT_THROTTLE_RATES": {
-        "anon": os.environ.get("THROTTLE_ANON", "60/min"),
-        # Five a minute is invisible to a person typing a password and makes
-        # guessing at any useful speed impossible.
-        "login": os.environ.get("THROTTLE_LOGIN", "5/min"),
+        # Both signed-out screens fetch /api/auth/config/ on every render, so
+        # this budget is consumed by ordinary page loads before anyone types.
+        "anon": os.environ.get("THROTTLE_ANON", "240/min"),
+        # The threat is automated password guessing, and 20/min is still orders
+        # of magnitude too slow to guess anything. The previous 5/min was sized
+        # for a single human and could not survive four colleagues signing in
+        # during the same minute from one office IP.
+        "login": os.environ.get("THROTTLE_LOGIN", "20/min"),
+        # Open registration means anyone who finds the URL can create accounts;
+        # an hourly ceiling makes scripting it pointless while leaving room for
+        # a group to sign up together.
+        "signup": os.environ.get("THROTTLE_SIGNUP", "30/hour"),
         # The analytics views run the heavy raw SQL -- trigram self-joins, phrase
         # mining, window functions over the metric table. These are the requests
         # worth metering even for a signed-in user.

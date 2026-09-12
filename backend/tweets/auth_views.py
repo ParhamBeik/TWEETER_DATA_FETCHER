@@ -56,6 +56,10 @@ def user_payload(user) -> dict:
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    # Where ALLOW_REGISTRATION is on, this endpoint mints accounts for anyone who
+    # finds the URL. The anon throttle alone is a per-minute budget shared with
+    # every other unauthenticated request, so signup gets its own hourly ceiling.
+    throttle_scope = "signup"
 
     def post(self, request):
         if not settings.ALLOW_REGISTRATION:
@@ -81,9 +85,14 @@ class RegisterView(APIView):
                 validate_email(email)
             except ValidationError:
                 errors["email"] = ["Enter a valid email address."]
-            else:
-                if User.objects.filter(email__iexact=email).exists():
-                    errors["email"] = ["That email is already registered."]
+            # Deliberately not checked for uniqueness. `auth_user.email` carries no
+            # unique constraint, so a check here would be a race the database
+            # cannot arbitrate -- two simultaneous signups would both pass it and
+            # both be stored, after telling the second user the address was taken.
+            # Email is optional and is not used to log in or recover an account,
+            # so there is nothing to protect yet. If it ever becomes an identifier,
+            # the fix is a partial unique index (excluding the blank string, which
+            # most rows have) plus an IntegrityError fallback like username's below.
 
         if not password:
             errors["password"] = ["Choose a password."]

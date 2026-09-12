@@ -135,7 +135,19 @@ function Sidebar({ isStaff, user, signOut, onNavigate, className }) {
 
       <div className="mt-auto border-t border-line pt-3">
         <p className="px-2 font-mono text-xs text-fg-muted">{user?.username}</p>
-        <p className="px-2 text-2xs text-fg-dim">{isStaff ? "Operator" : "Read only"}</p>
+        {/* Name the role and what it costs you. A new account otherwise reads the
+            missing Ops section and Track-an-account button as a broken console
+            rather than as the permission boundary it is. */}
+        <p
+          className="px-2 text-2xs text-fg-dim"
+          title={
+            isStaff
+              ? "You can run the collector, track accounts, and replace the shared X session."
+              : "You can read the full shared archive. Running the collector and tracking new accounts need an operator."
+          }
+        >
+          {isStaff ? "Operator" : "Read only"}
+        </p>
         <Button variant="quiet" size="sm" className="mt-1.5 w-full justify-start" onClick={signOut}>
           <LogOut className="size-3.5" aria-hidden="true" />
           Sign out

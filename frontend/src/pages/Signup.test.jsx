@@ -52,21 +52,30 @@ beforeEach(() => {
 });
 
 describe("password checks", () => {
-  it("requires ten characters, mixed case, and a number or symbol", () => {
+  it("requires ten characters and something other than digits", () => {
     const byId = Object.fromEntries(
       getPasswordChecks("Correct-Horse-9", "Correct-Horse-9").map((c) => [c.id, c.ok]),
     );
-    expect(byId).toMatchObject({ length: true, case: true, number: true, match: true });
+    expect(byId).toMatchObject({ length: true, variety: true, match: true });
   });
 
   it.each([
     ["Short-1", "length"],
-    ["alllowercase9", "case"],
-    ["CorrectHorseStaple", "number"],
+    ["1234567890123", "variety"],
   ])("fails %s on the %s rule", (password, ruleId) => {
     const check = getPasswordChecks(password, password).find((c) => c.id === ruleId);
     expect(check.ok).toBe(false);
   });
+
+  // The client rules must never be stricter than the server's, or the submit
+  // button sits disabled on a password the API would have accepted with no
+  // explanation. Django's configured validators do not require mixed case.
+  it.each(["alllowercase9", "CorrectHorseStaple"])(
+    "accepts %s, which the server's validators allow",
+    (password) => {
+      expect(getPasswordChecks(password, password).every(({ ok }) => ok)).toBe(true);
+    },
+  );
 
   it("does not report a match for two empty fields", () => {
     const match = getPasswordChecks("", "").find((c) => c.id === "match");

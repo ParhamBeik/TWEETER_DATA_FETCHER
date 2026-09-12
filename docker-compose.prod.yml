@@ -48,6 +48,13 @@ services:
     environment:
       DJANGO_DEBUG: "0"
       ALLOW_REGISTRATION: "1"
+      # Throttles are keyed on client IP and everyone behind one office or venue
+      # router shares an address, so these sit above the code defaults while the
+      # product is being demonstrated to groups. Env wins over settings.py, so
+      # tightening them later is a compose edit and a restart, not a code deploy.
+      THROTTLE_ANON: "300/min"
+      THROTTLE_LOGIN: "30/min"
+      THROTTLE_SIGNUP: "60/hour"
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/1
       DJANGO_CACHE_URL: redis://:${REDIS_PASSWORD}@redis:6379/2

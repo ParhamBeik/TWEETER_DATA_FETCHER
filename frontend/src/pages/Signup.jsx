@@ -4,13 +4,20 @@ import { api } from "../api";
 import { useAuth, useRegistrationOpen } from "../auth";
 import AuthLayout, { PasswordField } from "./AuthLayout";
 
-// Mirrors the server's validators closely enough to be useful while typing.
-// The server decides -- these only save a round trip, and its per-field errors
-// are shown verbatim when they disagree.
+// Mirrors the server's validators while typing. The server decides -- these only
+// save a round trip, and its per-field errors are shown verbatim when they
+// disagree.
+//
+// These must not be STRICTER than the server. They used to demand mixed case,
+// which Django's configured validators never ask for, so the submit button stayed
+// disabled on passwords the API would have accepted -- a dead form with no error
+// message explaining why. What the server actually enforces (settings.py) is:
+// 10 characters, not entirely numeric, not a common password, and not similar to
+// the username. The last two cannot be checked here, so they are not shown as
+// checkboxes that could go stale; the server reports them per-field on submit.
 const passwordRules = [
   ["length", "At least 10 characters", (value) => value.length >= 10],
-  ["case", "Uppercase and lowercase letters", (value) => /[a-z]/.test(value) && /[A-Z]/.test(value)],
-  ["number", "A number or symbol", (value) => /\d/.test(value) || /[^\w\s]/.test(value)],
+  ["variety", "Not only numbers", (value) => !/^\d+$/.test(value)],
 ];
 
 export function getPasswordChecks(password, confirmation) {
@@ -20,10 +27,15 @@ export function getPasswordChecks(password, confirmation) {
   ];
 }
 
+// A hint, not a gate. The rules above are only the floor the server enforces, so
+// a password can satisfy every one of them and still be poor -- length past the
+// minimum and some character variety are what actually separate them.
 export function strengthFor(checks, password) {
   if (!password) return null;
-  const score = checks.filter(({ id, ok }) => id !== "match" && ok).length;
-  return score === 3 ? "Strong" : score === 2 ? "Good" : "Needs work";
+  if (!checks.every(({ id, ok }) => id === "match" || ok)) return "Needs work";
+  const varied = /[a-z]/.test(password) + /[A-Z]/.test(password) + /\d/.test(password) + /[^\w\s]/.test(password);
+  if (password.length >= 14 && varied >= 3) return "Strong";
+  return varied >= 2 ? "Good" : "Needs work";
 }
 
 export default function Signup() {
@@ -94,7 +106,7 @@ export default function Signup() {
     <AuthLayout
       eyebrow="Get started"
       title="Create your account"
-      subtitle="Start building a sharper view of the conversations you follow."
+      subtitle="You'll get read access to the shared archive — every tracked account, search and analysis. Operating the fetcher is reserved for operators."
       error={error}
       footer={
         <>
