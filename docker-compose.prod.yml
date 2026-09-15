@@ -48,8 +48,14 @@ services:
   web:
     <<: *prod-app
     ports: !reset []
+    # A YAML merge key does not deep-merge: this `environment:` REPLACES the one
+    # on *prod-app outright, which is why DJANGO_DEBUG and the three Redis URLs
+    # are repeated below rather than inherited. Anything added to the anchor's
+    # environment must be repeated here or it never reaches the web container --
+    # and web is the only service that serves HTTP and sets cookies.
     environment:
       DJANGO_DEBUG: "0"
+      DJANGO_SECURE_SSL: "1"
       ALLOW_REGISTRATION: "1"
       # Throttles are keyed on client IP and everyone behind one office or venue
       # router shares an address, so these sit above the code defaults while the
