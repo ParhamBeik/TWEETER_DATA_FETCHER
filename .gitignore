@@ -48,3 +48,12 @@ graphify-out/
 # Engine scratch output when a test builds a StorageManager without a temp root
 backend/data/
 data/
+
+# Operator scratch: audit evidence, ad-hoc browser harnesses, health snapshots.
+# These are notes *about* a deployment, not part of it, and .qa/ carries its own
+# node_modules -- left untracked they show up in `git status` on every batch,
+# which is how an unrelated file gets swept into a commit.
+work/
+.qa/
+tmp/
+tdf-runtime-health.html
