@@ -379,7 +379,7 @@ def test_calendar_start_week_starts_on_saturday():
 
     start = _calendar_start("week")
     # Saturday in python weekday() is 5
-    from fetcher.processing import TZ as FEED_TZ
+    from engine.processing import TZ as FEED_TZ
     local_start = start.astimezone(FEED_TZ)
     assert local_start.weekday() == 5  # Saturday
     assert local_start.hour == 0

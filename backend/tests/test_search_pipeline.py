@@ -5,10 +5,10 @@ from datetime import datetime, timezone as dt_timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fetcher.search import SearchQueryBuilder, SearchTimelineMonitor
-from fetcher.clock import utc_now
-from fetcher.processing import TweetSetProcessor
-from fetcher.browser import BrowserBootstrapResult
+from engine.search import SearchQueryBuilder, SearchTimelineMonitor
+from engine.clock import utc_now
+from engine.processing import TweetSetProcessor
+from engine.browser import BrowserBootstrapResult
 
 
 class SearchPipelineTests(unittest.TestCase):
@@ -41,8 +41,8 @@ class SearchPipelineTests(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('fetcher.search.FetcherEngine')
-    @patch('fetcher.search.StorageManager')
+    @patch('engine.search.FetcherEngine')
+    @patch('engine.search.StorageManager')
     def test_search_monitor_initialization(self, mock_storage, mock_engine):
         """Test SearchTimelineMonitor initialization."""
         mock_engine_instance = MagicMock()
@@ -62,14 +62,14 @@ class SearchPipelineTests(unittest.TestCase):
 
     def test_valid_products_constant(self):
         """Test that VALID_PRODUCTS constant is defined."""
-        from fetcher.search import VALID_PRODUCTS
+        from engine.search import VALID_PRODUCTS
         self.assertIn("Top", VALID_PRODUCTS)
         self.assertIn("Latest", VALID_PRODUCTS)
         self.assertIn("Media", VALID_PRODUCTS)
         self.assertIn("People", VALID_PRODUCTS)
 
-    @patch('fetcher.search.FetcherEngine')
-    @patch('fetcher.search.StorageManager')
+    @patch('engine.search.FetcherEngine')
+    @patch('engine.search.StorageManager')
     def test_monitor_search_structure(self, mock_storage, mock_engine):
         """Test monitor_search method structure."""
         mock_engine_instance = MagicMock()
@@ -128,7 +128,7 @@ class SearchPipelineTests(unittest.TestCase):
 
     def test_frozen_search_features(self):
         """Test FROZEN_SEARCH_FEATURES is defined."""
-        from fetcher.search import FROZEN_SEARCH_FEATURES
+        from engine.search import FROZEN_SEARCH_FEATURES
         self.assertIsInstance(FROZEN_SEARCH_FEATURES, dict)
 
     @staticmethod

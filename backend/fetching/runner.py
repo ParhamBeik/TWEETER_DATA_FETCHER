@@ -620,7 +620,7 @@ def run_fetcher(
         env["TDF_EMPTY_PAGE_STREAK"] = str(settings.FETCH_EMPTY_PAGE_STREAK)
         env["TDF_ARCHIVE_EARLIEST_DATE"] = settings.FETCH_ARCHIVE_EARLIEST_DATE
         # cwd is the scratch root, so point the subprocess at this project for
-        # the engine package (it ships here as `fetcher/`).
+        # the engine package (it ships here as `engine/`).
         env["PYTHONPATH"] = str(settings.BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
 
         # Snapshot the secrets before the run: auth refresh can rotate XSession

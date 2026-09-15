@@ -12,7 +12,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass
-from fetcher.clock import utc_now, utc_now_iso
+from engine.clock import utc_now, utc_now_iso
 from enum import Enum
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -63,7 +63,12 @@ class PipelineConsole:
         # Child of the package root logger. Propagates to the root file handler
         # (so every console line is captured on disk) but is dropped from the
         # stderr tail by logging_setup._NoConsoleOnStderr (Rich owns terminal).
-        self._logger = logging.getLogger(f"fetcher.console.{self.subsystem}")
+        #
+        # Built from CONSOLE_LOGGER_PREFIX rather than spelled out again. The
+        # name has to stay a child of ROOT_LOGGER_NAME or configure_logging's
+        # handlers never see these records -- a literal here silently broke
+        # exactly that when the package directory was renamed.
+        self._logger = logging.getLogger(f"{CONSOLE_LOGGER_PREFIX}.{self.subsystem}")
 
     def _prefix(self) -> str:
         return f"[{self.tag}]"

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fetcher.observability import PipelineConsole
-from fetcher.observability import EventRecorder, ObservabilityContext, redact_exception
+from engine.observability import PipelineConsole
+from engine.observability import EventRecorder, ObservabilityContext, redact_exception
 
 
 class PipelineConsoleTests(unittest.TestCase):

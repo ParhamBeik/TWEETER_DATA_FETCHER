@@ -6,7 +6,7 @@ import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
-from fetcher.clock import utc_now, utc_now_iso
+from engine.clock import utc_now, utc_now_iso
 
 from fetching.ingest import ingest_search_hits, upsert_tweet
 from fetching.tasks import (

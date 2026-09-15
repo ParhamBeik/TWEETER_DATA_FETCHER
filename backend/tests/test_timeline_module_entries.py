@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import unittest
 
-from fetcher.processing import TweetSetProcessor
+from engine.processing import TweetSetProcessor
 
 
 def _legacy(tweet_id: str) -> dict:

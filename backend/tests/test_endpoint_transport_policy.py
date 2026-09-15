@@ -8,8 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from fetcher.search import SearchTimelineMonitor
-from fetcher.timeline import FetcherEngine, _response_latency_ms
+from engine.search import SearchTimelineMonitor
+from engine.timeline import FetcherEngine, _response_latency_ms
 
 
 class ResponseLatencyTests(unittest.TestCase):
@@ -135,7 +135,7 @@ class SearchCursorGateTests(unittest.TestCase):
         monitor._compact_json = lambda x: "{}"
         monitor.config = {}
 
-        with patch("fetcher.search.time.sleep") as sleep:
+        with patch("engine.search.time.sleep") as sleep:
             out = monitor._request_page(
                 "https://x.com/i/api/graphql/st/SearchTimeline",
                 {"rawQuery": "q"},

@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
-from fetcher.config import resolve_config_path
-from fetcher.config import PROJECT_ROOT
-from fetcher.request_state import RequestStateStore
+from engine.config import resolve_config_path
+from engine.config import PROJECT_ROOT
+from engine.request_state import RequestStateStore
 
 try:
     import requests

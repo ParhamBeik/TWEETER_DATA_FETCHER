@@ -16,14 +16,14 @@ For install and usage see `README.md`. This file is the working contract.
 | Auth (JWT) + the staff gate | `backend/tweets/auth_views.py`, `permissions.py` |
 | Untrusted request bodies (`body_mapping`) | `backend/tweets/params.py` |
 | Edge request guards (NUL bytes) | `backend/config/middleware.py` |
-| HTTP transport, tx/query-id health | `backend/fetcher/client.py` |
-| Pagination engine | `backend/fetcher/timeline.py` |
-| Pipelines | `backend/fetcher/{historical,live,search}.py` |
-| Tweet parsing + rolling window + GraphQL contracts | `backend/fetcher/processing.py` |
-| Scratch-disk layer | `backend/fetcher/storage.py` |
-| Console, file logs, NDJSON events | `backend/fetcher/observability.py` |
-| Paths, config resolution, account tiers | `backend/fetcher/config.py` |
-| UTC clock (`utc_now`, `utc_now_iso`) | `backend/fetcher/clock.py` |
+| HTTP transport, tx/query-id health | `backend/engine/client.py` |
+| Pagination engine | `backend/engine/timeline.py` |
+| Pipelines | `backend/engine/{historical,live,search}.py` |
+| Tweet parsing + rolling window + GraphQL contracts | `backend/engine/processing.py` |
+| Scratch-disk layer | `backend/engine/storage.py` |
+| Console, file logs, NDJSON events | `backend/engine/observability.py` |
+| Paths, config resolution, account tiers | `backend/engine/config.py` |
+| UTC clock (`utc_now`, `utc_now_iso`) | `backend/engine/clock.py` |
 | Design tokens (colour, type, spacing) | `frontend/src/index.css` |
 | UI primitives (button, panel, status, dialog, tabs) | `frontend/src/ui/` |
 | Shared X budget rail, on every page | `frontend/src/BudgetRail.jsx` |
@@ -33,7 +33,7 @@ For install and usage see `README.md`. This file is the working contract.
 
 ## Non-negotiables
 
-- Postgres is the only durable store. `backend/fetcher/` writes to an ephemeral
+- Postgres is the only durable store. `backend/engine/` writes to an ephemeral
   scratch root (`TDF_PROJECT_ROOT`) that is deleted after every run; anything
   that must survive goes through `KeyValueState`/`EndpointState` in `runner.py`.
 - Never commit `.env`. Never log cookies, bearer tokens, CSRF tokens, or full
@@ -50,7 +50,7 @@ For install and usage see `README.md`. This file is the working contract.
 - Run `cd backend && python -m pytest -q` after code changes.
 - Timestamps written by the engine are naive-UTC ISO strings ending in `Z`, and
   the scheduling checks subtract a parsed one from "now". Use
-  `fetcher.clock.utc_now`/`utc_now_iso`, never `datetime.utcnow()` (deprecated,
+  `engine.clock.utc_now`/`utc_now_iso`, never `datetime.utcnow()` (deprecated,
   scheduled for removal) and never a bare aware `datetime.now(timezone.utc)` --
   the first breaks the runtime upgrade, the second raises `TypeError` on those
   subtractions and starts writing `+00:00` into files that already hold `Z`.
@@ -109,7 +109,7 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
   have their own 30-day clock. Never write a search result into `Tweet`.
 - A search's scratch state is keyed two different ways and both spellings must be
   exact: `EndpointState.account` is `<slug>::<product>` (double colon, from
-  `fetcher.search._state_key`) and `RawPage.account` is `<slug>:<product>` (single
+  `engine.search._state_key`) and `RawPage.account` is `<slug>:<product>` (single
   colon, from the raw path join). `fetching/searches.py` holds both; teardown that
   guesses one deletes nothing and leaves a live cursor behind.
 - Deleting a `Search` goes through `fetching.searches.teardown_search`, never a

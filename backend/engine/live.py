@@ -5,7 +5,7 @@ Polls due accounts on a loop (or a single cycle with ``--once``), writes raw
 pages and processed snapshots under ``data/historical_live/``, and dedupes
 tweets it has already seen.
 
-    python -m fetcher.live --account elonmusk --once
+    python -m engine.live --account elonmusk --once
 """
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fetcher.config import PROJECT_ROOT, get_priority_policy, load_tier_config, ordered_accounts
-from fetcher.clock import utc_now, utc_now_iso
-from fetcher.observability import PipelineConsole, attach_run_id
-from fetcher.processing import TweetSetProcessor, window_cutoff
-from fetcher.storage import StorageManager
-from fetcher.timeline import FetcherEngine
+from engine.config import PROJECT_ROOT, get_priority_policy, load_tier_config, ordered_accounts
+from engine.clock import utc_now, utc_now_iso
+from engine.observability import PipelineConsole, attach_run_id
+from engine.processing import TweetSetProcessor, window_cutoff
+from engine.storage import StorageManager
+from engine.timeline import FetcherEngine
 
 
 """

@@ -8,14 +8,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fetcher.observability import EventRecorder
-from fetcher.observability import (
+from engine.observability import EventRecorder
+from engine.observability import (
     ROOT_LOGGER_NAME,
     attach_run_id,
     configure_logging,
     reset_logging,
 )
-from fetcher.observability import PipelineConsole, Verbosity
+from engine.observability import PipelineConsole, Verbosity
 
 
 class LoggingSetupTests(unittest.TestCase):

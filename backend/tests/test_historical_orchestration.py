@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fetcher.clock import utc_now_iso
+from engine.clock import utc_now_iso
 
 
 class HistoricalOrchestrationTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class HistoricalOrchestrationTests(unittest.TestCase):
         # This is maintained in fetch_historical.py around line 435
         
         # This is a documentation test that validates the architecture
-        from fetcher.historical import ENDPOINTS
+        from engine.historical import ENDPOINTS
 
         self.assertEqual(ENDPOINTS, ("UserTweets",))
     

@@ -2,8 +2,8 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 
-from fetcher.search import SearchTimelineMonitor
-from fetcher.clock import utc_now
+from engine.search import SearchTimelineMonitor
+from engine.clock import utc_now
 
 
 class SearchTimelinePathResolutionTests(unittest.TestCase):

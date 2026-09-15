@@ -1,7 +1,7 @@
 """Django settings.
 
-The X engine (``fetcher/``) is a package inside this project, so it needs no
-path wiring: the workers run it as ``python -m fetcher.<pipeline>``.
+The X engine (``engine/``) is a package inside this project, so it needs no
+path wiring: the workers run it as ``python -m engine.<pipeline>``.
 """
 from __future__ import annotations
 

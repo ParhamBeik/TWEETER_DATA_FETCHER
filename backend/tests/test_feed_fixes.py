@@ -196,7 +196,7 @@ def test_previous_period_is_flagged_when_it_predates_the_archive(client_user):
 
 def test_today_is_a_calendar_day_not_a_rolling_window(client_user):
     """At 00:30 Tehran, a rolling 24h labelled "Today" was mostly yesterday."""
-    from fetcher.processing import TZ
+    from engine.processing import TZ
 
     _track("alpha")
     now_local = timezone.now().astimezone(TZ)

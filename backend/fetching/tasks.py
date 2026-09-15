@@ -35,9 +35,9 @@ from .ingest import ingest_search_hits, ingest_tweets
 
 logger = logging.getLogger(__name__)
 
-HISTORICAL_MODULE = "fetcher.historical"
-LIVE_MODULE = "fetcher.live"
-SEARCH_MODULE = "fetcher.search"
+HISTORICAL_MODULE = "engine.historical"
+LIVE_MODULE = "engine.live"
+SEARCH_MODULE = "engine.search"
 
 
 def _task_id() -> str:
@@ -252,7 +252,7 @@ def backfill_historical_all() -> int:
     whose timeline ended without the API ever withholding a cursor could never
     report completed, so it was refetched forever and the 67 accounts behind it
     were never reached. Completion is now proven per account by the engine
-    (see fetcher.historical._record_backfill_progress) rather than inferred
+    (see engine.historical._record_backfill_progress) rather than inferred
     from the chunk's run status.
     """
     with _cycle_lock("backfill_historical_all") as acquired:

@@ -21,8 +21,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from fetcher.client import APIManager
-from fetcher.timeline import EMPTY_PAGE_STREAK, FetcherEngine
+from engine.client import APIManager
+from engine.timeline import EMPTY_PAGE_STREAK, FetcherEngine
 
 
 def _tweet_entry(tweet_id: str) -> dict:
@@ -258,7 +258,7 @@ class ArchiveCompletionTests(unittest.TestCase):
 
     def _record(self, outcome, *, status="completed", pages=5, previous=None, cutoff=None,
                 last_cursor="c9", bottom_cursor=None, raw_pages=None, empty_page_streak=0):
-        from fetcher.historical import _record_backfill_progress
+        from engine.historical import _record_backfill_progress
 
         saved = {}
         storage = MagicMock()
@@ -346,7 +346,7 @@ class ArchiveCompletionTests(unittest.TestCase):
         without this there is no way to find them again."""
         from datetime import datetime as _dt
 
-        from fetcher.processing import TZ
+        from engine.processing import TZ
 
         saved = self._record(
             "success_window_complete", cutoff=_dt(2024, 1, 1, tzinfo=TZ)
@@ -446,13 +446,13 @@ class ArchiveFloorTests(unittest.TestCase):
         import os
         from unittest.mock import patch as _patch
 
-        from fetcher.historical import _archive_cutoff
+        from engine.historical import _archive_cutoff
 
         with _patch.dict(os.environ, {"TDF_ARCHIVE_EARLIEST_DATE": value}):
             return _archive_cutoff()
 
     def _coverage(self, cutoff, raw_timestamp):
-        from fetcher.processing import RollingWindowEvaluator
+        from engine.processing import RollingWindowEvaluator
 
         return RollingWindowEvaluator().evaluate_tweets_cutoff(
             [{"raw_timestamp": raw_timestamp}], cutoff=cutoff
@@ -475,7 +475,7 @@ class ArchiveFloorTests(unittest.TestCase):
 
     def test_a_malformed_floor_falls_back_to_the_default_not_to_no_floor(self):
         """No floor is the one outcome the setting exists to prevent."""
-        from fetcher.historical import DEFAULT_ARCHIVE_EARLIEST_DATE
+        from engine.historical import DEFAULT_ARCHIVE_EARLIEST_DATE
 
         cutoff = self._cutoff("01-01-2024")
 

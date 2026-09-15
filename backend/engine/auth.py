@@ -16,7 +16,7 @@ This is the primary authentication maintenance tool. It:
 Triggered by twitter_http_client when all tx-ids for an endpoint are stale.
 Run:
     tdf-auth --interactive
-    python -m fetcher.auth --interactive
+    python -m engine.auth --interactive
 
 Flags:
     --interactive   open a headed browser for manual login
@@ -35,9 +35,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from fetcher.config import resolve_config_path
-from fetcher.config import HISTORICAL_LIVE_DIR
-from fetcher.observability import configure_logging
+from engine.config import resolve_config_path
+from engine.config import HISTORICAL_LIVE_DIR
+from engine.observability import configure_logging
 
 try:
     from playwright.sync_api import sync_playwright, Request
@@ -414,8 +414,8 @@ def run_interactive_cli() -> None:
 
     if success:
         print("\n\u2705 You can now run your scripts:")
-        print("  python -m fetcher.historical --only elonmusk")
-        print("  python -m fetcher.live --account elonmusk --once")
+        print("  python -m engine.historical --only elonmusk")
+        print("  python -m engine.live --account elonmusk --once")
         print("  tdf-search --once")
     else:
         print(

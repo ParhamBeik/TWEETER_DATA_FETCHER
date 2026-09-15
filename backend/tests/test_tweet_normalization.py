@@ -1,4 +1,4 @@
-from fetcher.processing import TweetSetProcessor
+from engine.processing import TweetSetProcessor
 
 
 def test_current_user_note_and_video_shapes_are_normalized():

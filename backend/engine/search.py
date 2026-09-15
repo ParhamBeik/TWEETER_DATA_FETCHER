@@ -7,7 +7,7 @@ product, parses tweets/cursors, and writes raw + processed exports under
 
 Run:
     tdf-search --once
-    python -m fetcher.search --once
+    python -m engine.search --once
 
 Flags:
     --config <path>            config.json to use (else canonical config/)
@@ -42,12 +42,12 @@ except Exception:
     Table = None
 
 
-from fetcher.config import PROJECT_ROOT
-from fetcher.clock import utc_now, utc_now_iso
+from engine.config import PROJECT_ROOT
+from engine.clock import utc_now, utc_now_iso
 
-from fetcher.config import DEFAULT_PRIORITY_POLICIES
-from fetcher.timeline import FetcherEngine
-from fetcher.processing import (
+from engine.config import DEFAULT_PRIORITY_POLICIES
+from engine.timeline import FetcherEngine
+from engine.processing import (
     SEARCH_TIMELINE_FEATURES,
     TweetSetProcessor,
     extract_bottom_cursor,
@@ -55,11 +55,11 @@ from fetcher.processing import (
     search_timeline_variables,
     validate_graphql_payload,
 )
-from fetcher.storage import StorageManager
-from fetcher.observability import PipelineConsole
-from fetcher.observability import redact_exception
-from fetcher.observability import attach_run_id
-from fetcher.config import resolve_config_path
+from engine.storage import StorageManager
+from engine.observability import PipelineConsole
+from engine.observability import redact_exception
+from engine.observability import attach_run_id
+from engine.config import resolve_config_path
 
 
 VALID_PRODUCTS = {"Top", "Latest", "Media", "People"}
@@ -1165,7 +1165,7 @@ class SearchTimelineMonitor:
             # as `error_http_200` and threw away the one fact worth knowing. A
             # genuine HTTP failure already names its status in the reason
             # (`failed_initial_404`), and the code itself is still in the report
-            # metadata. fetcher/live.py records the raw status the same way.
+            # metadata. engine/live.py records the raw status the same way.
             "last_status": exhausted_reason,
             "last_counts": report["counts"],
         }

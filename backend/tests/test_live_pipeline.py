@@ -4,10 +4,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fetcher.client import APIManager
-from fetcher.live import LiveMonitor
-from fetcher.live import LiveStorageManager
-from fetcher.clock import utc_now
+from engine.client import APIManager
+from engine.live import LiveMonitor
+from engine.live import LiveStorageManager
+from engine.clock import utc_now
 from datetime import timedelta
 
 
@@ -51,8 +51,8 @@ class LivePipelineTests(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('fetcher.live.FetcherEngine')
-    @patch('fetcher.live.LiveStorageManager')
+    @patch('engine.live.FetcherEngine')
+    @patch('engine.live.LiveStorageManager')
     def test_live_monitor_initialization(self, mock_storage, mock_engine):
         """Test LiveMonitor initialization."""
         mock_engine_instance = MagicMock()
@@ -74,8 +74,8 @@ class LivePipelineTests(unittest.TestCase):
         # Just verify the class can be instantiated
         self.assertTrue(True)
 
-    @patch('fetcher.live.FetcherEngine')
-    @patch('fetcher.live.LiveStorageManager')
+    @patch('engine.live.FetcherEngine')
+    @patch('engine.live.LiveStorageManager')
     def test_monitor_account_structure(self, mock_storage, mock_engine):
         """Test monitor_account method structure."""
         mock_engine_instance = MagicMock()
@@ -90,14 +90,14 @@ class LivePipelineTests(unittest.TestCase):
         self.assertTrue(hasattr(monitor, 'monitor_account'))
         self.assertTrue(callable(monitor.monitor_account))
 
-    @patch("fetcher.live.get_priority_policy")
+    @patch("engine.live.get_priority_policy")
     def test_cycle_cools_before_first_replies_request(self, policy_mock):
         policy_mock.return_value = {"priority": 1, "live_window_hours": 24}
         monitor = LiveMonitor.__new__(LiveMonitor)
         monitor.accounts = ["example", "other"]
         monitor.should_fetch_account = lambda username: True
         monitor.account_map = {}
-        from fetcher.config import DEFAULT_PRIORITY_POLICIES
+        from engine.config import DEFAULT_PRIORITY_POLICIES
 
         monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
         monitor.console = MagicMock()
@@ -133,7 +133,7 @@ class LivePipelineTests(unittest.TestCase):
         self.assertEqual(report["summary"]["failed_endpoints"], 0)
         self.assertEqual(report["summary"]["failed"], 0)
 
-    @patch("fetcher.live.get_priority_policy")
+    @patch("engine.live.get_priority_policy")
     def test_three_resolution_failures_quarantine_target(self, policy_mock):
         policy_mock.return_value = {"priority": 7, "live_window_hours": 3}
         monitor = LiveMonitor.__new__(LiveMonitor)
@@ -168,7 +168,7 @@ class LivePipelineTests(unittest.TestCase):
         monitor.accounts = ["one", "two", "three"]
         monitor.should_fetch_account = lambda username: True
         monitor.account_map = {}
-        from fetcher.config import DEFAULT_PRIORITY_POLICIES
+        from engine.config import DEFAULT_PRIORITY_POLICIES
 
         monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
         monitor.console = MagicMock()
@@ -264,7 +264,7 @@ class SeenTweetLedgerTests(unittest.TestCase):
 
     def test_flush_drops_entries_past_the_retention_window(self):
         """Nothing pruned this file; it reached 15k entries in production."""
-        from fetcher.live import SEEN_TWEET_RETENTION_DAYS
+        from engine.live import SEEN_TWEET_RETENTION_DAYS
 
         stale = (utc_now() - timedelta(days=SEEN_TWEET_RETENTION_DAYS + 1)).isoformat() + "Z"
         self.storage.seen_tweets = {
@@ -287,7 +287,7 @@ class LivePageBudgetTests(unittest.TestCase):
     """
 
     def _monitor(self, remaining=50, last_checked=None, gaps=None):
-        from fetcher.config import DEFAULT_PRIORITY_POLICIES
+        from engine.config import DEFAULT_PRIORITY_POLICIES
 
         monitor = LiveMonitor.__new__(LiveMonitor)
         monitor.account_map = {
@@ -331,7 +331,7 @@ class LiveArchiveBudgetStarvationTests(unittest.TestCase):
     UserTweets window must cover the due fleet. Unit-level scheduler
     arithmetic -- no HTTP."""
 
-    @patch("fetcher.live.get_priority_policy")
+    @patch("engine.live.get_priority_policy")
     def test_full_bucket_covers_the_due_fleet(self, policy_mock):
         import time
 
@@ -340,7 +340,7 @@ class LiveArchiveBudgetStarvationTests(unittest.TestCase):
         monitor = LiveMonitor.__new__(LiveMonitor)
         monitor.accounts = accounts
         monitor.should_fetch_account = lambda username: True
-        from fetcher.config import DEFAULT_PRIORITY_POLICIES
+        from engine.config import DEFAULT_PRIORITY_POLICIES
 
         monitor.priority_policies = DEFAULT_PRIORITY_POLICIES
         monitor.account_map = {}

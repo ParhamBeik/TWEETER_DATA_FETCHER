@@ -21,7 +21,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from fetcher.processing import TZ as FEED_TZ
+from engine.processing import TZ as FEED_TZ
 
 from .models import FetchRun, Tweet, TwitterUser
 from .windows import normalize_handles, parse_instant
@@ -39,7 +39,7 @@ def with_feed_ts(qs):
     return qs.annotate(feed_ts=Coalesce("created_at", "ingested_at"))
 
 
-# Tweet.type as the engine writes it (fetcher/processing.py), keyed by the
+# Tweet.type as the engine writes it (engine/processing.py), keyed by the
 # lowercase name the console uses in its filter chips.
 POST_TYPES = {"tweet": "Tweet", "reply": "Reply", "retweet": "Retweet", "quote": "Quote"}
 
@@ -47,7 +47,7 @@ POST_TYPES = {"tweet": "Tweet", "reply": "Reply", "retweet": "Retweet", "quote":
 FEED_WINDOWS = {"1h": 1, "6h": 6, "24h": 24, "7d": 168, "30d": 720}
 
 # Calendar windows, resolved against the Tehran day the collector already counts
-# in (fetcher/processing.TZ). "Today" used to be an alias for a rolling 24h,
+# in (engine/processing.TZ). "Today" used to be an alias for a rolling 24h,
 # which meant that at 00:30 Tehran the feed labelled "Today" was almost entirely
 # yesterday. These snap to real boundaries so the label is the truth.
 FEED_CALENDAR_WINDOWS = ("today", "week", "month")

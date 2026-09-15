@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 
-from fetcher.timeline import FetcherEngine
+from engine.timeline import FetcherEngine
 
 
 class PaginationEngineTests(unittest.TestCase):

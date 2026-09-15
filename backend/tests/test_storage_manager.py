@@ -2,7 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from fetcher.storage import StorageManager
+from engine.storage import StorageManager
 
 
 class StorageManagerTests(unittest.TestCase):

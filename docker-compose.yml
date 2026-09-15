@@ -110,7 +110,7 @@ services:
     healthcheck: *worker-healthcheck
     mem_limit: 512m
     # Live's UserTweets path is HTTP-only; Chromium only fires via the reactive
-    # 404-rescue path in fetcher/timeline.py, so this is a lighter allowance
+    # 404-rescue path in engine/timeline.py, so this is a lighter allowance
     # than search's routine deep-pagination capture.
     shm_size: 256m
 

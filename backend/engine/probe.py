@@ -13,7 +13,7 @@ PROJECT_ROOT and throws the directory away, so a probe can never mark an archive
 complete or move a live cursor.
 
 Run (via the Django command, which builds the scratch root and session):
-    python -m fetcher.probe --account elonmusk --pages 60
+    python -m engine.probe --account elonmusk --pages 60
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ import json
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
-from fetcher.processing import TweetSetProcessor, tweet_datetime
-from fetcher.timeline import FetcherEngine
+from engine.processing import TweetSetProcessor, tweet_datetime
+from engine.timeline import FetcherEngine
 
 
 ENDPOINT = "UserTweets"

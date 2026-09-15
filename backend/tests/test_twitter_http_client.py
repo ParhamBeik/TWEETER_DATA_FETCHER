@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from fetcher.client import APIManager, EndpointHealth
+from engine.client import APIManager, EndpointHealth
 
 
 class TransactionIdTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class ConfigPathResolutionTests(unittest.TestCase):
             self.assertEqual(APIManager._resolve_config_path(str(explicit)), explicit.resolve())
 
     def test_falls_back_to_project_config_dir(self):
-        from fetcher.config import PROJECT_ROOT
+        from engine.config import PROJECT_ROOT
 
         resolved = APIManager._resolve_config_path(None)
         self.assertEqual(resolved, (PROJECT_ROOT / "config" / "config.json").resolve())

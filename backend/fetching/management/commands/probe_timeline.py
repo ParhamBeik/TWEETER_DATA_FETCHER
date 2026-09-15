@@ -3,7 +3,7 @@
 `run_fetcher` is the wrong tool for a diagnosis: it opens a FetchRun, persists
 sync state, endpoint state and raw pages, and would let a probe overwrite the
 very cursors being investigated. This builds the same scratch root and session
-config, runs `fetcher.probe` against it, and deletes the directory -- so the only
+config, runs `engine.probe` against it, and deletes the directory -- so the only
 lasting effect is the output on stdout.
 """
 from __future__ import annotations
@@ -55,7 +55,7 @@ class Command(BaseCommand):
 
             process = subprocess.run(
                 [
-                    sys.executable, "-m", "fetcher.probe",
+                    sys.executable, "-m", "engine.probe",
                     "--account", account,
                     "--pages", str(options["pages"]),
                     "--min-remaining", str(options["min_remaining"]),

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from zoneinfo import ZoneInfo
 
-from fetcher.processing import RollingWindowEvaluator, window_cutoff
-from fetcher.client import APIManager
+from engine.processing import RollingWindowEvaluator, window_cutoff
+from engine.client import APIManager
 
 
 def _tweet_at(dt: datetime) -> dict:

@@ -21,7 +21,7 @@ from fetching import runner
 from fetching.accounts import clear_live_quarantine, live_state_map
 from tweets.models import KeyValueState, TwitterUser
 
-LIVE_MODULE = "fetcher.live"
+LIVE_MODULE = "engine.live"
 
 # "UserByScreenName returned HTTP 404" -- the handle does not resolve to an
 # account. 401/403 mean the operator session expired and says nothing about the

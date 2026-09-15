@@ -45,7 +45,7 @@ def endpoint_state_key(search: Search) -> str:
 
     Deliberately *not* the same string as `raw_page_key`: the engine's
     `_state_key` joins slug and product with a double colon
-    (``fetcher.search.SearchTimelineMonitor._state_key``) while the raw-page path
+    (``engine.search.SearchTimelineMonitor._state_key``) while the raw-page path
     join produces a single one. Two spellings for the same search is the kind of
     thing that makes a delete look successful and leave a live cursor behind, so
     both live here, next to each other.

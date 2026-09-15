@@ -6,8 +6,8 @@ accounts, then builds the seven processed set-algebra folders per account under
 ``data/historical_live/`` and writes a per-run report.
 
 Run:
-    python -m fetcher.historical --only elonmusk
-    python -m fetcher.historical --only elonmusk
+    python -m engine.historical --only elonmusk
+    python -m engine.historical --only elonmusk
 
 Flags:
     --only <user>              account to fetch (repeatable / comma-separated)
@@ -24,15 +24,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from fetcher.config import PROJECT_ROOT
-from fetcher.clock import utc_now_iso
+from engine.config import PROJECT_ROOT
+from engine.clock import utc_now_iso
 
-from fetcher.config import get_priority_policy, ordered_accounts
-from fetcher.timeline import FetcherEngine
-from fetcher.processing import TZ, RollingWindowEvaluator, TweetSetProcessor
-from fetcher.storage import StorageManager
-from fetcher.observability import attach_run_id
-from fetcher.observability import PipelineConsole
+from engine.config import get_priority_policy, ordered_accounts
+from engine.timeline import FetcherEngine
+from engine.processing import TZ, RollingWindowEvaluator, TweetSetProcessor
+from engine.storage import StorageManager
+from engine.observability import attach_run_id
+from engine.observability import PipelineConsole
 
 
 ENDPOINTS = ("UserTweets",)

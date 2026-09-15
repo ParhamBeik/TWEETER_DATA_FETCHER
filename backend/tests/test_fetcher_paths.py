@@ -1,7 +1,7 @@
 """The engine resolves every path from the scratch root the runner hands it."""
 import importlib
 
-import fetcher.config as fetcher_config
+import engine.config as fetcher_config
 
 
 def test_tdf_project_root_env_overrides_paths(monkeypatch, tmp_path):

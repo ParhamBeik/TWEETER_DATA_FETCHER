@@ -2,9 +2,9 @@
 """Fetch profile timeline pages from Twitter/X.
 
 Run:
-    python -m fetcher.timeline
+    python -m engine.timeline
 
-For normal historical/live runs use ``fetcher.historical`` or ``fetcher.live``; this
+For normal historical/live runs use ``engine.historical`` or ``engine.live``; this
 module runs the lower-level sequential fetch engine with configured accounts.
 
 Code map:
@@ -25,10 +25,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
-from fetcher.config import PROJECT_ROOT
-from fetcher.clock import utc_now_iso
-from fetcher.client import APIManager
-from fetcher.processing import (
+from engine.config import PROJECT_ROOT
+from engine.clock import utc_now_iso
+from engine.client import APIManager
+from engine.processing import (
     RollingWindowEvaluator,
     extract_bottom_cursor,
     timeline_field_toggles,
@@ -36,14 +36,14 @@ from fetcher.processing import (
     user_by_screen_name_contract,
     validate_graphql_payload,
 )
-from fetcher.browser import BrowserBootstrap, BrowserBootstrapResult
-from fetcher.storage import StorageManager
-from fetcher.config import load_tier_config
+from engine.browser import BrowserBootstrap, BrowserBootstrapResult
+from engine.storage import StorageManager
+from engine.config import load_tier_config
 from zoneinfo import ZoneInfo
 
-from fetcher.observability import EventRecorder, redact_exception
-from fetcher.observability import configure_logging
-from fetcher.observability import PipelineConsole
+from engine.observability import EventRecorder, redact_exception
+from engine.observability import configure_logging
+from engine.observability import PipelineConsole
 
 
 TIMEZONE = "Asia/Tehran"
@@ -325,14 +325,14 @@ class FetcherEngine:
         )
         # Automatic auth recovery via a headless sniffer has been retired
         # (YAGNI: it was the least-reliable part of the auth path). The sniffer
-        # is now a pure diagnostic tool, run by hand -- see fetcher/auth.py.
+        # is now a pure diagnostic tool, run by hand -- see engine/auth.py.
         #
         # The command below is the whole point of this line: it is printed at the
         # moment an operator has to act. It named `auto_refresh.py`, and a file by
         # that name does not exist anywhere in this repo.
         self.logger.warning(
             f"@{account} {endpoint} 404/context-rejected; automatic auth recovery is disabled. "
-            "Refresh by hand: `python -m fetcher.auth --interactive`, then post the "
+            "Refresh by hand: `python -m engine.auth --interactive`, then post the "
             "resulting config.json to /api/session/ (or `manage.py load_xsession --file`)."
         )
         return False

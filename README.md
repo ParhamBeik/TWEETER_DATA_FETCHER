@@ -20,7 +20,7 @@ backend/
   config/      Django project: settings, urls, celery
   tweets/      models, API views, serializers, analytics, admin
   fetching/    Celery tasks + the runner that drives the engine
-  fetcher/     the X engine (HTTP, pagination, auth, parsing, storage)
+  engine/     the X engine (HTTP, pagination, auth, parsing, storage)
   tests/       one suite covering both the engine and the API
 frontend/      React + Vite SPA (Tailwind tokens in src/index.css,
                primitives in src/ui/)

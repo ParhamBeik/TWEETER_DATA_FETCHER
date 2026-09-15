@@ -6,7 +6,7 @@ them into Postgres, which is the durable store.
 
 Only one processed set is produced (``4_union``, the complete per-account set).
 Batch and report names use Tehran-local dates so day boundaries match the
-rolling-window logic in ``fetcher.processing``.
+rolling-window logic in ``engine.processing``.
 """
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-from fetcher.config import PROJECT_ROOT, read_json, write_json
-from fetcher.clock import utc_now, utc_now_iso
+from engine.config import PROJECT_ROOT, read_json, write_json
+from engine.clock import utc_now, utc_now_iso
 
 UNION_SET = "4_union"
 ENDPOINTS = ("UserTweets", "UserTweetsAndReplies")

@@ -15,8 +15,8 @@ import pytest
 from django.core.cache import cache
 from django.utils import timezone
 
-from fetcher.search import SearchTimelineMonitor
-from fetcher.clock import utc_now
+from engine.search import SearchTimelineMonitor
+from engine.clock import utc_now
 from fetching.tasks import dispatch_due_searches, run_search
 from tweets.models import Search
 
@@ -264,7 +264,7 @@ class _Page(dict):
 def test_scrolling_stops_once_a_page_is_entirely_older_than_last_run(monkeypatch):
     monitor = _monitor()
     monkeypatch.setattr(
-        "fetcher.search.validate_graphql_payload", lambda *_: MagicMock(ok=True)
+        "engine.search.validate_graphql_payload", lambda *_: MagicMock(ok=True)
     )
     monitor._tweet_datetime = lambda tweet: tweet["at"]
     monitor._page_crossed_search_window = SearchTimelineMonitor._page_crossed_search_window.__get__(monitor)
@@ -278,7 +278,7 @@ def test_scrolling_stops_once_a_page_is_entirely_older_than_last_run(monkeypatch
 def test_scrolling_stops_at_the_rolling_window_even_on_a_first_run(monkeypatch):
     monitor = _monitor()
     monkeypatch.setattr(
-        "fetcher.search.validate_graphql_payload", lambda *_: MagicMock(ok=True)
+        "engine.search.validate_graphql_payload", lambda *_: MagicMock(ok=True)
     )
     monitor._tweet_datetime = lambda tweet: tweet["at"]
     monitor._page_crossed_search_window = SearchTimelineMonitor._page_crossed_search_window.__get__(monitor)
@@ -292,7 +292,7 @@ def test_scrolling_stops_at_the_rolling_window_even_on_a_first_run(monkeypatch):
 def test_an_unparseable_page_never_stops_the_scroll(monkeypatch):
     monitor = _monitor()
     monkeypatch.setattr(
-        "fetcher.search.validate_graphql_payload", lambda *_: MagicMock(ok=False)
+        "engine.search.validate_graphql_payload", lambda *_: MagicMock(ok=False)
     )
 
     stop = monitor._deep_stop_predicate(window_start=_at(24), known_ground=_at(1))
@@ -320,7 +320,7 @@ def test_reaching_known_ground_is_a_success_the_run_can_record(monkeypatch):
     through to "partial_browser_predicate" -- and a partial run may not advance
     newest_seen_at. The fast path could never move its own high-water mark.
     """
-    from fetcher.search import SearchTimelineMonitor
+    from engine.search import SearchTimelineMonitor
 
     monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
     monitor._tweet_datetime = lambda tweet: tweet["at"]
@@ -343,7 +343,7 @@ def test_reaching_known_ground_is_a_success_the_run_can_record(monkeypatch):
 def test_the_known_ground_reason_counts_as_a_completed_run():
     import inspect
 
-    from fetcher.search import SearchTimelineMonitor
+    from engine.search import SearchTimelineMonitor
 
     source = inspect.getsource(SearchTimelineMonitor._build_report)
     successful = source.split("successful_reasons = {")[1].split("}")[0]
@@ -351,7 +351,7 @@ def test_the_known_ground_reason_counts_as_a_completed_run():
 
 
 def test_fresh_pages_do_not_trip_the_known_ground_stop(monkeypatch):
-    from fetcher.search import SearchTimelineMonitor
+    from engine.search import SearchTimelineMonitor
 
     monitor = SearchTimelineMonitor.__new__(SearchTimelineMonitor)
     monitor._tweet_datetime = lambda tweet: tweet["at"]

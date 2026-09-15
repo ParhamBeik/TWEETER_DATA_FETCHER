@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 BACKEND = Path(__file__).resolve().parent.parent
-PACKAGES = ("tweets", "fetching", "fetcher", "config", "seed")
+PACKAGES = ("tweets", "fetching", "engine", "config", "seed")
 SQL_KEYWORD = re.compile(r"\b(SELECT|WITH|INSERT INTO|UPDATE|DELETE FROM)\b")
 # Consume the legal forms first so an escaped '%%' cannot be read as one good
 # '%' followed by one stray one -- only group 1 is a genuine offender.

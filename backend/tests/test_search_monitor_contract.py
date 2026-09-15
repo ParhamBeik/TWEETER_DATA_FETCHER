@@ -29,9 +29,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fetcher.processing import TweetSetProcessor
-from fetcher.clock import utc_now
-from fetcher.search import SearchTimelineMonitor
+from engine.processing import TweetSetProcessor
+from engine.clock import utc_now
+from engine.search import SearchTimelineMonitor
 
 
 def _search_page(tweet_id: str, created_at: str, cursor: str | None) -> dict:

@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from fetcher.live import LiveMonitor
-from fetcher.clock import utc_now
-from fetcher.search import SearchTimelineMonitor
-from fetcher.config import DEFAULT_PRIORITY_POLICIES
+from engine.live import LiveMonitor
+from engine.clock import utc_now
+from engine.search import SearchTimelineMonitor
+from engine.config import DEFAULT_PRIORITY_POLICIES
 
 
 class LiveStatusTests(unittest.TestCase):

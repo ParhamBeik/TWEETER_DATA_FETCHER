@@ -64,7 +64,7 @@ jobs:
 
       - name: Byte-compile every source tree
         # Catches syntax errors in modules no test happens to import.
-        run: python -m compileall -q config fetcher fetching tweets tests
+        run: python -m compileall -q config engine fetching tweets tests
 
       - name: Lint
         # compileall proves a module parses; it says nothing about a name that

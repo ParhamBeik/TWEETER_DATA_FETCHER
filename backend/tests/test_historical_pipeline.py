@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fetcher.historical import run_v4
+from engine.historical import run_v4
 
 
 class HistoricalPipelineTests(unittest.TestCase):
@@ -31,8 +31,8 @@ class HistoricalPipelineTests(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('fetcher.historical.FetcherEngine')
-    @patch('fetcher.historical.StorageManager')
+    @patch('engine.historical.FetcherEngine')
+    @patch('engine.historical.StorageManager')
     def test_pipeline_structure(self, mock_storage, mock_engine):
         """Test that historical pipeline has correct structure."""
         # Mock the engine and storage
@@ -46,7 +46,7 @@ class HistoricalPipelineTests(unittest.TestCase):
         # Verify the function exists and can be called
         self.assertTrue(callable(run_v4))
 
-    @patch('fetcher.historical.FetcherEngine')
+    @patch('engine.historical.FetcherEngine')
     def test_account_processing(self, mock_engine):
         """Test account processing logic."""
         mock_engine_instance = MagicMock()
@@ -59,7 +59,7 @@ class HistoricalPipelineTests(unittest.TestCase):
 
     def test_endpoint_handling(self):
         """Test that all endpoints are handled."""
-        from fetcher.historical import ENDPOINTS
+        from engine.historical import ENDPOINTS
         self.assertEqual(ENDPOINTS, ("UserTweets",))
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ RUN pip install -r /app/requirements.txt
 RUN playwright install --with-deps chromium
 
 # The engine ships inside the backend package tree, so there is no PYTHONPATH
-# seam: workers run it as `python -m fetcher.<pipeline>`.
+# seam: workers run it as `python -m engine.<pipeline>`.
 COPY backend /app
 
 EXPOSE 8000

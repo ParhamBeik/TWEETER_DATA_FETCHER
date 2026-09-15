@@ -10,11 +10,11 @@ from django.db.models import Count, Max
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from fetcher.config import DEFAULT_PRIORITY_POLICIES
+from engine.config import DEFAULT_PRIORITY_POLICIES
 
 from tweets.models import EndpointState, KeyValueState, Tweet, TwitterUser
 
-# Mirrors fetcher.historical.DEPTH_PROVIDER_LIMIT without importing the pipeline.
+# Mirrors engine.historical.DEPTH_PROVIDER_LIMIT without importing the pipeline.
 PROVIDER_DEPTH_LIMIT = "provider_depth_limit"
 _EXHAUSTED = "success_timeline_exhausted"
 
