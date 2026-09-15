@@ -146,3 +146,31 @@ def test_due_live_handles_are_the_accounts_past_their_interval():
     row.save()
 
     assert due_live_handles(now=now) == ["stale", "never"]
+
+
+@pytest.mark.django_db
+def test_runner_sets_quota_floor_only_for_historical():
+    from unittest.mock import MagicMock, patch
+    from fetching.runner import cleanup, run_fetcher
+
+    captured_envs = {}
+
+    def fake_popen(cmd, env, **kwargs):
+        sub = "historical" if "historical" in cmd[2] else "live"
+        captured_envs[sub] = env
+        return MagicMock()
+
+    with patch("subprocess.Popen", side_effect=fake_popen), \
+         patch("fetching.runner._await_process", return_value=(0, ["ok"])), \
+         patch("fetching.runner._persist_state"), \
+         patch("fetching.runner._persist_session"), \
+         patch("fetching.runner._persist_artifacts", return_value=({}, [], "completed")):
+        res_live = run_fetcher("engine.live", [], subsystem="live")
+        cleanup(res_live.root)
+        assert "TDF_HISTORICAL_QUOTA_FLOOR" not in captured_envs["live"]
+
+        res_hist = run_fetcher("engine.historical", [], subsystem="historical")
+        cleanup(res_hist.root)
+        assert "TDF_HISTORICAL_QUOTA_FLOOR" in captured_envs["historical"]
+
+

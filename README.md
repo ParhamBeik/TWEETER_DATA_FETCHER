@@ -158,10 +158,8 @@ so the split between them is explicit:
   its own stored cursor each tick, stops after
   `FETCH_HISTORICAL_PAGES_PER_TICK` pages, always leaves enough requests for
   live, and leaves the queue for good once it reaches the end of an account's
-  timeline. Note that `FETCH_HISTORICAL_QUOTA_FLOOR` does **not** set that
-  reserve for the historical subsystem: `fetching/runner.py` computes it from
-  the current live due-set and overwrites the setting, so the env var only
-  applies to CLI runs.
+  timeline. That live reserve is not a setting: it is computed per run from how
+  many accounts are actually due, because a fixed number cannot know that.
 - **Search** runs one query per task on its own `Search.interval_seconds`, so
   no query can be starved by the ones ahead of it. Deep pages come from browser
   scrolling, and a repoll stops once it reaches tweets the last run stored.

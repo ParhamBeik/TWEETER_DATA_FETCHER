@@ -605,6 +605,11 @@ def run_fetcher(
         # boundary as env rather than settings imports; naming them here keeps the
         # knob a single .env entry instead of two independent defaults.
         env["TDF_HISTORICAL_PAGES_PER_TICK"] = str(settings.FETCH_HISTORICAL_PAGES_PER_TICK)
+        # Only the archive walk reads this -- engine/live.py and engine/search.py
+        # have no QUOTA_FLOOR -- so it is set only for the subsystem that acts on
+        # it. The `else` branch that used to pass settings.FETCH_HISTORICAL_QUOTA_FLOOR
+        # to live and search runs handed them a variable neither process reads,
+        # which is what made that setting look configurable when it was not.
         if subsystem == "historical":
             from .accounts import LIVE_RATE_RESERVE, archive_quota_floor, due_live_handles
 
@@ -615,8 +620,6 @@ def run_fetcher(
                 "historical quota floor=%s (%s live account(s) due, reserve=%s)",
                 floor, len(due), LIVE_RATE_RESERVE,
             )
-        else:
-            env["TDF_HISTORICAL_QUOTA_FLOOR"] = str(settings.FETCH_HISTORICAL_QUOTA_FLOOR)
         env["TDF_EMPTY_PAGE_STREAK"] = str(settings.FETCH_EMPTY_PAGE_STREAK)
         env["TDF_ARCHIVE_EARLIEST_DATE"] = settings.FETCH_ARCHIVE_EARLIEST_DATE
         # cwd is the scratch root, so point the subprocess at this project for

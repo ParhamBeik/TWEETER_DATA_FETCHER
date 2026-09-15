@@ -27,7 +27,7 @@ const RAIL_POLL_MS = 60000;
 const TICKS = 20;
 // Below this share of an endpoint's allowance, a collector is about to start
 // sleeping rather than fetching. Named as a threshold because that is what it
-// is -- see FETCH_HISTORICAL_QUOTA_FLOOR, the same idea server-side.
+// is -- see fetching.accounts.archive_quota_floor, the same idea server-side.
 const LOW = 0.25;
 const GUARDED = 0.5;
 

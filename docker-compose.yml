@@ -47,6 +47,19 @@ x-worker-healthcheck: &worker-healthcheck
   timeout: 10s
   retries: 3
 
+# Workers and beat must wait for web to be healthy -- web runs collectstatic
+# and migrations before starting gunicorn, so gating workers on web being
+# healthy ensures no worker runs against a pre-migration schema.
+x-worker: &worker
+  <<: *app
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    web:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -105,7 +118,7 @@ services:
   # fetching.runner._persist_session for the cross-worker write race this still
   # allows, and why it only writes fields that actually changed).
   worker_live:
-    <<: *app
+    <<: *worker
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q live -n live@%h
     healthcheck: *worker-healthcheck
     mem_limit: 512m
@@ -115,7 +128,7 @@ services:
     shm_size: 256m
 
   worker_historical:
-    <<: *app
+    <<: *worker
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q historical -n historical@%h
     healthcheck: *worker-healthcheck
     # UserTweets pagination never invokes Chromium here -- HTTP only.
@@ -129,7 +142,7 @@ services:
   # It only ever runs sub-second bookkeeping (which searches are due), the
   # retention jobs, and chunked photo downloads, hence the small allowance.
   worker_control:
-    <<: *app
+    <<: *worker
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q control -n control@%h
     healthcheck: *worker-healthcheck
     mem_limit: 256m
@@ -137,7 +150,7 @@ services:
       - media_data:/app/media
 
   worker_search:
-    <<: *app
+    <<: *worker
     command: celery -A config worker -l info -P solo --concurrency=1 --prefetch-multiplier=1 --without-gossip --without-mingle -Q search -n search@%h
     healthcheck: *worker-healthcheck
     # Deep-search Chromium capture needs ~2g: below that the renderer hard-crashes
@@ -150,7 +163,7 @@ services:
     shm_size: 512m
 
   beat:
-    <<: *app
+    <<: *worker
     command: celery -A config beat -l info
     healthcheck:
       test: ["CMD-SHELL", "grep -aq 'celery -A config beat' /proc/[1-9]*/cmdline"]
@@ -165,7 +178,9 @@ services:
       dockerfile: frontend/Dockerfile
     logging: *logging
     ports: ["8080:80"]
-    depends_on: [web]
+    depends_on:
+      web:
+        condition: service_healthy
     restart: unless-stopped
     mem_limit: 64m
     volumes:

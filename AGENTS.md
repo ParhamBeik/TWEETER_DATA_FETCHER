@@ -92,7 +92,9 @@ effective_cutoff = min(now - configured_window, floor(fetch_watermark))
 - Accounts quarantine after three consecutive user-ID resolution failures.
   Clearing quarantine must clear both the Postgres row and the live state blob.
 - All three fetchers share one X rate budget. The archive walk must always
-  leave `FETCH_HISTORICAL_QUOTA_FLOOR` requests for live polling; anything that
+  leave room for live polling -- `fetching.accounts.archive_quota_floor` sizes
+  that reserve from the live due-set on every run, and it is not a setting;
+  anything that
   can paginate needs a stop condition that does not depend on the API
   withholding a cursor, since a timeline past its last tweet keeps offering
   one.

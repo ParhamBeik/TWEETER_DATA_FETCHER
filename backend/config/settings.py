@@ -318,10 +318,13 @@ FETCH_HISTORICAL_CHUNK_SIZE = int(os.environ.get("FETCH_HISTORICAL_CHUNK_SIZE", 
 # retried from page 1 forever. Passed to the engine subprocess by
 # fetching.runner.run_fetcher as TDF_HISTORICAL_PAGES_PER_TICK.
 FETCH_HISTORICAL_PAGES_PER_TICK = int(os.environ.get("FETCH_HISTORICAL_PAGES_PER_TICK", "25"))
-# Requests the archive walk must leave when it cannot see the live due-set
-# (CLI runs). The Django runner overwrites this with one seat per due live
-# account plus live's reserve.
-FETCH_HISTORICAL_QUOTA_FLOOR = int(os.environ.get("FETCH_HISTORICAL_QUOTA_FLOOR", "1"))
+# There is deliberately no FETCH_HISTORICAL_QUOTA_FLOOR here. The reserve the
+# archive walk leaves for live polling is computed per run from the live due-set
+# (fetching.runner.run_fetcher -> accounts.archive_quota_floor), because a fixed
+# number cannot know how many accounts are due this tick. The engine still reads
+# TDF_HISTORICAL_QUOTA_FLOOR, which is what a hand-run `python -m
+# engine.historical` uses; that path does not load Django settings, so a setting
+# here could never have reached it.
 # Consecutive tweet-less pages that end a walk. This is a guess about someone
 # else's API, and the two ways of being wrong are not symmetric: one page too
 # many costs a single request, one page too few marks the account complete and
