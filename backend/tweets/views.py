@@ -17,6 +17,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from fetching.accounts import clamp_priority, clear_live_quarantine, live_state_map
+from fetching.exports import filename_for
+from fetching.searches import schedule_for, teardown_search
+from fetching.session import (
+    normalize_session_source,
+    session_health,
+    validate_config_overrides,
+    validate_session_payload,
+)
+from fetching.tasks import (
+    backfill_historical_all,
+    fetch_account_historical,
+    fetch_account_live,
+    poll_live_all,
+    repoll_searches,
+    run_export,
+    run_search,
+)
 
 from .params import body_mapping
 from .permissions import IsStaff, IsStaffOrReadOnly
@@ -167,8 +184,6 @@ class AccountViewSet(viewsets.ModelViewSet):
                 "quarantined_at": None,
             },
         )
-        from fetching.tasks import fetch_account_historical, fetch_account_live
-
         fetch_account_historical.delay(handle)
         fetch_account_live.delay(handle)
         return Response(
@@ -205,8 +220,6 @@ class AccountViewSet(viewsets.ModelViewSet):
         # and writes a FetchRun, and an unknown handle used to answer 202 and
         # actually start an engine subprocess for an account nobody tracks.
         account = self.get_object()
-        from fetching.tasks import fetch_account_historical, fetch_account_live
-
         fetch_account_live.delay(account.handle)
         fetch_account_historical.delay(account.handle)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
@@ -239,8 +252,6 @@ class CycleView(APIView):
 
     def post(self, request):
         subsystem = str(body_mapping(request).get("subsystem") or "").lower()
-        from fetching.tasks import backfill_historical_all, poll_live_all, repoll_searches
-
         tasks = {
             "live": poll_live_all,
             "historical": backfill_historical_all,
@@ -261,17 +272,9 @@ class XSessionView(APIView):
     permission_classes = [IsStaff]
 
     def get(self, request):
-        from fetching.session import session_health
-
         return Response(session_health())
 
     def post(self, request):
-        from fetching.session import (
-            normalize_session_source,
-            validate_config_overrides,
-            validate_session_payload,
-        )
-
         # Accepts a whole exported config.json (api_cookies/api_auth) or the
         # session shape (cookies/headers); session-bound config keys are kept,
         # everything else falls back to the seed template.
@@ -351,8 +354,6 @@ class SearchViewSet(viewsets.ModelViewSet):
             name=name,
             slug=slug,
         )
-        from fetching.tasks import run_search
-
         # Run immediately rather than waiting up to one dispatch interval: a
         # query you just wrote should start collecting while you are still
         # looking at it. The recurring schedule takes over from there.
@@ -360,13 +361,9 @@ class SearchViewSet(viewsets.ModelViewSet):
         Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
 
     def perform_destroy(self, instance):
-        from fetching.searches import teardown_search
-
         teardown_search(instance)
 
     def destroy(self, request, *args, **kwargs):
-        from fetching.searches import teardown_search
-
         # Report what went, rather than a bare 204. Deleting a search removes
         # results and history an operator cannot get back, so the response says
         # exactly what it cost.
@@ -405,8 +402,6 @@ class SearchViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def schedule(self, request, pk=None):
         """The recurring job behind this phrase, cheap enough to poll."""
-        from fetching.searches import schedule_for
-
         return Response(schedule_for(self.get_object()))
 
     @action(detail=True, methods=["post"], permission_classes=[IsStaff])
@@ -415,23 +410,17 @@ class SearchViewSet(viewsets.ModelViewSet):
         search = self.get_object()
         search.enabled = not search.enabled
         search.save(update_fields=["enabled"])
-        from fetching.searches import schedule_for
-
         return Response(schedule_for(search))
 
     @action(detail=True, methods=["post"])
     def refresh(self, request, pk=None):
         search = self.get_object()
-        from fetching.tasks import run_search
-
         result = run_search.delay(search.id)
         Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
 
 def _export_payload(job: ExportJob) -> dict:
-    from fetching.exports import filename_for
-
     return {
         "id": job.id,
         "status": job.status,
@@ -497,8 +486,6 @@ class ExportView(APIView):
             params={"query": str(query)},
             requested_by=request.user,
         )
-        from fetching.tasks import run_export
-
         run_export.delay(job.id)
         job.refresh_from_db()
         return Response(_export_payload(job), status=status.HTTP_202_ACCEPTED)
@@ -528,8 +515,6 @@ class ExportDownloadView(APIView):
     renderer_classes = [JSONRenderer]
 
     def get(self, request, pk):
-        from fetching.exports import filename_for
-
         job = ExportJob.objects.filter(pk=pk, requested_by=request.user).first()
         if job is None:
             return Response({"detail": "not found"}, status=404)

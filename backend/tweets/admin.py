@@ -1,5 +1,8 @@
 from django.contrib import admin
 
+from fetching.redaction import redact_text
+from fetching.searches import teardown_search
+
 from .feed import with_feed_ts
 from .models import (
     EndpointState,
@@ -43,13 +46,9 @@ class SearchAdmin(admin.ModelAdmin):
     search_fields = ("slug", "name", "raw_query")
 
     def delete_model(self, request, obj):
-        from fetching.searches import teardown_search
-
         teardown_search(obj)
 
     def delete_queryset(self, request, queryset):
-        from fetching.searches import teardown_search
-
         for obj in queryset:
             teardown_search(obj)
 
@@ -93,6 +92,4 @@ class FetchRunAdmin(admin.ModelAdmin):
 
     @admin.display(description="Log excerpt (redacted)")
     def redacted_log_excerpt(self, obj):
-        from fetching.redaction import redact_text
-
         return redact_text(obj.log_excerpt)

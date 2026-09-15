@@ -8,6 +8,8 @@ from fetching.accounts import (
     recent_tweet_counts,
     watermark_map,
 )
+from fetching.redaction import redact_text as _redact_text
+from fetching.searches import schedule_for
 from fetching.media import (
     avatar_urls,
     lookup_local_urls,
@@ -339,8 +341,6 @@ class SearchSerializer(serializers.ModelSerializer):
         return int(annotated if annotated is not None else obj.hits.count())
 
     def get_schedule(self, obj) -> dict:
-        from fetching.searches import schedule_for
-
         return schedule_for(obj, running=getattr(obj, "is_running_annotated", None))
 
     def _last_runs(self, obj):
@@ -390,11 +390,10 @@ class FetchRunSerializer(serializers.ModelSerializer):
         ]
 
 
-from fetching.redaction import redact_text as _redact_text  # noqa: E402
-
 # Redaction now happens before the excerpt is written (fetching.runner), so
-# this read-time pass only still matters for rows stored before that change --
-# and for the admin, which renders log_excerpt without going through DRF.
+# the read-time pass below only still matters for rows stored before that
+# change -- and for the admin, which renders log_excerpt without going
+# through DRF.
 
 
 class FetchRunDetailSerializer(FetchRunSerializer):
