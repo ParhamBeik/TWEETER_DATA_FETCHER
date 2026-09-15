@@ -6,7 +6,7 @@ them in Postgres, and serves them through a React operator console.
 ```
 frontend/ (React)  ──/api──▶  Django + DRF  ──▶  Postgres   (the only durable store)
                                    │
-                                   └──▶  Redis  ──▶  3 Celery workers
+                                   └──▶  Redis  ──▶  4 Celery workers
                                                       │
                                           each runs the X engine as a
                                           subprocess in a temp dir, then
@@ -20,7 +20,8 @@ backend/
   config/      Django project: settings, urls, celery
   tweets/      models, API views, serializers, analytics, admin
   fetching/    Celery tasks + the runner that drives the engine
-  engine/     the X engine (HTTP, pagination, auth, parsing, storage)
+  engine/      the X engine (HTTP, pagination, auth, parsing, storage);
+               pure Python, imports no Django, run as a subprocess
   tests/       one suite covering both the engine and the API
 frontend/      React + Vite SPA (Tailwind tokens in src/index.css,
                primitives in src/ui/)
@@ -31,7 +32,7 @@ scripts/       deploy and backup
 
 ```bash
 cp .env.example .env          # set DJANGO_SECRET_KEY (32+ chars) at minimum
-docker compose up --build     # postgres, redis, web, 3 workers, beat, frontend
+docker compose up --build     # postgres, redis, web, 4 workers, beat, frontend
 ```
 
 Then, in another shell:
@@ -51,7 +52,7 @@ http://localhost:8002/admin/.
 pip install -r backend/requirements.txt
 cd backend
 python manage.py migrate && python manage.py runserver
-celery -A config worker -l info -Q live,historical,search   # second shell
+celery -A config worker -l info -Q live,historical,search,control  # second shell
 celery -A config beat -l info                               # third shell
 cd ../frontend && npm install && npm run dev                # http://localhost:5173
 ```
@@ -130,17 +131,24 @@ a term for good via `POST /api/analytics/topics/hidden/`.
 
 ## Scheduling
 
-Beat ticks three periodic tasks, each on its own queue and worker so a
-rate-limit sleep in one cannot block the others:
+Beat ticks ten periodic tasks. The three collectors each get their own queue
+and worker so a rate-limit sleep in one cannot block the others; everything
+else shares the `control` worker.
 
-| Task | Default interval | Env var |
-| --- | --- | --- |
-| live poll (all due accounts) | 5 min | `FETCH_LIVE_INTERVAL_SECONDS` |
-| historical archive walk (1 account/tick) | 5 min | `FETCH_HISTORICAL_INTERVAL_SECONDS` |
-| search dispatch (queues whoever is due) | 5 min | `FETCH_SEARCH_DISPATCH_SECONDS` |
-| recompute poll intervals | daily | — |
+| Task | Queue | Default interval | Env var |
+| --- | --- | --- | --- |
+| live poll (all due accounts) | live | 5 min | `FETCH_LIVE_INTERVAL_SECONDS` |
+| historical archive walk (1 account/tick) | historical | 5 min | `FETCH_HISTORICAL_INTERVAL_SECONDS` |
+| search dispatch (queues whoever is due) | control | 5 min | `FETCH_SEARCH_DISPATCH_SECONDS` |
+| archive media | control | 2 min | `MEDIA_ARCHIVE_INTERVAL_SECONDS` |
+| recompute poll intervals | control | daily | — |
+| purge expired search tweets | control | daily | `SEARCH_TWEET_TTL_DAYS` |
+| purge old fetch runs | control | daily | `FETCH_RUN_RETENTION_DAYS` |
+| purge old raw pages | control | daily | `RAW_PAGE_RETENTION_DAYS` |
+| purge old tweet metrics | control | daily | `TWEET_METRIC_RETENTION_DAYS` |
+| purge old exports | control | hourly | `EXPORT_TTL_HOURS` |
 
-All three fetchers spend **one** X rate budget (`UserTweets` 50 per 15 min),
+The three collectors spend **one** X rate budget (`UserTweets` 50 per 15 min),
 so the split between them is explicit:
 
 - **Live** keeps the last few hours current. It polls each account on its own
@@ -148,9 +156,12 @@ so the split between them is explicit:
   the band its priority tier allows, and never paginates deeper than 3 pages.
 - **The archive walk** is a finite backward pass per account. It resumes from
   its own stored cursor each tick, stops after
-  `FETCH_HISTORICAL_PAGES_PER_TICK` pages, always leaves
-  `FETCH_HISTORICAL_QUOTA_FLOOR` requests for live, and leaves the queue for
-  good once it reaches the end of an account's timeline.
+  `FETCH_HISTORICAL_PAGES_PER_TICK` pages, always leaves enough requests for
+  live, and leaves the queue for good once it reaches the end of an account's
+  timeline. Note that `FETCH_HISTORICAL_QUOTA_FLOOR` does **not** set that
+  reserve for the historical subsystem: `fetching/runner.py` computes it from
+  the current live due-set and overwrites the setting, so the env var only
+  applies to CLI runs.
 - **Search** runs one query per task on its own `Search.interval_seconds`, so
   no query can be starved by the ones ahead of it. Deep pages come from browser
   scrolling, and a repoll stops once it reaches tweets the last run stored.
