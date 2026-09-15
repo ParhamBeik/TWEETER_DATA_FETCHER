@@ -22,6 +22,7 @@ from django.conf import settings
 from django.http import QueryDict
 from django.utils import timezone
 
+from tweets.feed import feed_queryset
 from tweets.models import ExportJob
 from tweets.windows import normalize_handles
 
@@ -79,8 +80,6 @@ def filename_for(job: ExportJob) -> str:
 
 def write_export(job: ExportJob) -> ExportJob:
     """Materialize one job's file. Returns the job with its outcome recorded."""
-    from tweets.views import feed_queryset
-
     ExportJob.objects.filter(pk=job.pk).update(status="running")
     params = QueryDict(job.params.get("query", ""))
     raw_text = str(params.get("text") or "clean").lower() == "raw"

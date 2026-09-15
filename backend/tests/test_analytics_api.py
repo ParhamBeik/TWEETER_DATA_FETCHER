@@ -374,7 +374,7 @@ def test_overview_respects_until_boundary(client):
 
 @pytest.mark.django_db
 def test_calendar_start_week_starts_on_saturday():
-    from tweets.views import _calendar_start
+    from tweets.feed import _calendar_start
 
     start = _calendar_start("week")
     # Saturday in python weekday() is 5

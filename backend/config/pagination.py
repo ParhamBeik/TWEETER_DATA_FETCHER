@@ -14,7 +14,7 @@ class StandardCursorPagination(CursorPagination):
     # Orders on the `feed_ts` annotation, not `created_at` directly: created_at is
     # nullable (X sometimes returns an unparseable timestamp) and cursor paging
     # compares with __lt, which never matches NULL. Tweet querysets that use this
-    # class must apply tweets.views.with_feed_ts().
+    # class must apply tweets.feed.with_feed_ts().
     ordering = ("-feed_ts", "-id")
     page_size = 30
 

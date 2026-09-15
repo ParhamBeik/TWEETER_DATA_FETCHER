@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from .feed import with_feed_ts
 from .models import (
     EndpointState,
     FetchRun,
@@ -29,8 +30,6 @@ class TweetAdmin(admin.ModelAdmin):
     date_hierarchy = "created_at"
 
     def get_queryset(self, request):
-        from .views import with_feed_ts
-
         return with_feed_ts(super().get_queryset(request))
 
     def get_ordering(self, request):
