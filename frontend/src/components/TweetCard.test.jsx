@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import TweetCard from "./TweetCard";
+import TweetCard from "@/components/TweetCard";
 
 // Unit tests: TweetCard is a pure presentational component over one tweet object,
 // so rendering it in isolation covers every branch without a router or a server.

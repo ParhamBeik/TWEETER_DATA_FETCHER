@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { api } from "@/api";
-import { useAuth } from "@/auth";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/auth";
 import { cn } from "@/lib/cn";
-import { compact, duration } from "@/format";
-import InfiniteSentinel from "@/InfiniteSentinel";
-import TweetCard from "@/TweetCard";
+import { compact, duration } from "@/lib/format";
+import InfiniteSentinel from "@/components/InfiniteSentinel";
+import TweetCard from "@/components/TweetCard";
 import { Button } from "@/ui/button";
 import { Empty, ErrorNote, Skeleton } from "@/ui/controls";
 import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";
@@ -15,7 +15,7 @@ import { Tab, TabList, TabPanel, Tabs } from "@/ui/tabs";
 import DeleteDialog from "./DeleteDialog";
 import QueryDialog from "./QueryDialog";
 import Workflow from "./Workflow";
-import { usePoll } from "@/usePoll";
+import { usePoll } from "@/hooks/usePoll";
 
 const SEARCHES_POLL_MS = 20000;
 

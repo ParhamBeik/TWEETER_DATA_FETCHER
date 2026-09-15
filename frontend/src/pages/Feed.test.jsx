@@ -3,17 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Feed from "./Feed";
-import { api, setTokens } from "../api";
+import { api, setTokens } from "@/lib/api";
 
 // Component tests: Feed is where filter state, pagination and export converge,
 // so it is driven through the DOM with only the network boundary mocked.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
-vi.mock("../useMediaQuery", () => ({
+vi.mock("@/hooks/useMediaQuery", () => ({
   useMediaQuery: () => true,
 }));
 

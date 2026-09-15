@@ -1,15 +1,15 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import BudgetRail from "./BudgetRail";
-import { api } from "./api";
+import BudgetRail from "@/components/BudgetRail";
+import { api } from "@/lib/api";
 
 // Component tests: the rail is one endpoint rendered as a gauge, so the network
 // boundary is the only thing mocked. What is worth pinning is that the numbers
 // are readable to assistive technology and that an unreported budget says so
 // rather than rendering as a full tank.
 
-vi.mock("./api", async () => {
-  const actual = await vi.importActual("./api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 

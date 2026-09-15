@@ -3,14 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Analyze from "./Analyze";
-import { api } from "../api";
+import { api } from "@/lib/api";
 
 // Component tests: Analyze turns one filter bar into three differently-shaped
 // endpoints, so the filter-to-request mapping and each tab's render are the
 // behaviour worth pinning.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
@@ -27,8 +27,8 @@ vi.mock("recharts", async () => {
 // The topics panel offers a staff-only "hide this term" control, so the page
 // reads identity. Stubbed rather than wrapped in a real AuthProvider: that would
 // put a token refresh and a /auth/me round trip into every test in this file.
-vi.mock("../auth", async () => {
-  const actual = await vi.importActual("../auth");
+vi.mock("@/context/auth", async () => {
+  const actual = await vi.importActual("@/context/auth");
   return { ...actual, useAuth: () => ({ isStaff: true, authed: true }) };
 });
 

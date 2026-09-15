@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Archive, ArrowUp, ChevronDown, Download, Image, X } from "lucide-react";
-import { api, authorizedFetch } from "../api";
-import { AccountPicker, Segmented, ToggleChips, useAccounts } from "../filters";
-import InfiniteSentinel from "../InfiniteSentinel";
-import TweetCard from "../TweetCard";
-import { useMediaQuery } from "../useMediaQuery";
+import { api, authorizedFetch } from "@/lib/api";
+import { AccountPicker, useAccounts } from "@/components/filters";
+import { Segmented, ToggleChips } from "@/ui/controls";
+import InfiniteSentinel from "@/components/InfiniteSentinel";
+import TweetCard from "@/components/TweetCard";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { Button } from "@/ui/button";
 import { Chip, Empty, ErrorNote } from "@/ui/controls";
 import { Input, Select } from "@/ui/field";

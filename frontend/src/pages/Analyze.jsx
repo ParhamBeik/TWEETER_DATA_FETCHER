@@ -10,20 +10,20 @@ import {
   YAxis,
 } from "recharts";
 import { EyeOff } from "lucide-react";
-import { api } from "../api";
-import { useAuth } from "../auth";
-import { AXIS_PROPS, LINE, SERIES, TOOLTIP_STYLE, bucketLabel } from "../charts";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/auth";
+import { AXIS_PROPS, LINE, SERIES, TOOLTIP_STYLE, bucketLabel } from "@/lib/charts";
 import {
   AccountPicker,
   BUCKETS,
   RANGES,
-  Segmented,
   useAccounts,
   useLiveRefresh,
   windowParams,
-} from "../filters";
-import { absoluteTime, compact, relativeTime } from "../format";
-import TweetCard from "../TweetCard";
+} from "@/components/filters";
+import { Segmented } from "@/ui/controls";
+import { absoluteTime, compact, relativeTime } from "@/lib/format";
+import TweetCard from "@/components/TweetCard";
 import { Chip, Empty, ErrorNote, Skeleton } from "@/ui/controls";
 import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";
 import { Tab, TabList, TabPanel, Tabs } from "@/ui/tabs";

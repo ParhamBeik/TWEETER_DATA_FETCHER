@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Brand } from "@/Logo";
+import { Brand } from "@/components/Logo";
 import { cn } from "@/lib/cn";
 
 // Shared chrome for the two auth pages, so sign-in and sign-up cannot drift

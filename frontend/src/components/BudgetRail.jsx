@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { api } from "@/api";
-import { usePoll } from "@/usePoll";
+import { api } from "@/lib/api";
+import { usePoll } from "@/hooks/usePoll";
 import { cn } from "@/lib/cn";
-import { duration } from "@/format";
+import { duration } from "@/lib/format";
 import { Status, TONE } from "@/ui/status";
 
 /**

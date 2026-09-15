@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { absoluteTime, compact } from "../format";
+import { absoluteTime, compact } from "@/lib/format";
 import { Button } from "@/ui/button";
 import { Empty, ErrorNote } from "@/ui/controls";
 import { Select, Textarea } from "@/ui/field";
 import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";
 import { Badge, RUN_TONE, Status, TONE, toneEdge } from "@/ui/status";
-import { usePoll } from "@/usePoll";
+import { usePoll } from "@/hooks/usePoll";
 
 // Run status is the point of this page, so it stays the fastest poller.
 const RUNS_POLL_MS = 10000;

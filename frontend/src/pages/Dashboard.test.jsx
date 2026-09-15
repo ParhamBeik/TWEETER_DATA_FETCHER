@@ -3,19 +3,19 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Dashboard from "./Dashboard";
-import { api } from "../api";
+import { api } from "@/lib/api";
 
 // Component tests: The dashboard composes two endpoints into stat tiles, charts and
 // pipeline panels, so the network boundary is the only thing mocked.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
 const authState = { isStaff: true, authed: true };
-vi.mock("../auth", async () => {
-  const actual = await vi.importActual("../auth");
+vi.mock("@/context/auth", async () => {
+  const actual = await vi.importActual("@/context/auth");
   return { ...actual, useAuth: () => authState };
 });
 

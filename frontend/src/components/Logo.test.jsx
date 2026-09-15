@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import Logo, { Brand } from "./Logo";
+import Logo, { Brand } from "@/components/Logo";
 
 // Unit tests for the mark: geometry and the accessible-name contract. The
 // shell tests already prove it is wired into the sidebar; this file only

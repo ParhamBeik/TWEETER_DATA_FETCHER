@@ -11,16 +11,16 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useAuth } from "./auth";
-import BudgetRail from "./BudgetRail";
-import ErrorBoundary from "./ErrorBoundary";
+import { useAuth } from "@/context/auth";
+import BudgetRail from "@/components/BudgetRail";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { Dialog, DialogContent, DialogTrigger } from "@/ui/dialog";
-import { Brand } from "./Logo";
+import { Brand } from "@/components/Logo";
 import { cn } from "@/lib/cn";
 import { Button } from "@/ui/button";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import LegacyRedirect from "./LegacyRedirect";
+import LegacyRedirect from "@/components/LegacyRedirect";
 import { Skeleton } from "@/ui/controls";
 
 // Authenticated routes are loaded on demand, so the login screen does not pay

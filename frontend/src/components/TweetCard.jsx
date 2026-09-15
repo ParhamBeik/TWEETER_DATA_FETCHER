@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { BadgeCheck, Bookmark, Eye, Heart, MessageCircle, Repeat2, TrendingUp } from "lucide-react";
-import { Avatar } from "./filters";
+import { Avatar } from "@/components/filters";
 import { cn } from "@/lib/cn";
-import { absoluteTime, compact, permalink, relativeTime, statusLink } from "./format";
+import { absoluteTime, compact, permalink, relativeTime, statusLink } from "@/lib/format";
 
 // The reading surface. Everywhere else in this console is a cold instrument
 // panel; a post is the thing the instrument caught, so it sits on warm paper

@@ -12,8 +12,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api } from "../api";
-import { useAuth } from "../auth";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/auth";
 import {
   AXIS_PROPS,
   BAR_RADIUS_Y,
@@ -27,9 +27,10 @@ import {
   alignSeries,
   bucketLabel,
   pivotSeries,
-} from "../charts";
-import { RANGES, Segmented, useLiveRefresh, windowParams } from "../filters";
-import { absoluteTime, compact, duration, relativeTime, signed } from "../format";
+} from "@/lib/charts";
+import { RANGES, useLiveRefresh, windowParams } from "@/components/filters";
+import { Segmented } from "@/ui/controls";
+import { absoluteTime, compact, duration, relativeTime, signed } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Empty, ErrorNote, Skeleton } from "@/ui/controls";
 import { PageHead, Panel, PanelBody, PanelHead } from "@/ui/panel";

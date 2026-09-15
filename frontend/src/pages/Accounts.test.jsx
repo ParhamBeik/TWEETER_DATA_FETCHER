@@ -2,19 +2,19 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Accounts from "./Accounts";
-import { api } from "../api";
+import { api } from "@/lib/api";
 
 // Component tests: the roster table is the operator's main control surface, so
 // every row action is exercised through the DOM with the API boundary mocked.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
 const authState = { isStaff: true, authed: true };
-vi.mock("../auth", async () => {
-  const actual = await vi.importActual("../auth");
+vi.mock("@/context/auth", async () => {
+  const actual = await vi.importActual("@/context/auth");
   return { ...actual, useAuth: () => authState };
 });
 

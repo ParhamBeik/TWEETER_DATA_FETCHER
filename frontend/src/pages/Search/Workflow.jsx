@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { api } from "@/api";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { absoluteTime, compact, duration, relativeTime } from "@/format";
+import { absoluteTime, compact, duration, relativeTime } from "@/lib/format";
 import { Panel, PanelBody, PanelHead } from "@/ui/panel";
 import { Readout, Empty, Skeleton } from "@/ui/controls";
 import { Badge, RUN_TONE, SCHEDULE_TONE, Status, toneEdge } from "@/ui/status";
-import { usePoll } from "@/usePoll";
+import { usePoll } from "@/hooks/usePoll";
 
 const WORKFLOW_POLL_MS = 15000;
 

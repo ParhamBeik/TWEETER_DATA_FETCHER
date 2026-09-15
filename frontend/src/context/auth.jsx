@@ -5,7 +5,7 @@
 // telling React, so the guard could still be looking at the previous answer.
 // Identity lives in state here, and every consumer re-renders when it changes.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, clearTokens, hasSession, refreshSession, setTokens } from "./api";
+import { api, clearTokens, hasSession, refreshSession, setTokens } from "@/lib/api";
 
 const AuthContext = createContext(null);
 

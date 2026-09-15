@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, Link } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import ErrorBoundary from "./ErrorBoundary";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 function Explode() {
   throw new Error("chart received a shape it did not expect");

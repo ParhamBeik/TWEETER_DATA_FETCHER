@@ -1,14 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import InfiniteSentinel from "./InfiniteSentinel";
-import { alignSeries, pivotSeries } from "./charts";
-import { absoluteTime, compact } from "./format";
+import InfiniteSentinel from "@/components/InfiniteSentinel";
+import { alignSeries, pivotSeries } from "@/lib/charts";
+import { absoluteTime, compact } from "@/lib/format";
 
 // Unit tests for the two shared widgets. IntersectionObserver is stubbed per-test
 // so the sentinel's callback can be fired deterministically.
 
-vi.mock("./api", async () => {
-  const actual = await vi.importActual("./api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 

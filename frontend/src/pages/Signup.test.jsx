@@ -3,20 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Signup, { getPasswordChecks, strengthFor } from "./Signup";
-import { api } from "../api";
+import { api } from "@/lib/api";
 
 // Unit tests for the two pure helpers, component tests for the form. The
 // password rules here mirror the server's; the server still decides, and these
 // assert that its per-field rejections reach the right input.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
 const signIn = vi.fn();
 const registrationOpen = vi.fn(() => true);
-vi.mock("../auth", () => ({
+vi.mock("@/context/auth", () => ({
   useAuth: () => ({ signIn }),
   useRegistrationOpen: () => registrationOpen(),
 }));

@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { AuthProvider } from "./auth";
-import { clearTokens, getRefreshToken } from "./api";
+import { AuthProvider } from "@/context/auth";
+import { clearTokens, getRefreshToken } from "@/lib/api";
 
 // Component tests for the shell only: every page is stubbed so these assert
 // routing, the auth guard and the nav contract rather than page internals.
@@ -19,7 +19,7 @@ vi.mock("./pages/Login", () => ({ default: () => <div>login page</div> }));
 vi.mock("./pages/Signup", () => ({ default: () => <div>signup page</div> }));
 // The budget rail polls collector state on every screen; the shell tests are
 // about routing, not about what it reports.
-vi.mock("./BudgetRail", () => ({ default: () => null }));
+vi.mock("@/components/BudgetRail", () => ({ default: () => null }));
 
 const ROUTER_FUTURE = { v7_startTransition: true, v7_relativeSplatPath: true };
 

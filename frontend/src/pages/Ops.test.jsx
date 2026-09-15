@@ -2,13 +2,13 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Ops from "./Ops";
-import { api } from "../api";
+import { api } from "@/lib/api";
 
 // Component tests: the ops page is the operator's control surface for triggering
 // cycles and repairing the X session, so each control is driven through the DOM.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 

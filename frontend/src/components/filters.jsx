@@ -5,11 +5,9 @@
 import { useEffect, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Check } from "lucide-react";
-import { api } from "./api";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { Input } from "@/ui/field";
-
-export { Segmented, ToggleChips } from "@/ui/controls";
 
 export const RANGES = [
   { value: "1h", label: "1h" },

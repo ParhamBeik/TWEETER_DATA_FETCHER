@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { api } from "../api";
-import { useAuth } from "../auth";
-import InfiniteSentinel from "../InfiniteSentinel";
-import TweetCard from "../TweetCard";
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/auth";
+import InfiniteSentinel from "@/components/InfiniteSentinel";
+import TweetCard from "@/components/TweetCard";
 import { cn } from "@/lib/cn";
-import { absoluteTime, compact, duration } from "../format";
+import { absoluteTime, compact, duration } from "@/lib/format";
 import { Button } from "@/ui/button";
 import { Empty, ErrorNote } from "@/ui/controls";
 import { Input, Select } from "@/ui/field";

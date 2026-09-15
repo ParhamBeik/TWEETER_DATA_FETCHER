@@ -3,7 +3,7 @@ import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/ui/dialog";
 import { Field, Input } from "@/ui/field";
 import { ErrorNote } from "@/ui/controls";
-import { compact } from "@/format";
+import { compact } from "@/lib/format";
 
 /**
  * Typed confirmation for deleting a search.

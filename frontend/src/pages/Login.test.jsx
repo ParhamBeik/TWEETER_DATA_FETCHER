@@ -3,21 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Login from "./Login";
-import { api } from "../api";
+import { api } from "@/lib/api";
 
 // Component tests: Login owns real interaction logic (submit guarding, error
 // surfacing, handing the token pair to the auth context), so it is driven
 // through the DOM with the network boundary mocked -- the seam a user's actions
 // actually cross.
 
-vi.mock("../api", async () => {
-  const actual = await vi.importActual("../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
 const signIn = vi.fn();
 const registrationOpen = vi.fn(() => true);
-vi.mock("../auth", () => ({
+vi.mock("@/context/auth", () => ({
   useAuth: () => ({ signIn }),
   useRegistrationOpen: () => registrationOpen(),
 }));

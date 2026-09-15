@@ -4,20 +4,20 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SearchWorkspace from "./index";
 import { buildQuery } from "./query";
-import { api } from "../../api";
+import { api } from "@/lib/api";
 
 // Component tests: the workspace is the operator's control surface for the
 // search collector, so every control is driven through the DOM and the network
 // boundary is the only thing mocked. The one genuinely pure piece -- composing a
 // raw X query out of the builder's fields -- is unit tested at the bottom.
 
-vi.mock("../../api", async () => {
-  const actual = await vi.importActual("../../api");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual("@/lib/api");
   return { ...actual, api: vi.fn() };
 });
 
-vi.mock("../../auth", async () => {
-  const actual = await vi.importActual("../../auth");
+vi.mock("@/context/auth", async () => {
+  const actual = await vi.importActual("@/context/auth");
   return { ...actual, useAuth: () => ({ isStaff: true, authed: true }) };
 });
 

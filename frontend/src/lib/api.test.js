@@ -7,7 +7,7 @@ import {
   getRefreshToken,
   hasSession,
   setTokens,
-} from "./api";
+} from "@/lib/api";
 
 // Unit tests: api.js is pure request-shaping logic over `fetch` with no UI, so a
 // stubbed global is the right seam -- no server or DOM needed.

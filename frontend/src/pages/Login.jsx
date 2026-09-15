@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../api";
-import { useAuth, useRegistrationOpen } from "../auth";
-import AuthLayout, { PasswordField } from "./AuthLayout";
+import { api } from "@/lib/api";
+import { useAuth, useRegistrationOpen } from "@/context/auth";
+import AuthLayout, { PasswordField } from "@/layouts/AuthLayout";
 
 export default function Login() {
   const [username, setUsername] = useState("");
