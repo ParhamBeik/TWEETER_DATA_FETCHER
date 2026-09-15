@@ -1,8 +1,8 @@
 """Validation and safe status helpers for the shared X session."""
 from __future__ import annotations
 
-from tweets.analytics import REPORTED_ENDPOINTS
 from tweets.models import FetchRun, XSession
+from tweets.stats import REPORTED_ENDPOINTS
 
 
 def validate_session_payload(data) -> tuple[dict[str, str], dict[str, str]]:

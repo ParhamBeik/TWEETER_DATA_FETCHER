@@ -13,7 +13,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from fetching.ingest import upsert_tweet
-from tweets.analytics import ENGAGEMENT_FIELDS
+from tweets.stats import ENGAGEMENT_FIELDS
 from tweets.models import Tweet, TwitterUser
 
 

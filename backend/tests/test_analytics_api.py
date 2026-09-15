@@ -199,7 +199,8 @@ def test_phrase_mining_finds_untagged_topics_and_keeps_word_order():
     from datetime import datetime, timezone as dt_timezone
 
     from fetching.ingest import ingest_tweets
-    from tweets.analytics import Window, _hashtag_topics, _phrase_topics
+    from tweets.stats import _hashtag_topics, _phrase_topics
+    from tweets.windows import Window
 
     handles = ["jack", "maria", "sam"]
     for handle in handles:
