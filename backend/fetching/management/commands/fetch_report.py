@@ -8,7 +8,6 @@ completion, and every account still walking.
 """
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
@@ -17,25 +16,7 @@ from django.utils import timezone
 from fetching.accounts import archive_progress
 
 from tweets.models import FetchRun, Search, SearchHit, SearchTweet, Tweet, TwitterUser
-
-_UNITS = {"m": "minutes", "h": "hours", "d": "days"}
-
-
-def parse_since(spec: str) -> timedelta:
-    """A window spec as a timedelta, or ValueError -- and only ever ValueError.
-
-    `isdigit` accepts a number of any length while timedelta tops out around
-    2.7 million years, so the constructor was the second way out of this
-    function. It raised OverflowError, which neither caller catches: the API's
-    `?range=99999999999d` reached the analytics views as an uncaught 500.
-    """
-    text = spec.strip().lower()
-    if len(text) < 2 or text[-1] not in _UNITS or not text[:-1].isdigit():
-        raise ValueError(f"expected Nh/Nm/Nd, got {spec!r}")
-    try:
-        return timedelta(**{_UNITS[text[-1]]: int(text[:-1])})
-    except OverflowError as exc:
-        raise ValueError(f"{spec!r} is longer than any representable period") from exc
+from tweets.windows import parse_since
 
 
 def _summary(run: FetchRun) -> dict:

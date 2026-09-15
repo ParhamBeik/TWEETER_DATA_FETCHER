@@ -10,7 +10,7 @@ import pytest
 from django.core.management import call_command
 from django.utils import timezone
 
-from fetching.management.commands.fetch_report import build_report, parse_since, render
+from fetching.management.commands.fetch_report import build_report, render
 from tweets.models import (
     EndpointState,
     FetchRun,
@@ -20,6 +20,7 @@ from tweets.models import (
     Tweet,
     TwitterUser,
 )
+from tweets.windows import parse_since
 
 
 def test_parse_since_accepts_hours_minutes_days():

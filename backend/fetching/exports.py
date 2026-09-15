@@ -23,6 +23,7 @@ from django.http import QueryDict
 from django.utils import timezone
 
 from tweets.models import ExportJob
+from tweets.windows import normalize_handles
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +66,6 @@ def record(tweet, raw_text: bool) -> dict:
 
 def filename_for(job: ExportJob) -> str:
     """What the browser saves it as -- readable, unlike the on-disk token."""
-    from tweets.analytics import normalize_handles
-
     params = QueryDict(job.params.get("query", ""))
     accounts = normalize_handles(params.getlist("account"))
     day = job.created_at.strftime("%Y-%m-%d") if job.created_at else "export"

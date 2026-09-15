@@ -34,7 +34,7 @@ from config.pagination import (
     StandardCursorPagination,
 )
 
-from .analytics import normalize_handles, parse_instant
+from .windows import normalize_handles, parse_instant
 
 from .models import ExportJob, FetchRun, Search, SearchTweet, Tweet, TwitterUser, XSession
 from .serializers import (
