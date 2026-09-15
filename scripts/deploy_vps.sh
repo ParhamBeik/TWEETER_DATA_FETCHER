@@ -34,6 +34,37 @@ fi
 # remembers the flag is not applied.
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
 
+# --- Rollback artifacts -----------------------------------------------------
+#
+# `docker image prune -f` at the end of this script used to delete the previous
+# build the moment a new one replaced it, because rebuilding leaves the old
+# `:latest` dangling. That left no way back from a bad deploy except a revert
+# commit and a full rebuild -- minutes of downtime for a one-line mistake.
+#
+# Images are now tagged with the commit that produced them, which makes them
+# non-dangling, so prune leaves them alone. ROLLBACK_KEEP of them are retained.
+# A tag is a pointer, not a copy: the layers are already on disk and shared, so
+# five tags cost approximately nothing beyond the layers that differ.
+BUILT_IMAGES=(twitter-saas-web twitter-saas-beat twitter-saas-frontend
+              twitter-saas-worker_live twitter-saas-worker_historical
+              twitter-saas-worker_search twitter-saas-worker_control)
+ROLLBACK_KEEP=5
+SHA_FILE=.deployed_sha
+NEW_SHA=$(git rev-parse --short HEAD)
+
+# Tag what is running *now*, before the build replaces it. Without this the
+# currently-live build is dangling the instant the new one is built, and the
+# version you would most want to return to is the one that gets deleted.
+if [ -f "$SHA_FILE" ]; then
+  PREV_SHA=$(cat "$SHA_FILE")
+  for image in "${BUILT_IMAGES[@]}"; do
+    if docker image inspect "$image:latest" >/dev/null 2>&1; then
+      docker tag "$image:latest" "$image:$PREV_SHA" 2>/dev/null || true
+    fi
+  done
+  echo "preserved the running build as :$PREV_SHA"
+fi
+
 "${COMPOSE[@]}" build
 
 # Prove the app actually came back before reporting success. A build that
@@ -79,4 +110,35 @@ fi
 
 "${COMPOSE[@]}" exec -T web python manage.py fetch_report --since 24h
 
+# Only now, past every health gate, is this build worth keeping. Tagging here
+# rather than straight after `build` means a build that never became healthy is
+# not offered as a rollback target.
+for image in "${BUILT_IMAGES[@]}"; do
+  docker tag "$image:latest" "$image:$NEW_SHA" 2>/dev/null || true
+done
+echo "$NEW_SHA" > "$SHA_FILE"
+echo "tagged this build as :$NEW_SHA"
+
+# Drop the oldest rollback tags, newest ROLLBACK_KEEP retained. Sorted by image
+# creation time, so the order follows when each build happened rather than the
+# alphabetical accident of its sha.
+for image in "${BUILT_IMAGES[@]}"; do
+  docker images "$image" --format '{{.Tag}} {{.CreatedAt}}' \
+    | grep -v '^latest ' \
+    | sort -k2 -r \
+    | tail -n +$((ROLLBACK_KEEP + 1)) \
+    | awk '{print $1}' \
+    | while read -r old; do
+        echo "  retiring $image:$old"
+        docker rmi "$image:$old" >/dev/null 2>&1 || true
+      done
+done
+
+# Safe now: every build worth keeping carries a tag, so nothing here is
+# dangling. This only reclaims intermediate layers no tag points at.
 docker image prune -f
+
+echo
+echo "rollback targets available:"
+docker images twitter-saas-web --format '  {{.Tag}}  ({{.CreatedAt}})' | grep -v '^  latest'
+echo "  roll back with: ./scripts/rollback_vps.sh <tag>"

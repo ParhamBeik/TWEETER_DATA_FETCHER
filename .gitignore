@@ -49,6 +49,10 @@ graphify-out/
 backend/data/
 data/
 
+# Written by scripts/deploy_vps.sh on the VPS: which commit the running images
+# were built from, so the next deploy can tag them before replacing them.
+.deployed_sha
+
 # Operator scratch: audit evidence, ad-hoc browser harnesses, health snapshots.
 # These are notes *about* a deployment, not part of it, and .qa/ carries its own
 # node_modules -- left untracked they show up in `git status` on every batch,
