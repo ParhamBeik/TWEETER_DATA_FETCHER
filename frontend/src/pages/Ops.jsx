@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { absoluteTime, compact } from "@/lib/format";
+import { absoluteTime, compact, duration } from "@/lib/format";
 import { Button } from "@/ui/button";
 import { Empty, ErrorNote } from "@/ui/controls";
 import { Select, Textarea } from "@/ui/field";
@@ -21,10 +21,17 @@ const SUBSYSTEMS = [
   { value: "search", label: "Searches" },
 ];
 
+// Through format.duration, like the search workflow panel, instead of always
+// printing seconds: an archive walk that ran 40 minutes read "2400s" here and
+// "40m 0s" two screens over, for the same FetchRun.
+//
+// The open-ended case stays. Unlike the workflow panel, this is the live ops
+// screen, so a run with no finished_at is measured to now and shows how long it
+// has been going -- that is the number an operator is looking for.
 function runDuration(run) {
   if (!run.started_at) return "";
   const end = run.finished_at ? new Date(run.finished_at) : new Date();
-  return `${Math.max(0, Math.round((end - new Date(run.started_at)) / 1000))}s`;
+  return duration((end - new Date(run.started_at)) / 1000);
 }
 
 function Fact({ term, value, ok }) {

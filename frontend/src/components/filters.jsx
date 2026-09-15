@@ -8,6 +8,7 @@ import { Check } from "lucide-react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { Input } from "@/ui/field";
+import { usePoll } from "@/hooks/usePoll";
 
 export const RANGES = [
   { value: "1h", label: "1h" },
@@ -188,17 +189,25 @@ export function windowParams({ range, bucket, accounts }) {
 }
 
 /**
- * Poll `load` on an interval while `live` is on, and run it once on mount and
- * whenever a dependency changes. Returns nothing; the caller owns the state.
+ * Run `load` on mount and whenever a dependency changes, then keep it fresh on
+ * an interval while `live` is on. Returns nothing; the caller owns the state.
+ *
+ * The interval is delegated to usePoll rather than being a second setInterval,
+ * so these screens stop polling in a background tab like every other one. This
+ * hook had its own timer with no visibility handling, which meant Dashboard and
+ * Analyze kept requesting analytics for a page nobody was looking at.
+ *
+ * The dependency-triggered reload stays here and stays eager: a filter change
+ * must repaint immediately, and usePoll only restarts on `enabled`/`interval`.
  */
 export function useLiveRefresh(load, deps, { live = true, interval = 30000 } = {}) {
   const saved = useRef(load);
   saved.current = load;
   useEffect(() => {
     saved.current();
-    if (!live) return undefined;
-    const timer = setInterval(() => saved.current(), interval);
-    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, live, interval]);
+  // leading: false -- the effect above is already this hook's mount call, and a
+  // second one would double every request on a filter change.
+  usePoll(() => saved.current(), interval, { enabled: live, leading: false });
 }

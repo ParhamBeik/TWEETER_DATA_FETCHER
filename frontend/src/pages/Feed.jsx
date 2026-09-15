@@ -7,10 +7,15 @@ import { Segmented, ToggleChips } from "@/ui/controls";
 import InfiniteSentinel from "@/components/InfiniteSentinel";
 import TweetCard from "@/components/TweetCard";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { usePoll } from "@/hooks/usePoll";
 import { Button } from "@/ui/button";
 import { Chip, Empty, ErrorNote } from "@/ui/controls";
 import { Input, Select } from "@/ui/field";
 import { PageHead } from "@/ui/panel";
+
+// How often the feed checks for arrivals to hold behind the "new posts" pill.
+// Named rather than inline, like every other screen's poll interval.
+const ARRIVALS_POLL_MS = 30000;
 
 // Engagement and reach are separate questions and get separate buttons. They
 // used to be one "Most engaged" sort that summed likes+reposts+views, and since
@@ -160,9 +165,13 @@ export default function Feed() {
 
   // Poll for arrivals and hold them behind a pill rather than shifting the list
   // under the reader's cursor. Only meaningful for the chronological sort.
-  useEffect(() => {
-    if (filters.sort !== "latest") return undefined;
-    const timer = setInterval(async () => {
+  //
+  // Through usePoll rather than a bare setInterval so it stops in a background
+  // tab: an open feed used to keep asking for arrivals nobody could see, and
+  // "what arrived while I was away" is answered on return anyway, because
+  // usePoll fires once when the tab becomes visible again.
+  usePoll(
+    async () => {
       try {
         const data = await api(`/feed/${key ? `?${key}` : ""}`);
         // Read the current rows off a ref rather than from inside a setTweets
@@ -173,9 +182,12 @@ export default function Feed() {
       } catch {
         /* a transient blip must not clear the feed the reader is looking at */
       }
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [key, filters.sort]);
+    },
+    ARRIVALS_POLL_MS,
+    // leading: false -- `load` above already fetched this exact query on mount;
+    // a leading poll would duplicate every filter change.
+    { enabled: filters.sort === "latest", leading: false },
+  );
 
   // Apply a filter patch to whatever the URL holds *now*, not to the filters
   // this render closed over.
