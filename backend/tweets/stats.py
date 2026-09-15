@@ -20,7 +20,7 @@ Two rules this module lives by, both load-bearing:
 from __future__ import annotations
 
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Count
 from django.db.models.functions import Trunc
 from django.utils import timezone
@@ -387,3 +387,155 @@ def topic_blocklist() -> set[str]:
     row = KeyValueState.objects.filter(namespace=namespace, name=name).first()
     terms = (row.data or {}).get("terms") if row else None
     return {str(term).lower() for term in terms or []}
+
+
+# --- Narratives -------------------------------------------------------------
+
+NARRATIVE_CANDIDATE_CAP = 1200
+# Hard ceiling enforced by the database. This query used to run unbounded, blow
+# past gunicorn's request timeout on any range over 24h, and take the worker down
+# with it -- one click could kill a worker, and retrying killed the next one.
+# Failing loudly in 15s is strictly better than a dead worker.
+NARRATIVE_TIMEOUT_MS = 15_000
+
+
+def narrative_pairs(
+    window: Window,
+    handles: list[str],
+    *,
+    min_length: int,
+    candidate_cap: int,
+    propagation_hours: int,
+    similarity_threshold: float,
+    limit: int,
+):
+    """Near-duplicate tweet pairs from different accounts, posted close together.
+
+    Raises OperationalError when the statement timeout fires; the caller turns
+    that into the 503 the console knows how to explain.
+    """
+    account_filter = "AND account = ANY(%s)" if handles else ""
+    params = [window.since, window.until, min_length]
+    if handles:
+        params.append(handles)
+    params += [candidate_cap, propagation_hours, similarity_threshold, limit]
+    # SET LOCAL is scoped to a transaction, so the atomic block is what
+    # makes the timeout real rather than a no-op under autocommit.
+    with transaction.atomic(), connection.cursor() as cursor:
+        # Postgres will not accept a bind parameter after SET, so the
+        # value is interpolated -- safe here and only here because it is
+        # a module-level int this file owns, never request input.
+        cursor.execute(f"SET LOCAL statement_timeout = {int(NARRATIVE_TIMEOUT_MS)}")
+        cursor.execute(
+            f"""
+            WITH candidates AS (
+                SELECT id, account, tweet_id, created_at,
+                       lower(COALESCE(NULLIF(text_clean, ''), text)) AS body,
+                       length(COALESCE(NULLIF(text_clean, ''), text)) AS len
+                FROM tweets_tweet
+                WHERE created_at >= %s
+                  AND created_at <= %s
+                  AND length(text) >= %s
+                  {account_filter}
+                ORDER BY created_at DESC
+                LIMIT %s
+            )
+            SELECT first.account, first.tweet_id, first.created_at, first.body,
+                   follower.account, follower.tweet_id, follower.created_at, follower.body,
+                   similarity(first.body, follower.body) AS score
+            FROM candidates first
+            JOIN candidates follower
+              ON follower.id <> first.id
+             -- The whole point of the panel: propagation BETWEEN accounts.
+             -- Without this, 9 in 10 results were one newsroom's own
+             -- reruns of its own headline matching itself.
+             -- (Keep percent signs out of this string entirely: the
+             -- driver scans the whole query, comments included, for
+             -- placeholders. test_raw_sql_placeholders.py enforces it.)
+             AND follower.account <> first.account
+             AND first.created_at <= follower.created_at
+             AND follower.created_at <= first.created_at + (%s || ' hours')::interval
+             -- Cheap prefilter: trigram similarity cannot clear the
+             -- threshold when the lengths are wildly different, and
+             -- length comparison costs nothing next to similarity().
+             AND follower.len BETWEEN first.len / 2 AND first.len * 2
+             AND similarity(first.body, follower.body) >= %s
+            ORDER BY score DESC, first.created_at DESC
+            LIMIT %s
+            """,
+            params,
+        )
+        return cursor.fetchall()
+
+
+# --- Velocity ---------------------------------------------------------------
+
+
+def velocity_rankings(window: Window, handles: list[str]):
+    """Engagement gained during the window: the top 50 tweets, and its shape.
+
+    Returns (rows, series): rows are (tweet_id, velocity) ranked, series are
+    (bucket, gained, tweets) across the whole window.
+    """
+    kind = BUCKET_KINDS[window.bucket]
+    account_filter = "AND t.account = ANY(%s)" if handles else ""
+    engagement = _engagement_sql("m.", METRIC_ENGAGEMENT_FIELDS)
+    params = [window.since, window.until]
+    if handles:
+        params.append(handles)
+    with connection.cursor() as cursor:
+        # Per tweet: engagement at the end of the window minus engagement at
+        # the start, from the metric snapshots ingest writes on change.
+        cursor.execute(
+            f"""
+            WITH points AS (
+                SELECT m.tweet_id, m.captured_at, {engagement} AS total,
+                       row_number() OVER (PARTITION BY m.tweet_id ORDER BY m.captured_at) AS first_n,
+                       row_number() OVER (PARTITION BY m.tweet_id ORDER BY m.captured_at DESC) AS last_n
+                FROM tweets_tweetmetric m
+                JOIN tweets_tweet t ON t.id = m.tweet_id
+                WHERE m.captured_at >= %s AND m.captured_at <= %s
+                {account_filter}
+            ), deltas AS (
+                SELECT tweet_id,
+                       max(total) FILTER (WHERE last_n = 1)
+                     - max(total) FILTER (WHERE first_n = 1) AS velocity
+                FROM points
+                GROUP BY tweet_id
+                HAVING count(*) >= 2
+            )
+            SELECT tweet_id, velocity
+            FROM deltas
+            WHERE velocity > 0
+            ORDER BY velocity DESC, tweet_id DESC
+            LIMIT 50
+            """,
+            params,
+        )
+        rows = cursor.fetchall()
+        # Engagement gained per bucket across the whole window: consecutive
+        # snapshots of the same tweet differenced, then summed per bucket.
+        cursor.execute(
+            f"""
+            WITH points AS (
+                SELECT m.tweet_id, m.captured_at, {engagement} AS total,
+                       lag({engagement}) OVER (
+                           PARTITION BY m.tweet_id ORDER BY m.captured_at
+                       ) AS previous
+                FROM tweets_tweetmetric m
+                JOIN tweets_tweet t ON t.id = m.tweet_id
+                WHERE m.captured_at >= %s AND m.captured_at <= %s
+                {account_filter}
+            )
+            SELECT date_trunc('{kind}', captured_at) AS bucket,
+                   sum(GREATEST(total - previous, 0)) AS gained,
+                   count(DISTINCT tweet_id) AS tweets
+            FROM points
+            WHERE previous IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+            """,
+            params,
+        )
+        series = cursor.fetchall()
+    return rows, series
