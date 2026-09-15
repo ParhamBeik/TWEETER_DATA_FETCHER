@@ -63,5 +63,3 @@ export function usePoll(callback, intervalMs, { enabled = true, leading = true }
     };
   }, [intervalMs, enabled, leading]);
 }
-
-export default usePoll;

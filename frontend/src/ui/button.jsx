@@ -29,5 +29,3 @@ const button = cva(
 export function Button({ className, variant, size, type = "button", ...props }) {
   return <button type={type} className={cn(button({ variant, size }), className)} {...props} />;
 }
-
-export { button as buttonVariants };

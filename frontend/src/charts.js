@@ -14,7 +14,8 @@ export const SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
 // Status is a reserved palette: it never doubles as "series 4", and it always
 // ships with a label, never colour alone. Mirrors --color-ok / warn / serious /
 // danger in index.css so a run that is amber in a list is amber in a chart.
-export const STATUS = {
+// Reached from outside only through RUN_STATUS_COLOR.
+const STATUS = {
   good: "#3fae6d",
   warning: "#d6a127",
   serious: "#e08a55",
@@ -55,13 +56,14 @@ export const SUBSYSTEM_LABEL = {
 // mirror --color-ink-800 / --color-line / --color-fg-muted from index.css. They
 // are the one place in the app that duplicates a token, and they have to move
 // with it -- a grid line left on the previous surface colour is visible.
-export const AXIS = "#93a09e";
-export const SURFACE = "#101414";
+// AXIS and SURFACE are consumed only through AXIS_PROPS / TOOLTIP_STYLE /
+// STACK_GAP below; LINE is imported directly by the chart pages.
+const AXIS = "#93a09e";
+const SURFACE = "#101414";
 export const LINE = "#232b2b";
 
-// 4px rounded data-ends anchored to the baseline (vertical vs horizontal bars).
+// 4px rounded data-ends anchored to the baseline.
 export const BAR_RADIUS_Y = [4, 4, 0, 0];
-export const BAR_RADIUS_X = [0, 4, 4, 0];
 
 export const TOOLTIP_STYLE = {
   background: SURFACE,

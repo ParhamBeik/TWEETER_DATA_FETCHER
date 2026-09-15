@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogFooter } from "@/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/ui/field";
-import { Segmented } from "@/ui/controls";
-import { ErrorNote } from "@/ui/controls";
+import { ErrorNote, Segmented } from "@/ui/controls";
 import {
   DEPTHS,
   HINTS,

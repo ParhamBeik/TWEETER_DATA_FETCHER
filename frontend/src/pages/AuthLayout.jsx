@@ -38,31 +38,6 @@ const CONTROL =
   "w-full rounded-sm border border-line bg-ink-850 px-2.5 py-2 text-sm text-fg " +
   "placeholder:text-fg-dim hover:border-line-strong focus:border-accent focus:outline-none";
 
-export function TextField({ label, hint, error, className, name, ...props }) {
-  const errorId = error && name ? `${name}-error` : undefined;
-  return (
-    <label className={cn("flex flex-col gap-1", className)}>
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="eyebrow">{label}</span>
-        {hint}
-      </span>
-      <input
-        aria-label={label}
-        name={name}
-        aria-invalid={Boolean(error)}
-        aria-describedby={errorId}
-        className={CONTROL}
-        {...props}
-      />
-      {error && (
-        <span id={errorId} className="text-xs text-danger">
-          {error}
-        </span>
-      )}
-    </label>
-  );
-}
-
 // Password input with a show/hide toggle. Both pages need it, and the toggle
 // state belongs to the field rather than to either page.
 export function PasswordField({

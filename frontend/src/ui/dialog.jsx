@@ -8,7 +8,6 @@ import { Button } from "@/ui/button";
 // right and none of them are the interesting part of this app.
 export const Dialog = Primitive.Root;
 export const DialogTrigger = Primitive.Trigger;
-export const DialogClose = Primitive.Close;
 
 export function DialogContent({ title, description, className, children }) {
   return (
