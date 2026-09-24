@@ -237,6 +237,11 @@ export default function Accounts() {
               )}
             </div>
           </div>
+          {accounts.length > 0 && (
+            <p className="px-4 pb-2 text-xs text-fg-muted lg:hidden">
+              Scroll horizontally to see more account columns.
+            </p>
+          )}
           <PanelBody className="overflow-x-auto">
             <table className="w-full min-w-[46rem]">
               <caption className="sr-only">Tracked accounts, tiers and collection health</caption>

@@ -132,22 +132,28 @@ describe("api()", () => {
   });
 
   it("reports a network failure in words rather than the browser's opaque error", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
-    await expect(api("/feed/")).rejects.toThrow("Network error — the API is unreachable.");
+    const cause = new TypeError("Failed to fetch");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(cause));
+    const error = await api("/feed/").catch((failure) => failure);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe("Network error — the API is unreachable.");
+    expect(error.cause).toBe(cause);
   });
 
   it("turns a caller-supplied deadline into an actionable timeout", async () => {
     vi.useFakeTimers();
+    const cause = new DOMException("Aborted", "AbortError");
     vi.stubGlobal("fetch", vi.fn((_url, init) => new Promise((_resolve, reject) => {
-      init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      init.signal.addEventListener("abort", () => reject(cause));
     })));
 
     const request = api("/analytics/narratives/", { timeoutMs: 20 });
-    const assertion = expect(request).rejects.toThrow(
-      "Request timed out — try a shorter range or try again.",
-    );
+    const result = request.catch((failure) => failure);
     await vi.advanceTimersByTimeAsync(20);
-    await assertion;
+    const error = await result;
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe("Request timed out — try a shorter range or try again.");
+    expect(error.cause).toBe(cause);
     vi.useRealTimers();
   });
 });

@@ -137,6 +137,14 @@ _SHARED_TWEET_FIELDS = [
 ]
 
 
+def _absolute_http_url(value):
+    try:
+        parsed = urlparse(value)
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+    except ValueError:
+        return False
+
+
 class BaseTweetSerializer(serializers.ModelSerializer):
     """Media/card/quote unpacking shared by Tweet and SearchTweet."""
 
@@ -159,24 +167,19 @@ class BaseTweetSerializer(serializers.ModelSerializer):
             return entities
         seen, unique = set(), []
         for item in urls:
-            key = item.get("short") if isinstance(item, dict) else str(item)
+            key = str(item.get("short")) if isinstance(item, dict) else str(item)
             if key in seen:
                 continue
+            if isinstance(item, dict):
+                # A display label such as "t.co" is not a link target. Use the
+                # canonical short URL if it is absolute; discard unusable links.
+                expanded = str(item.get("expanded") or "")
+                short = str(item.get("short") or "")
+                if not _absolute_http_url(expanded):
+                    if not _absolute_http_url(short):
+                        continue
+                    item = {**item, "expanded": short}
             seen.add(key)
-            if not isinstance(item, dict):
-                unique.append(item)
-                continue
-
-            # X occasionally supplies a display label such as "t.co" as the
-            # expanded URL. Browsers treat that as a relative console path;
-            # retain the canonical short URL when it is the only real target.
-            expanded = str(item.get("expanded") or "")
-            short = str(item.get("short") or "")
-            if urlparse(expanded).scheme not in {"http", "https"} and urlparse(short).scheme in {
-                "http",
-                "https",
-            }:
-                item = {**item, "expanded": short}
             unique.append(item)
         return {**entities, "urls": unique}
     reply_to = serializers.SerializerMethodField()

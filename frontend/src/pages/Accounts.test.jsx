@@ -60,6 +60,7 @@ describe("Accounts roster", () => {
     render(<Accounts />);
     expect(await screen.findByRole("button", { name: "@elonmusk" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "@jack" })).toBeInTheDocument();
+    expect(screen.getByText("Scroll horizontally to see more account columns.")).toHaveClass("lg:hidden");
   });
 
   // Regression: the empty state rendered before the roster request resolved, so

@@ -133,14 +133,15 @@ def test_duplicate_url_entities_are_presented_once(client_user):
     assert row["entities"]["urls"] == [entry]
 
 
-def test_entity_display_label_falls_back_to_the_absolute_short_url(client_user):
-    """A display-only ``t.co`` value must not become a relative console link."""
+@pytest.mark.parametrize("expanded", ["t.co", "https:t.co/path", "https://[bad"])
+def test_entity_display_label_falls_back_to_the_absolute_short_url(client_user, expanded):
+    """Malformed expansions must not become relative links or break the feed."""
     _track("alpha")
     upsert_tweet(
         _item(
             "1",
             entities={
-                "urls": [{"short": "https://t.co/xbDGu7Fhyf", "expanded": "t.co"}],
+                "urls": [{"short": "https://t.co/xbDGu7Fhyf", "expanded": expanded}],
                 "hashtags": [],
             },
         )
@@ -150,6 +151,22 @@ def test_entity_display_label_falls_back_to_the_absolute_short_url(client_user):
     assert row["entities"]["urls"] == [
         {"short": "https://t.co/xbDGu7Fhyf", "expanded": "https://t.co/xbDGu7Fhyf"}
     ]
+
+
+def test_entity_without_an_absolute_target_is_not_a_clickable_link(client_user):
+    _track("alpha")
+    upsert_tweet(
+        _item(
+            "1",
+            entities={"urls": [
+                {"short": "t.co", "expanded": "javascript:alert(1)"},
+                {"short": [], "expanded": "https://[bad"},
+            ]},
+        )
+    )
+
+    row = client_user.get("/api/feed/").json()["results"][0]
+    assert row["entities"]["urls"] == []
 
 
 # --- Archive scope ----------------------------------------------------------
