@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from engine.config import PROJECT_ROOT, get_priority_policy, load_tier_config, ordered_accounts
 from engine.clock import utc_now, utc_now_iso
-from engine.observability import PipelineConsole, attach_run_id
+from engine.observability import PipelineConsole, attach_run_id, redact_exception
 from engine.processing import TweetSetProcessor, window_cutoff
 from engine.storage import StorageManager
 from engine.timeline import FetcherEngine
@@ -406,9 +406,9 @@ class LiveMonitor:
             self.console.info(f"Resolving user ID for @{username}")
             user_id = self._get_live_user_id(username)
         except Exception as exc:
-            self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
+            self.console.error(f"User ID resolution failed for @{username}: {redact_exception(exc, limit=200)}")
             result["status"] = "failed"
-            result["reason"] = f"user_id_resolution_failed: {str(exc)[:300]}"
+            result["reason"] = f"user_id_resolution_failed: {redact_exception(exc, limit=300)}"
             result["availability"] = self._record_resolution_failure(username, result["reason"])
             return result
         self._record_resolution_success(username)
@@ -520,10 +520,10 @@ class LiveMonitor:
                 user_ids[username] = self._get_live_user_id(username)
                 self._record_resolution_success(username)
             except Exception as exc:
-                self.console.error(f"User ID resolution failed for @{username}: {str(exc)[:200]}")
+                self.console.error(f"User ID resolution failed for @{username}: {redact_exception(exc, limit=200)}")
                 report["accounts"][username].update({
                     "status": "failed",
-                    "reason": f"user_id_resolution_failed: {str(exc)[:300]}",
+                    "reason": f"user_id_resolution_failed: {redact_exception(exc, limit=300)}",
                     "finished_at": utc_now_iso(),
                 })
                 report["accounts"][username]["availability"] = self._record_resolution_failure(

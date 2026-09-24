@@ -201,15 +201,15 @@ The topic *ranking* is deliberately pure and does run in the suite
 
 ## Deploying
 
-A push to `main` deploys automatically: GitHub Actions runs both test suites,
-then SSHes to the VPS as the unprivileged `deploy` user and runs the wrapper.
-See `.github/workflows/ci.yml`; it needs the `VPS_HOST`, `VPS_USER`,
-`VPS_SSH_KEY` and `VPS_KNOWN_HOSTS` secrets.
+Pushes to `main` run backend and frontend CI only. No deployment job is wired
+to this repository while the old archive is unavailable and the replacement
+VPS cannot reach X. [Production recovery](docs/production-recovery.md) records
+the evidence and the gates for any future host. A successful older deploy job
+is not proof that the current VPS has this application or its data.
 
-`scripts/deploy_vps.sh` builds, restarts, and then polls the API until it
-answers -- a deploy that leaves the site down fails the job. It is called by a
-small wrapper on the VPS that does the `git fetch`/`reset` first, so a deploy
-can never rewrite a script bash is still reading.
+`scripts/deploy_vps.sh` remains available for an explicitly approved future
+host. It builds, restarts, and polls the API until it answers. A host wrapper
+must update the checkout first; repository CI does not invoke either script.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -239,12 +239,14 @@ Check a dump without restoring it:
 ./scripts/verify_backup.sh backups/foo.sql.gz
 ```
 
-Restore is a host operation and **overwrites the live database**. Restore to a
-throwaway name first, then cut over only after you have read rows you expect:
+Restore into a new, disposable database first. Check expected rows before
+planning a cutover; a live-database restore overwrites data:
 
 ```bash
+set -o pipefail
+docker compose exec -T postgres createdb -U postgres twitter_saas_restore_check
 gunzip -c backups/twitter_saas_YYYYMMDDThhmmssZ.sql.gz \
-  | docker compose exec -T postgres psql -U postgres twitter_saas_restore_check
+  | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres twitter_saas_restore_check
 ```
 
 Do not pipe a dump into the live `twitter_saas` database from muscle memory.

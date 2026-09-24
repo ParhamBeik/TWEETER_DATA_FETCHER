@@ -14,8 +14,8 @@
 # additive changes (a new nullable column the old code ignores) and does not for
 # anything else. Check what the bad deploy migrated before trusting this.
 #
-# It is also a temporary state: the next push to main redeploys whatever is on
-# origin/main and overwrites this. Use the time it buys to revert the commit.
+# It is also a temporary state: the next manually dispatched deployment
+# overwrites this. Use the time it buys to fix the commit on main.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -85,5 +85,5 @@ done
 echo "$TARGET" > .deployed_sha
 echo
 echo "rolled back to $TARGET and healthy."
-echo "This is temporary: the next push to main will redeploy origin/main."
-echo "Revert the bad commit and push, so the fix survives."
+echo "This is temporary: the next manual deployment will replace it."
+echo "Fix the bad commit on main before the next deployment."

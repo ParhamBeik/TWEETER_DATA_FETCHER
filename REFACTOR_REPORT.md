@@ -1,5 +1,9 @@
 # Refactor report
 
+Historical September 2026 account of work on the former deployment. See
+[production recovery](docs/production-recovery.md) for current release gates;
+past deployments and credential-history findings are not current proof.
+
 13 commits landed on `main`, each deployed to production and verified before the
 next one started. No behaviour changed, no route moved, no task was renamed, no
 schema was touched.

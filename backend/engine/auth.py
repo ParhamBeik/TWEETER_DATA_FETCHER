@@ -37,6 +37,7 @@ from urllib.parse import urlparse
 
 from engine.config import resolve_config_path
 from engine.config import HISTORICAL_LIVE_DIR
+from engine.browser import playwright_proxy, proxy_safe_error
 from engine.observability import configure_logging
 
 try:
@@ -214,10 +215,12 @@ def auto_refresh_session(
     
     try:
         with sync_playwright() as p:
+            proxy = playwright_proxy()
+            launch_options = {"proxy": proxy} if proxy else {}
             try:
-                browser = p.chromium.launch(headless=headless)
+                browser = p.chromium.launch(headless=headless, **launch_options)
             except Exception:
-                browser = p.chromium.launch(headless=headless, channel="chrome")
+                browser = p.chromium.launch(headless=headless, channel="chrome", **launch_options)
             context = browser.new_context(
                 user_agent=config.get("api_headers", {}).get("user-agent", 
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
@@ -283,7 +286,7 @@ def auto_refresh_session(
                         
                         print(f"    Collected {sum(len(txs) for txs in intercepted_tx_ids.values())} tx-ids so far")
                     except Exception as e:
-                        print(f"    Warning: {e}")
+                        print(f"    Warning: {proxy_safe_error(e)}")
             
             # Read back updated cookies from browser
             for cookie in context.cookies():
@@ -298,8 +301,8 @@ def auto_refresh_session(
         print("\n\u2717 Cancelled.\n")
         return False
     except Exception as exc:
-        logger.error("Auto refresh failed: %s", exc)
-        print(f"\n\u274c Auto refresh failed: {exc}\n")
+        logger.error("Auto refresh failed: %s", proxy_safe_error(exc))
+        print(f"\n\u274c Auto refresh failed: {proxy_safe_error(exc)}\n")
         return False
 
     # Check if we captured anything

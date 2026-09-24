@@ -296,7 +296,7 @@ class FetcherEngine:
                 response_text=response.text or "",
             )
         except Exception as exc:  # pragma: no cover - best-effort event recording
-            self.logger.warning(f"Failed to record http error event: {exc}")
+            self.logger.warning(f"Failed to record http error event: {redact_exception(exc)}")
         self.logger.error_one_liner(
             f"HTTP {response.status_code} account=@{account} endpoint={endpoint} action=classify",
             detail_ref=detail_ref,
@@ -907,7 +907,7 @@ class FetcherEngine:
                         max_sleep = float(policy.get("request_error_max_seconds", 60))
                         wait = min(max_sleep, base * (2 ** attempt))
                         self.logger.warning(
-                            f"@{account} {endpoint} request error: {exc}; retrying "
+                            f"@{account} {endpoint} request error: {redact_exception(exc)}; retrying "
                             f"(attempt {attempt + 1}/{request_attempts})"
                         )
                         self.api_manager.jitter_sleep(wait, wait + base, reason=f"@{account} {endpoint} request error")
@@ -921,7 +921,7 @@ class FetcherEngine:
                     return finish_with_state(
                         status=status,
                         outcome=outcome,
-                        reason=str(exc)[:500],
+                        reason=redact_exception(exc),
                         pages=all_items,
                         cursor_value=cursor,
                         raw_batch=batch_dir,

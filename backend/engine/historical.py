@@ -32,7 +32,7 @@ from engine.timeline import FetcherEngine
 from engine.processing import TZ, RollingWindowEvaluator, TweetSetProcessor
 from engine.storage import StorageManager
 from engine.observability import attach_run_id
-from engine.observability import PipelineConsole
+from engine.observability import PipelineConsole, redact_exception
 
 
 ENDPOINTS = ("UserTweets",)
@@ -528,7 +528,7 @@ def run_v4(
         try:
             user_ids[username] = engine._get_user_id(username)
         except Exception as exc:
-            reason = f"UserByScreenName failed: {exc}"
+            reason = f"UserByScreenName failed: {redact_exception(exc)}"
             storage.mark_account_skipped_for_run(username, reason)
             report["accounts"][username]["skip_reason"] = reason
             for endpoint in ENDPOINTS:

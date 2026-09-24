@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -332,7 +333,10 @@ def _store(url: str, root: Path) -> MediaAsset | None:
                 return None
             body = response.read(max_bytes + 1)
     except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
-        logger.info("archive_media: miss %s (%s)", url, exc)
+        # Proxy errors may echo URL credentials; keep the failure class instead.
+        proxy_set = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        detail = type(exc).__name__ if proxy_set else exc
+        logger.info("archive_media: miss %s (%s)", url, detail)
         return None
     if len(body) > max_bytes:
         logger.warning("archive_media: skip oversized %s", url)

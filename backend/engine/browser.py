@@ -3,11 +3,41 @@ from __future__ import annotations
 
 
 import json
+import os
 import time
 from hashlib import sha256
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
+
+from engine.observability import redact_exception
+
+
+def playwright_proxy() -> dict[str, str] | None:
+    """Use the same HTTPS_PROXY that Requests and urllib already honor."""
+    raw = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    if not raw:
+        return None
+    try:
+        parsed = urlsplit(raw)
+        if (parsed.scheme != "http" or not parsed.hostname or parsed.port is None
+                or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
+            raise ValueError
+    except ValueError:
+        raise ValueError("HTTPS_PROXY must be an http:// proxy URL with host and port") from None
+    proxy = {"server": f"{parsed.scheme}://{parsed.netloc.rsplit('@', 1)[-1]}"}
+    if parsed.username is not None:
+        proxy["username"] = unquote(parsed.username)
+    if parsed.password is not None:
+        proxy["password"] = unquote(parsed.password)
+    return proxy
+
+
+def proxy_safe_error(exc: Exception) -> str:
+    """Proxy failures can include URL credentials in the exception text."""
+    if os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy"):
+        return redact_exception(exc)
+    return f"{type(exc).__name__}: {redact_exception(exc, limit=300)}"
 
 
 # X pins document.body.scrollHeight to the viewport height and grows
@@ -82,7 +112,10 @@ class BrowserBootstrap:
     @classmethod
     def _launch_chromium(cls, pw: Any, *, headless: bool):
         """Use the Playwright-managed Chromium installed in the runtime image."""
-        return pw.chromium.launch(headless=headless, args=list(cls.LAUNCH_ARGS))
+        proxy = playwright_proxy()
+        return pw.chromium.launch(
+            headless=headless, args=list(cls.LAUNCH_ARGS), **({"proxy": proxy} if proxy else {})
+        )
 
     @staticmethod
     def _endpoint(url: str) -> Optional[tuple[str, str]]:
@@ -274,5 +307,5 @@ class BrowserBootstrap:
             captured = result.target_pages.get(capture_endpoint or "", [])
             result.ok = bool(captured)
             result.stop_reason = "crashed_with_partial_capture" if captured else "crashed"
-            result.error = f"{type(exc).__name__}: {str(exc)[:300]}"
+            result.error = proxy_safe_error(exc)
         return result

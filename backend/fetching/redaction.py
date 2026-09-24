@@ -15,7 +15,9 @@ Three passes, cheapest and most precise first:
 """
 from __future__ import annotations
 
+import os
 import re
+from urllib.parse import unquote, urlsplit
 
 MASK = "[redacted]"
 
@@ -35,19 +37,32 @@ _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/%]+=*")
 _MIN_LITERAL_LEN = 8
 
 
+def _proxy_passwords() -> set[str]:
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    try:
+        password = urlsplit(proxy or "").password
+    except ValueError:
+        return set()
+    return {part for part in (password, unquote(password or "")) if part}
+
+
 def _literal_secrets() -> list[str]:
     """Current live secret values, longest first so substrings do not shadow."""
+    values: set[str] = set()
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    if proxy:
+        values.add(proxy)
+        values.update(_proxy_passwords())
     try:
         from tweets.models import XSession
     except Exception:  # pragma: no cover - app registry not ready
-        return []
+        return sorted(values, key=len, reverse=True)
     try:
         session = XSession.objects.filter(active=True).first()
     except Exception:  # pragma: no cover - DB unavailable
-        return []
+        return sorted(values, key=len, reverse=True)
     if session is None:
-        return []
-    values: set[str] = set()
+        return sorted(values, key=len, reverse=True)
     for blob in (session.cookies, session.headers):
         if not isinstance(blob, dict):
             continue
@@ -67,11 +82,11 @@ def redact_text(value: str, *, literals: list[str] | None = None) -> str:
     text = str(value or "")
     if not text:
         return text
-    # Enforce the length floor here rather than only where literals are collected,
-    # so a caller passing its own list cannot blind-replace a 1-char "secret"
-    # across unrelated output.
+    # Caller-supplied short literals are ignored; proxy passwords are always
+    # masked, even when a proxy uses a short password.
+    proxy_passwords = _proxy_passwords()
     for secret in (_literal_secrets() if literals is None else literals):
-        if secret and len(secret) >= _MIN_LITERAL_LEN:
+        if secret and (len(secret) >= _MIN_LITERAL_LEN or secret in proxy_passwords):
             text = text.replace(secret, MASK)
     text = _BEARER.sub(f"Bearer {MASK}", text)
     text = _KV.sub(lambda m: f"{m.group(1)}{m.group(2)}{MASK}", text)

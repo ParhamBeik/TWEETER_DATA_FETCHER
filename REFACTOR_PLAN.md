@@ -1,5 +1,10 @@
 # Phase 0 Recon → Simplification Plan
 
+Historical September 2026 planning snapshot. For the current checkout and
+replacement-VPS release gates, see [production recovery](docs/production-recovery.md).
+Its credential-history and deployment observations must be rechecked against
+current refs and infrastructure before acting.
+
 ## Context
 
 The brief asks for dramatic simplification of a live, auto-deploying production app.

@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from engine.config import resolve_config_path
 from engine.config import PROJECT_ROOT
 from engine.request_state import RequestStateStore
+from engine.observability import redact_exception
 
 try:
     import requests
@@ -899,7 +900,7 @@ class APIManager:
                 last_exception = exc
                 if attempt < max_retries - 1:
                     wait = retry_delay * (2 ** attempt)
-                    self._warning(f"Request error on {endpoint}: {exc}; retrying in {wait:.1f}s")
+                    self._warning(f"Request error on {endpoint}: {redact_exception(exc)}; retrying in {wait:.1f}s")
                     time.sleep(wait)
                     continue
                 raise

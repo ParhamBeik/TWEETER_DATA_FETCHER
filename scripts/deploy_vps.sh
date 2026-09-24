@@ -68,9 +68,8 @@ fi
 "${COMPOSE[@]}" build
 
 # Prove the app actually came back before reporting success. A build that
-# succeeds and a container that boot-loops look identical to a bare `up -d`,
-# and CI calls this script -- a green deploy job that left the site down is
-# worse than a red one. `--wait` blocks on the healthchecks already declared in
+# succeeds and a container that boot-loops look identical to a bare `up -d`.
+# `--wait` blocks on the healthchecks already declared in
 # docker-compose.yml (gunicorn, all four celery containers, postgres, redis)
 # rather than reimplementing them here.
 if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300; then

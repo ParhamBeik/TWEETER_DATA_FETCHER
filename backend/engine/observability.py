@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -423,7 +424,9 @@ def _safe_variables(variables: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def redact_exception(exc: Any, limit: int = 500) -> str:
-    """Keep the useful exception class/cause while removing URL query data."""
+    """Keep useful failure detail without persisting proxy credentials."""
+    if isinstance(exc, BaseException) and (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")):
+        return f"{type(exc).__name__} (proxy configured)"
     text = re.sub(r"((?:https?://|url: /)[^?\s]+)\?\S+", r"\1?[redacted]", str(exc))
     return text[:limit]
 
@@ -547,7 +550,11 @@ class EventRecorder:
             "request_url": urlunsplit((url.scheme, url.netloc, url.path, "", "")),
             "headers": _safe_headers(request_headers),
             "variables": _safe_variables(variables),
-            "response_text": (response_text or "")[:8000],
+            "response_text": (
+                "[proxy configured]"
+                if os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+                else (response_text or "")[:8000]
+            ),
             "timestamp": utc_now_iso(),
         }
         try:
