@@ -18,7 +18,7 @@ vi.mock("@/lib/api", async () => {
 
 vi.mock("@/context/auth", async () => {
   const actual = await vi.importActual("@/context/auth");
-  return { ...actual, useAuth: () => ({ isStaff: true, authed: true }) };
+  return { ...actual, useAuth: () => ({ isStaff: true, ingestionEnabled: true, authed: true }) };
 });
 
 const saved = (id, over = {}) => ({

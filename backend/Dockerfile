@@ -27,7 +27,8 @@ COPY backend/requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
 # Chromium for auth refresh and the deep-search hybrid pages.
-RUN playwright install --with-deps chromium
+ARG INSTALL_BROWSER=1
+RUN if [ "$INSTALL_BROWSER" = 1 ]; then playwright install --with-deps chromium; fi
 
 # The engine ships inside the backend package tree, so there is no PYTHONPATH
 # seam: workers run it as `python -m engine.<pipeline>`.

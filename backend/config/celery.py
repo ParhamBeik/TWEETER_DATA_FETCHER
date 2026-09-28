@@ -53,6 +53,9 @@ app.conf.task_routes = {
 def setup_periodic_tasks(sender, **_kwargs):
     from django.conf import settings
 
+    if not settings.INGESTION_ENABLED:
+        return
+
     sender.add_periodic_task(
         schedule(settings.FETCH_LIVE_INTERVAL_SECONDS),
         app.signature("fetching.tasks.poll_live_all"),

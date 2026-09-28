@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/auth";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -51,6 +52,7 @@ function Fact({ term, value, ok }) {
 }
 
 export default function Ops() {
+  const { ingestionEnabled } = useAuth();
   const [runs, setRuns] = useState([]);
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
@@ -269,7 +271,7 @@ export default function Ops() {
 
       <div className="flex flex-wrap items-center gap-2">
         {SUBSYSTEMS.map((row) => (
-          <Button key={row.value} onClick={() => trigger(row.value)}>
+          <Button key={row.value} disabled={!ingestionEnabled} onClick={() => trigger(row.value)}>
             Run {row.label.toLowerCase()}
           </Button>
         ))}

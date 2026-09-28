@@ -1,3 +1,5 @@
+const authState = { ingestionEnabled: true };
+vi.mock("@/context/auth", () => ({ useAuth: () => authState }));
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import BudgetRail from "@/components/BudgetRail";

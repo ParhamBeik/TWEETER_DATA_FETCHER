@@ -72,7 +72,7 @@ function QueryRow({ search, active, onSelect }) {
 export default function SearchWorkspace() {
   const { searchId } = useParams();
   const navigate = useNavigate();
-  const { isStaff } = useAuth();
+  const { isStaff, ingestionEnabled } = useAuth();
 
   const [searches, setSearches] = useState(null);
   const [results, setResults] = useState([]);
@@ -161,7 +161,7 @@ export default function SearchWorkspace() {
     try {
       const created = await api("/searches/", { method: "POST", body });
       await loadSearches();
-      setNotice(`"${created.name}" created and queued to run now.`);
+      setNotice(ingestionEnabled ? `"${created.name}" created and queued to run now.` : `"${created.name}" saved; collection paused.`);
       navigate(`/search/${created.id}`);
     } finally {
       setSaving(false);
@@ -273,7 +273,7 @@ export default function SearchWorkspace() {
                 actions={
                   isStaff && (
                     <>
-                      <Button size="sm" onClick={() => act("refresh", "Run queued.")}>
+                      <Button size="sm" disabled={!ingestionEnabled} onClick={() => act("refresh", "Run queued.")}>
                         <RefreshCw className="size-3.5" aria-hidden="true" />
                         Run now
                       </Button>
@@ -334,7 +334,7 @@ export default function SearchWorkspace() {
               </TabPanel>
 
               <TabPanel value="workflow" className="pt-4">
-                <Workflow search={selected} onRunNow={() => act("refresh", "Run queued.")} />
+                <Workflow ingestionEnabled={ingestionEnabled} search={selected} onRunNow={() => act("refresh", "Run queued.")} />
               </TabPanel>
             </Tabs>
           </div>

@@ -173,6 +173,8 @@ def _run_cycle(
 def fetch_account_historical(handle: str) -> int:
     # Locked per handle: this endpoint is user-triggerable, and every run spends
     # the one shared X session's rate budget. Repeat requests collapse.
+    if not settings.INGESTION_ENABLED:
+        return 0
     with _cycle_lock(f"fetch_account_historical:{handle}") as acquired:
         if not acquired:
             logger.warning("fetch_account_historical(%s): already running, skipped", handle)
@@ -182,6 +184,8 @@ def fetch_account_historical(handle: str) -> int:
 
 @shared_task(name="fetching.tasks.fetch_account_live")
 def fetch_account_live(handle: str) -> int:
+    if not settings.INGESTION_ENABLED:
+        return 0
     with _cycle_lock(f"fetch_account_live:{handle}") as acquired:
         if not acquired:
             logger.warning("fetch_account_live(%s): already running, skipped", handle)
@@ -191,6 +195,8 @@ def fetch_account_live(handle: str) -> int:
 
 @shared_task(name="fetching.tasks.poll_live_all")
 def poll_live_all() -> int:
+    if not settings.INGESTION_ENABLED:
+        return 0
     with _cycle_lock("poll_live_all") as acquired:
         if not acquired:
             logger.warning("poll_live_all: skipped overlapping cycle")
@@ -255,6 +261,8 @@ def backfill_historical_all() -> int:
     (see engine.historical._record_backfill_progress) rather than inferred
     from the chunk's run status.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     with _cycle_lock("backfill_historical_all") as acquired:
         if not acquired:
             logger.warning("backfill_historical_all: skipped overlapping cycle")
@@ -306,6 +314,8 @@ def backfill_historical_all() -> int:
 @shared_task(name="fetching.tasks.run_search")
 def run_search(search_id: int) -> int:
     """Run one saved search, alone, with the whole cycle budget to itself."""
+    if not settings.INGESTION_ENABLED:
+        return 0
     search = Search.objects.filter(id=search_id).first()
     if search is None:
         # The query was deleted between dispatch and pickup. Nothing to do, and
@@ -350,6 +360,8 @@ def dispatch_due_searches() -> int:
     5-15 minutes each cannot all keep their nominal interval, and the honest
     degradation is "each runs a little late", not "the queue grows forever".
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     now = timezone.now()
     queued = 0
     for search in Search.objects.filter(enabled=True):
@@ -383,6 +395,8 @@ def repoll_searches() -> int:
     registered and callable: the task name is a wire identifier, and dropping it
     would strand any message already queued under it.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     with _cycle_lock("repoll_searches") as acquired:
         if not acquired:
             logger.warning("repoll_searches: skipped overlapping cycle")
@@ -403,6 +417,8 @@ def recompute_poll_intervals() -> int:
     and clamping it into the tier's band spends the budget where there is
     something to collect, while keeping importance in charge at the edges.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     since = timezone.now() - timedelta(days=settings.FETCH_INTERVAL_SAMPLE_DAYS)
     updated = 0
     for user in TwitterUser.objects.filter(tracking=True):
@@ -442,6 +458,8 @@ def purge_expired_search_tweets() -> int:
     Task name= is unchanged: it is a wire identifier and renaming one strands any
     message already queued under the old name.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     cutoff = timezone.now() - timedelta(days=settings.SEARCH_TWEET_TTL_DAYS)
     SearchHit.objects.filter(last_seen_at__lt=cutoff).delete()
     deleted, _ = SearchTweet.objects.filter(
@@ -465,6 +483,8 @@ def reap_orphaned_fetch_runs() -> int:
 
 @shared_task(name="fetching.tasks.purge_old_fetch_runs")
 def purge_old_fetch_runs() -> int:
+    if not settings.INGESTION_ENABLED:
+        return 0
     reap_orphaned_fetch_runs()
     cutoff = timezone.now() - timedelta(days=settings.FETCH_RUN_RETENTION_DAYS)
     deleted, _ = FetchRun.objects.filter(started_at__lt=cutoff).delete()
@@ -484,6 +504,8 @@ def purge_old_raw_pages() -> int:
     run: FetchRun rows are purged on their own schedule, and pages written by a
     run that was already reaped would otherwise have no clock at all.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     cutoff = timezone.now() - timedelta(days=settings.RAW_PAGE_RETENTION_DAYS)
     total = 0
     # Chunked: a single unbounded DELETE over millions of JSONB rows holds one
@@ -521,6 +543,8 @@ def purge_old_tweet_metrics() -> int:
     DELETE over millions of rows holds a long transaction and bloats WAL on a
     small container, and the first pass after deploy has a backlog to clear.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     cutoff = timezone.now() - timedelta(days=settings.TWEET_METRIC_RETENTION_DAYS)
     total = 0
     while total < settings.TWEET_METRIC_PURGE_MAX_ROWS:
@@ -573,6 +597,8 @@ def archive_media() -> int:
     dispatcher. One giant download of the backlog would starve dispatch the
     same way a shared search queue once did.
     """
+    if not settings.INGESTION_ENABLED:
+        return 0
     from fetching.media import archive_batch
 
     return archive_batch(settings.MEDIA_ARCHIVE_BATCH)

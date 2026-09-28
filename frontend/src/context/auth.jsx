@@ -11,6 +11,14 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [ingestionEnabled, setIngestionEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api("/auth/config/")
+      .then((config) => { if (!cancelled) setIngestionEnabled(config.ingestion_enabled === true); })
+      .catch(() => { if (!cancelled) setIngestionEnabled(false); });
+    return () => { cancelled = true; };
+  }, []);
   // Undecided until the stored refresh token has been tried. Without this a
   // reload renders the guard before the session is restored and bounces a
   // signed-in user to /login.
@@ -73,10 +81,11 @@ export function AuthProvider({ children }) {
       // The API enforces this independently; this only decides which controls
       // are worth showing.
       isStaff: Boolean(user?.is_staff),
+      ingestionEnabled,
       signIn,
       signOut,
     }),
-    [user, status, signIn, signOut]
+    [user, status, signIn, signOut, ingestionEnabled]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

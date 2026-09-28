@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Nightly Postgres backup for twitter-saas. Run from host cron or a sidecar.
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+source scripts/compose_config.sh
 
 # Cron and an operator can both invoke this script. Keep the lock here so they
 # coordinate instead of relying on every caller to remember a wrapper.
@@ -31,8 +33,8 @@ FILE="$OUT_DIR/twitter_saas_${STAMP}.sql.gz"
 PARTIAL="$FILE.part"
 trap 'rm -f "$PARTIAL"' EXIT
 
-docker compose exec -T postgres \
-  pg_dump -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-twitter_saas}" \
+"${COMPOSE[@]}" exec -T postgres \
+  sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"'  \
   | gzip -c > "$PARTIAL"
 
 # pg_dump emits this as its final line. Checking for the marker is what tells a
