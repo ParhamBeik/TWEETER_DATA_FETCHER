@@ -108,3 +108,10 @@ describe("budget rail", () => {
     );
   });
 });
+
+it("shows collection paused rather than a missing quota warning", () => {
+  authState.ingestionEnabled = false;
+  render(<BudgetRail />);
+  expect(screen.getByRole("status")).toHaveTextContent("Collection paused");
+  authState.ingestionEnabled = true;
+});

@@ -320,8 +320,7 @@ export default function SearchWorkspace() {
               <TabPanel value="results" className="pt-4">
                 {results.length === 0 && !loading ? (
                   <Empty title="Nothing stored yet">
-                    This query has not returned any results. If it has never run, the first run may
-                    still be queued.
+                    {ingestionEnabled ? "This query has not returned any results. If it has never run, the first run may still be queued." : "Collection is paused. This query is saved for later."}
                   </Empty>
                 ) : (
                   <div className="mx-auto flex max-w-2xl flex-col rounded-sm bg-paper">
