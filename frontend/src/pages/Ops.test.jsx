@@ -1,3 +1,5 @@
+const authState = { ingestionEnabled: true };
+vi.mock("@/context/auth", () => ({ useAuth: () => authState }));
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,6 +49,7 @@ function routeApi({ runs = [], health = session(), detail = null } = {}) {
 // calls, running the api mock with no arguments after every test.
 beforeEach(() => {
   api.mockReset();
+  authState.ingestionEnabled = true;
 });
 
 describe("session health panel", () => {
@@ -409,4 +412,13 @@ describe("polling resilience", () => {
     await act(() => vi.advanceTimersByTimeAsync(30000));
     expect(api.mock.calls.length).toBe(callsAfterUnmount);
   });
+});
+
+it("shows paused collection without requiring an X session", async () => {
+  authState.ingestionEnabled = false;
+  routeApi({ health: session({ configured: false }) });
+  render(<Ops />);
+  expect(await screen.findByText("Not required while paused")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run live poll" })).toBeDisabled();
+  expect(screen.queryByText("No active session")).not.toBeInTheDocument();
 });

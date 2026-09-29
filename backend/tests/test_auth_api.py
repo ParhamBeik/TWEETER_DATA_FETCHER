@@ -310,7 +310,7 @@ def test_auth_config_reports_open_registration():
     resp = APIClient().get("/api/auth/config/")
 
     assert resp.status_code == 200
-    assert resp.data == {"allow_registration": True}
+    assert resp.data == {"allow_registration": True, "ingestion_enabled": True}
 
 
 @override_settings(ALLOW_REGISTRATION=False)
@@ -318,7 +318,7 @@ def test_auth_config_reports_closed_registration():
     resp = APIClient().get("/api/auth/config/")
 
     assert resp.status_code == 200
-    assert resp.data == {"allow_registration": False}
+    assert resp.data == {"allow_registration": False, "ingestion_enabled": True}
 
 
 @pytest.mark.django_db

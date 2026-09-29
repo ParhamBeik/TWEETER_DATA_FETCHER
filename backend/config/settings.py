@@ -90,6 +90,9 @@ DATABASES = {
     }
 }
 
+# Safe by default: archive browsing does not require an X session or egress.
+INGESTION_ENABLED = os.environ.get("INGESTION_ENABLED", "0") == "1"
+
 # Signup is open, so the password rules are the only thing standing between a
 # weak password and an account on a system that drives a shared X session.
 # MinimumLength alone accepted "password1" and any handle already in the repo.

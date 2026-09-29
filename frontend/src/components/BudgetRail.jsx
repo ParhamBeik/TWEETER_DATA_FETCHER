@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/auth";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { usePoll } from "@/hooks/usePoll";
@@ -96,6 +97,7 @@ function Gauge({ endpoint, remaining, limit, resetsInSeconds }) {
 }
 
 export default function BudgetRail() {
+  const { ingestionEnabled } = useAuth();
   const [pipeline, setPipeline] = useState(null);
   const [reachable, setReachable] = useState(true);
 
@@ -107,6 +109,12 @@ export default function BudgetRail() {
       })
       .catch(() => setReachable(false));
   }, RAIL_POLL_MS);
+
+  if (!ingestionEnabled) return (
+    <div role="status" className="border-b border-line bg-ink-850 px-4 py-2 text-sm text-fg-muted">
+      Collection paused — saved data and configuration remain available.
+    </div>
+  );
 
   const limits = (pipeline?.rate_limits || []).filter(
     (row) => row.limit > 0 && row.endpoint !== "UserTweetsAndReplies",

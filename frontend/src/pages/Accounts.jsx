@@ -22,7 +22,7 @@ const TH = "pb-2 pr-3 text-left eyebrow font-normal";
 const TD = "py-2 pr-3 align-top text-xs";
 
 export default function Accounts() {
-  const { isStaff } = useAuth();
+  const { isStaff, ingestionEnabled } = useAuth();
   const [accounts, setAccounts] = useState([]);
   const [analytics, setAnalytics] = useState({});
   const [compare, setCompare] = useState([]);
@@ -80,7 +80,7 @@ export default function Accounts() {
         body: { handle: handle.replace(/^@/, ""), priority: Number(priority) },
       });
       setHandle("");
-      setStatus("Account tracked; initial fetch queued.");
+      setStatus(ingestionEnabled ? "Account tracked; initial fetch queued." : "Account saved; collection paused.");
       loadAccounts();
     } catch (e) {
       setError(e.message);
@@ -334,6 +334,7 @@ export default function Accounts() {
                             size="sm"
                             variant="quiet"
                             aria-label={`Fetch @${a.handle}`}
+                            disabled={!ingestionEnabled}
                             onClick={() => fetchNow(a.handle)}
                           >
                             Fetch
@@ -404,7 +405,7 @@ export default function Accounts() {
               </div>
               {!loading && tweets.length === 0 && (
                 <Empty title="Nothing collected yet">
-                  The first fetch for this account may still be running.
+                  {ingestionEnabled ? "The first fetch for this account may still be running." : "Collection is paused; no tweets have been collected for this account."}
                 </Empty>
               )}
             </section>

@@ -15,7 +15,6 @@ import time
 import base64
 import os
 import random
-import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -611,9 +610,7 @@ class APIManager:
             self._save_endpoint_health()
 
     def _save_config(self) -> None:
-        """Persist current config atomically with one simple backup."""
-        if self.config_path.exists():
-            shutil.copy2(self.config_path, self.config_path.with_suffix(".json.bak"))
+        """Persist current config atomically."""
         tmp_fd, tmp_path = tempfile.mkstemp(dir=self.config_path.parent, suffix=".tmp")
         try:
             with open(tmp_fd, "w", encoding="utf-8") as f:
@@ -916,4 +913,3 @@ class APIManager:
     def get_endpoint_health(self, endpoint: str) -> str:
         """Get health status of an endpoint"""
         return self.endpoint_health.get(endpoint, EndpointHealth.UNKNOWN_ERROR)
-

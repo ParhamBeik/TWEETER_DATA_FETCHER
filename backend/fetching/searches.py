@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -78,10 +79,10 @@ def schedule_for(search: Search, *, running: bool | None = None) -> dict:
     one query instead of one per search.
     """
     now = timezone.now()
-    due_at = next_due_at(search)
+    due_at = next_due_at(search) if settings.INGESTION_ENABLED else None
     if running is None:
         running = FetchRun.objects.filter(search=search, status="running").exists()
-    if not search.enabled:
+    if not settings.INGESTION_ENABLED or not search.enabled:
         state = "paused"
     elif running:
         state = "running"
@@ -99,7 +100,7 @@ def schedule_for(search: Search, *, running: bool | None = None) -> dict:
             max(0, int((due_at - now).total_seconds())) if due_at else 0
         ),
         # Never run, or overdue. The dispatcher queues these on its next tick.
-        "is_due": search.enabled and (due_at is None or due_at <= now),
+        "is_due": settings.INGESTION_ENABLED and search.enabled and (due_at is None or due_at <= now),
         "queued_task_id": search.queued_task_id,
     }
 

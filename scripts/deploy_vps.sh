@@ -32,11 +32,11 @@ fi
 # `ports: !reset []` exists to close, signup stayed open, and Postgres ran on
 # the base 512m instead of 1g. An overlay that is only applied when someone
 # remembers the flag is not applied.
-COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
+source scripts/compose_config.sh
 
 # --- Rollback artifacts -----------------------------------------------------
 #
-# `docker image prune -f` at the end of this script used to delete the previous
+# `# Shared VPS: never prune images belonging to other applications.` at the end of this script used to delete the previous
 # build the moment a new one replaced it, because rebuilding leaves the old
 # `:latest` dangling. That left no way back from a bad deploy except a revert
 # commit and a full rebuild -- minutes of downtime for a one-line mistake.
@@ -45,9 +45,6 @@ COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
 # non-dangling, so prune leaves them alone. ROLLBACK_KEEP of them are retained.
 # A tag is a pointer, not a copy: the layers are already on disk and shared, so
 # five tags cost approximately nothing beyond the layers that differ.
-BUILT_IMAGES=(twitter-saas-web twitter-saas-beat twitter-saas-frontend
-              twitter-saas-worker_live twitter-saas-worker_historical
-              twitter-saas-worker_search twitter-saas-worker_control)
 ROLLBACK_KEEP=5
 SHA_FILE=.deployed_sha
 NEW_SHA=$(git rev-parse --short HEAD)
@@ -65,14 +62,19 @@ if [ -f "$SHA_FILE" ]; then
   echo "preserved the running build as :$PREV_SHA"
 fi
 
-"${COMPOSE[@]}" build
+# Build independent images concurrently. Compose still preserves dependency
+# ordering when the stack is started below.
+COMPOSE_PARALLEL_LIMIT=1 "${COMPOSE[@]}" build "${SERVICES[@]}"
 
 # Prove the app actually came back before reporting success. A build that
 # succeeds and a container that boot-loops look identical to a bare `up -d`.
 # `--wait` blocks on the healthchecks already declared in
 # docker-compose.yml (gunicorn, all four celery containers, postgres, redis)
 # rather than reimplementing them here.
-if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300; then
+if [ "${TDF_DEPLOY_MODE:-archive}" = archive ]; then
+  "${COMPOSE[@]}" stop worker_live worker_historical worker_search beat
+fi
+if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300 "${SERVICES[@]}"; then
   echo "FATAL: services did not become healthy" >&2
   "${COMPOSE[@]}" ps
   "${COMPOSE[@]}" logs --tail 50 web >&2
@@ -135,7 +137,7 @@ done
 
 # Safe now: every build worth keeping carries a tag, so nothing here is
 # dangling. This only reclaims intermediate layers no tag points at.
-docker image prune -f
+# Shared VPS: never prune images belonging to other applications.
 
 echo
 echo "rollback targets available:"

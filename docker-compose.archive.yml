@@ -1,0 +1,37 @@
+# Apply after base + prod. Ordinary up/redeploy cannot start the collectors.
+services:
+  postgres:
+    mem_limit: 512m
+  redis:
+    mem_limit: 128m
+  web:
+    build:
+      args:
+        INSTALL_BROWSER: "0"
+    environment:
+      INGESTION_ENABLED: "0"
+    mem_limit: 512m
+  frontend:
+    mem_limit: 128m
+  worker_control:
+    build: !reset null
+    image: twitter-saas-web:latest
+    environment:
+      INGESTION_ENABLED: "0"
+    mem_limit: 256m
+  worker_live:
+    profiles: [collection]
+    environment:
+      INGESTION_ENABLED: "0"
+  worker_historical:
+    profiles: [collection]
+    environment:
+      INGESTION_ENABLED: "0"
+  worker_search:
+    profiles: [collection]
+    environment:
+      INGESTION_ENABLED: "0"
+  beat:
+    profiles: [collection]
+    environment:
+      INGESTION_ENABLED: "0"

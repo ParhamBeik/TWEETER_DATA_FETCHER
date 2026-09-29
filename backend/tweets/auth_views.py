@@ -201,7 +201,10 @@ class AuthConfigView(APIView):
     authentication_classes = []
 
     def get(self, request):
-        return Response({"allow_registration": bool(settings.ALLOW_REGISTRATION)})
+        return Response({
+            "allow_registration": bool(settings.ALLOW_REGISTRATION),
+            "ingestion_enabled": bool(settings.INGESTION_ENABLED),
+        })
 
 
 def probe_database() -> bool:

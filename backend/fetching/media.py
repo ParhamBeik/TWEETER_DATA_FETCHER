@@ -246,7 +246,7 @@ def archive_batch(limit: int) -> int:
 
     Constant work per tick: the queue is read with a LIMIT, not searched for.
     """
-    if limit <= 0:
+    if not settings.INGESTION_ENABLED or limit <= 0:
         return 0
     root = Path(settings.MEDIA_ROOT)
     root.mkdir(parents=True, exist_ok=True)

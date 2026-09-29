@@ -22,6 +22,7 @@ from fetching.management.commands.reopen_false_depth_stops import (
 )
 from fetching.runner import _persist_endpoint_states, _persist_state, _restore_state
 from fetching.tasks import _backfill_queue
+from engine.clock import utc_now_iso
 from tweets.models import EndpointState, FetchRun, KeyValueState, TwitterUser
 
 PARKED = {
@@ -206,8 +207,10 @@ def test_command_aligns_parked_blob_to_honest_endpoint():
 @pytest.mark.django_db
 def test_post_fix_wall_with_cursor_is_left_alone():
     _user("chigrl")
-    _endpoint("chigrl", HONEST_WALL)
-    _sync({"chigrl": HONEST_WALL})
+    # A recent wall is parked; a wall over 30 days old is due for a probe.
+    wall = {**HONEST_WALL, "backfill_completed_at": utc_now_iso()}
+    _endpoint("chigrl", wall)
+    _sync({"chigrl": wall})
 
     call_command("reopen_false_depth_stops")
 

@@ -88,7 +88,7 @@ function Run({ run }) {
  * showed neither. When a query went quiet there was no screen that could say
  * whether it was paused, queued behind another fetch, or simply not due yet.
  */
-export default function Workflow({ search, onRunNow }) {
+export default function Workflow({ search, onRunNow, ingestionEnabled }) {
   const [runs, setRuns] = useState(null);
   const [schedule, setSchedule] = useState(search.schedule);
   const [error, setError] = useState("");
@@ -162,6 +162,7 @@ export default function Workflow({ search, onRunNow }) {
           actions={
             <button
               type="button"
+              disabled={!ingestionEnabled}
               onClick={onRunNow}
               className="rounded-sm border border-line px-2.5 py-1 text-xs text-fg-muted hover:border-line-strong hover:text-fg"
             >

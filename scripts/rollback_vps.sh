@@ -19,10 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
-BUILT_IMAGES=(twitter-saas-web twitter-saas-beat twitter-saas-frontend
-              twitter-saas-worker_live twitter-saas-worker_historical
-              twitter-saas-worker_search twitter-saas-worker_control)
+source scripts/compose_config.sh
 
 available() {
   docker images twitter-saas-web --format '{{.Tag}} {{.CreatedAt}}' | grep -v '^latest '
@@ -61,7 +58,10 @@ for image in "${BUILT_IMAGES[@]}"; do
 done
 
 # No --build: the whole point is to use the images already on disk.
-if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300; then
+if [ "${TDF_DEPLOY_MODE:-archive}" = archive ]; then
+  "${COMPOSE[@]}" stop worker_live worker_historical worker_search beat
+fi
+if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 300 "${SERVICES[@]}"; then
   echo "FATAL: services did not become healthy after rollback" >&2
   "${COMPOSE[@]}" ps
   "${COMPOSE[@]}" logs --tail 50 web >&2

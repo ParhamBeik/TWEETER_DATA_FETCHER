@@ -587,6 +587,8 @@ def run_fetcher(
     does NOT raise — the engine may have written partial results before failing,
     and those are still worth ingesting.
     """
+    if not settings.INGESTION_ENABLED:
+        raise RuntimeError("Collection paused: ingestion_disabled")
     run = FetchRun.objects.create(
         run_id=f"saas_{uuid.uuid4().hex}",
         task_id=task_id,

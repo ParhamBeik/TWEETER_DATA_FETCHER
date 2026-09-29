@@ -81,12 +81,9 @@ evidence that the application is running there.
    September 24; it has **not** been applied. The name resolves publicly to
    the VPS, but the current certificate lacks this name. Leave Caddy's automatic
    certificate issuance enabled and verify trusted HTTPS after activation.
-4. Arrange scheduled PostgreSQL and media backups to storage outside the VPS.
-   `scripts/backup_pg.sh` is not scheduled by this repository and keeps only
-   the last 14 local dumps. Check a fresh dump with `verify_backup.sh`, restore
-   it into an isolated database, check media samples, and record the recovery
-   point and restore time. Coordinate rotation of the shared X session before
-   resuming collection; do not copy or print credentials in evidence.
+4. Verify the current PostgreSQL rows and live media files before resuming
+   collection. The former backup scripts were removed for the storage baseline;
+   do not copy or print credentials in evidence.
 
 There is no deploy job in CI. Only after these gates pass and publication is
 authorized: verify the target and wire a deploy path for the approved host.

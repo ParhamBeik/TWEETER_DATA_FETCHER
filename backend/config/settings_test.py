@@ -57,6 +57,8 @@ CACHES = {
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 ALLOW_REGISTRATION = True
+# Existing collection tests exercise the enabled mode; archive tests override it.
+INGESTION_ENABLED = True
 
 # Throttling is wired up but inert: the classes stay installed, every rate is
 # None, and a null rate short-circuits SimpleRateThrottle.allow_request.

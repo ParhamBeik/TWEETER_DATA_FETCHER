@@ -12,7 +12,7 @@ vi.mock("@/lib/api", async () => {
   return { ...actual, api: vi.fn() };
 });
 
-const authState = { isStaff: true, authed: true };
+const authState = { isStaff: true, ingestionEnabled: true, authed: true };
 vi.mock("@/context/auth", async () => {
   const actual = await vi.importActual("@/context/auth");
   return { ...actual, useAuth: () => authState };
@@ -45,6 +45,7 @@ function routeApi({ accounts = [], analytics = [], tweets = { results: [], next:
 beforeEach(() => {
   api.mockReset();
   authState.isStaff = true;
+  authState.ingestionEnabled = true;
 });
 
 describe("Accounts roster", () => {
@@ -336,4 +337,12 @@ describe("Accounts accessibility", () => {
     expect(screen.queryByRole("button", { name: "Fetch @elonmusk" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Tier for @elonmusk" })).toBeNull();
   });
+});
+
+it("disables collection while keeping account configuration available", async () => {
+  authState.ingestionEnabled = false;
+  routeApi({ accounts: [account("jack")] });
+  render(<Accounts />);
+  expect(await screen.findByRole("button", { name: "Fetch @jack" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Disable @jack" })).toBeEnabled();
 });

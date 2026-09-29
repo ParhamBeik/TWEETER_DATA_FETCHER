@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/auth";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -51,6 +52,7 @@ function Fact({ term, value, ok }) {
 }
 
 export default function Ops() {
+  const { ingestionEnabled } = useAuth();
   const [runs, setRuns] = useState([]);
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
@@ -186,7 +188,7 @@ export default function Ops() {
       <PageHead
         label="Ops"
         title="Collector controls and run history"
-        lede="One X session serves every collector here. When it lapses, every fetch stops — which is why it is the first thing on this page."
+        lede={ingestionEnabled ? "One X session serves every collector here. When it lapses, every fetch stops — which is why it is the first thing on this page." : "Collection is paused. No X session is required to use saved data."}
       />
 
       <Panel>
@@ -194,7 +196,9 @@ export default function Ops() {
           label="Credentials"
           title="X session"
           actions={
-            session?.configured ? (
+            !ingestionEnabled ? (
+              <Status tone={TONE.idle}>Not required while paused</Status>
+            ) : session?.configured ? (
               <Status tone={TONE.ok}>Configured</Status>
             ) : (
               <Status tone={TONE.danger}>No active session</Status>
@@ -206,7 +210,7 @@ export default function Ops() {
             {/* Only the credential-critical names are called out. Listing all ~57
                 cookie names was a wall of text that hid whether auth actually
                 works. */}
-            <dl>
+            {ingestionEnabled && <dl>
               {REQUIRED_COOKIES.map((name) => (
                 <Fact
                   key={name}
@@ -225,7 +229,7 @@ export default function Ops() {
                     .join(" · ") || "none"
                 }
               />
-            </dl>
+            </dl>}
             {session?.updated_at && (
               <p className="mt-2 text-xs text-fg-dim">
                 Updated {absoluteTime(session.updated_at)}
@@ -269,7 +273,7 @@ export default function Ops() {
 
       <div className="flex flex-wrap items-center gap-2">
         {SUBSYSTEMS.map((row) => (
-          <Button key={row.value} onClick={() => trigger(row.value)}>
+          <Button key={row.value} disabled={!ingestionEnabled} onClick={() => trigger(row.value)}>
             Run {row.label.toLowerCase()}
           </Button>
         ))}

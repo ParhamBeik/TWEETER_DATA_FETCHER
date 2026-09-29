@@ -11,6 +11,7 @@ from django.http import FileResponse, QueryDict
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.generics import ListAPIView, RetrieveAPIView, get_object_or_404
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
@@ -56,6 +57,16 @@ from .serializers import (
     SearchTweetSerializer,
     TweetSerializer,
 )
+
+
+def require_ingestion():
+    if not settings.INGESTION_ENABLED:
+        error = APIException({
+            "code": "ingestion_disabled",
+            "detail": "Collection paused. Saved data remains available.",
+        })
+        error.status_code = 409
+        raise error
 
 
 def _normalize_handle(raw: str) -> str:
@@ -184,8 +195,9 @@ class AccountViewSet(viewsets.ModelViewSet):
                 "quarantined_at": None,
             },
         )
-        fetch_account_historical.delay(handle)
-        fetch_account_live.delay(handle)
+        if settings.INGESTION_ENABLED:
+            fetch_account_historical.delay(handle)
+            fetch_account_live.delay(handle)
         return Response(
             AccountOpsSerializer(account, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
@@ -220,6 +232,7 @@ class AccountViewSet(viewsets.ModelViewSet):
         # and writes a FetchRun, and an unknown handle used to answer 202 and
         # actually start an engine subprocess for an account nobody tracks.
         account = self.get_object()
+        require_ingestion()
         fetch_account_live.delay(account.handle)
         fetch_account_historical.delay(account.handle)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
@@ -260,6 +273,7 @@ class CycleView(APIView):
         task = tasks.get(subsystem)
         if task is None:
             return Response({"detail": "subsystem must be live, historical, or search"}, status=400)
+        require_ingestion()
         task.delay()
         return Response({"status": "queued", "subsystem": subsystem}, status=status.HTTP_202_ACCEPTED)
 
@@ -357,8 +371,9 @@ class SearchViewSet(viewsets.ModelViewSet):
         # Run immediately rather than waiting up to one dispatch interval: a
         # query you just wrote should start collecting while you are still
         # looking at it. The recurring schedule takes over from there.
-        result = run_search.delay(search.id)
-        Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
+        if settings.INGESTION_ENABLED:
+            result = run_search.delay(search.id)
+            Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
 
     def perform_destroy(self, instance):
         teardown_search(instance)
@@ -415,6 +430,7 @@ class SearchViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def refresh(self, request, pk=None):
         search = self.get_object()
+        require_ingestion()
         result = run_search.delay(search.id)
         Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
