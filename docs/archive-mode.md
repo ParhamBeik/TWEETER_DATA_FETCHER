@@ -7,7 +7,7 @@ the full-collection host rejection in production-recovery.md only for paused use
 ## Deploy and operate
 
 Run `bash scripts/deploy_vps.sh` from `/opt/apps/twitter-project`.
-Archive mode is the default for deployment, rollback and backups. It combines
+Archive mode is the default for deployment and rollback. It combines
 base, production and archive Compose files, starts only postgres, redis, web,
 frontend and worker_control, and explicitly stops the three collectors and beat.
 The archive overlay forces INGESTION_ENABLED=0 even if .env says otherwise.
@@ -25,24 +25,9 @@ tasks return without changing data; beat registers no schedules in paused mode.
 The runner also refuses direct collection calls. Enabling ingestion requires a
 process restart; this is an operator setting, not a UI toggle.
 
-## Backups
-
-Host cron runs `bash scripts/backup_archive.sh` daily. It locks, writes a verified
-PostgreSQL dump, archives media, and publishes a checksum manifest only after both
-complete. Files are private. Keep 14 snapshots. Exports live in the media volume;
-cron separately runs the existing expired-export cleanup to bound their growth.
-
-On the Mac, `bash scripts/pull_archive_backups.sh` copies backups over SSH into
-`~/Library/Application Support/TwitterArchive/backups`, checks the latest pair,
-and records `last-pull-success.txt` and `last-verified-snapshot.txt`. A LaunchAgent
-runs this daily and at login when the Mac is available. An offline Mac misses
-copies; inspect those timestamps rather than assuming daily off-server coverage.
-Copy time and snapshot time are different: inspect the filename in the latter.
-
-Verify restore in an isolated database and media directory. Never restore a
-verification snapshot over the application's database. Database and media are
-sequential snapshots; for a coordinated migration, stop writers before the final
-pair and cutover.
+The host backup cron and Mac backup pull are disabled during the storage-baseline
+cleanup. Exports remain in the live media volume; cron still removes expired
+exports to bound their growth.
 
 ## Enable collection later
 

@@ -27,7 +27,6 @@ Flags:
 import argparse
 import json
 import logging
-import shutil
 import sys
 import tempfile
 import time
@@ -101,11 +100,7 @@ def _load_config(config_path: Path) -> Dict[str, Any]:
 
 
 def _save_config(config_path: Path, cfg: Dict[str, Any]) -> None:
-    """Persist the updated config to disk with atomic write and backup."""
-    if config_path.exists():
-        backup_path = config_path.with_suffix(".json.bak")
-        shutil.copy2(config_path, backup_path)
-        logger.info("Config backup saved to %s", backup_path)
+    """Persist the updated config with an atomic replacement."""
     tmp_fd, tmp_path = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
     try:
         with open(tmp_fd, "w", encoding="utf-8") as f:
