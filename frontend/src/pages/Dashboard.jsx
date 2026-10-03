@@ -38,7 +38,9 @@ import { Badge, RUN_TONE, Status, TONE, toneEdge } from "@/ui/status";
 
 function Stat({ label, value, hint, delta, tone }) {
   return (
-    <div className="border-l border-line px-4 first:border-l-0 first:pl-0">
+    // Dividers only on the single desktop row: on the two-column phone grid a
+    // left rule landed mid-grid and indented every other tile.
+    <div className="border-line md:border-l md:px-4 md:first:border-l-0 md:first:pl-0">
       <p className="eyebrow">{label}</p>
       <p className="mt-1 font-mono text-xl tabular">{value ?? "—"}</p>
       <p className="mt-0.5 flex flex-wrap items-baseline gap-1.5 text-xs">
@@ -76,7 +78,7 @@ function Chart({ children, empty, show, loading, label, className }) {
 }
 
 export default function Dashboard() {
-  const { isStaff } = useAuth();
+  const { isStaff, ingestionEnabled } = useAuth();
   const [range, setRange] = useState("24h");
   const [ingestion, setIngestion] = useState(null);
   const [pipeline, setPipeline] = useState(null);
@@ -127,6 +129,18 @@ export default function Dashboard() {
   const archive = pipeline?.archive || {};
   const queues = pipeline?.queues || {};
   const totalWalked = (archive.complete || 0) + (archive.depth_limited || 0);
+  const walkStarted = (archive.walking || []).filter(
+    (row) => row.pages > 0 || row.outcome !== "not_started",
+  );
+  const walkWaiting = (archive.walking || []).filter(
+    (row) => !(row.pages > 0) && row.outcome === "not_started",
+  );
+  // The API sends at most 12 walking rows, so the queue is counted from the
+  // totals rather than from the list it happens to include.
+  const walkQueued = Math.max(
+    (archive.tracked || 0) - (archive.complete || 0) - (archive.depth_limited || 0) - walkStarted.length,
+    walkWaiting.length,
+  );
   const archivePercent = archive.tracked
     ? Math.round((totalWalked / archive.tracked) * 100)
     : 0;
@@ -168,7 +182,7 @@ export default function Dashboard() {
       <PageHead
         label="Dashboard"
         title="How is the collector doing?"
-        lede="Where the archive is growing from, what it is costing, and what the pipeline is doing right now."
+        lede="Growth, cost and what each collector is doing now."
         actions={
           <Segmented label="Time range" options={RANGES} value={range} onChange={setRange} />
         }
@@ -182,7 +196,7 @@ export default function Dashboard() {
 
       <Panel>
         <PanelBody
-          className="grid grid-cols-2 gap-y-4 md:grid-cols-5"
+          className="grid grid-cols-2 gap-x-4 gap-y-4 max-md:[&>*:last-child]:col-span-2 md:grid-cols-5 md:gap-x-0"
           role="region"
           aria-label="Collector totals"
         >
@@ -253,7 +267,7 @@ export default function Dashboard() {
           // "Not attributed" is not a collector, and calling the split "by the
           // collector that saw them first" without saying so left the largest
           // series on the 90d view looking like a fourth pipeline.
-          lede="Posts captured per bucket, split by the collector that saw them first. Saved-search hits are counted here too, and they expire after 30 days — the archive walk and live poll are what grow the permanent archive. Posts stored before the collector was recorded are grouped as “not attributed”."
+          lede="Posts captured per bucket, by the collector that saw them first. Saved-search hits expire after 30 days."
         />
         <PanelBody>
           <Chart
@@ -307,7 +321,7 @@ export default function Dashboard() {
           <PanelHead
             label="Coverage"
             title="How far back the archive reaches"
-            lede="Posts by when they were written, not when we fetched them — the backfill fills in history, the live poll only adds to the leading edge."
+            lede="Posts by when they were written, not when they were fetched."
           />
           <PanelBody>
             <Chart
@@ -343,7 +357,7 @@ export default function Dashboard() {
           <PanelHead
             label="Spend"
             title="Where the request budget went"
-            lede="Pages fetched per bucket, by endpoint. All three collectors share the one X budget shown at the top of this screen."
+            lede="Pages fetched per bucket, by endpoint, from the one shared X budget."
           />
           <PanelBody>
             <Chart
@@ -400,6 +414,10 @@ export default function Dashboard() {
                     </strong>
                     {row.running > 0 ? (
                       <Status tone={TONE.active}>fetching now</Status>
+                    ) : !ingestionEnabled ? (
+                      // Paused, beat schedules nothing: a countdown here
+                      // promised a run that was never going to happen.
+                      <span className="font-mono text-xs text-fg-dim">paused</span>
                     ) : (
                       <span className="font-mono text-xs text-fg-dim">
                         {/* A zero countdown means the interval already elapsed and
@@ -467,7 +485,7 @@ export default function Dashboard() {
           <PanelHead
             label="Backfill"
             title="How much history is in"
-            lede="The archive walk is a finite job: each account's timeline is walked backwards once and then leaves the queue."
+            lede="Each account's timeline is walked back once, then leaves the queue."
           />
           <PanelBody className="flex flex-col gap-3">
             <div
@@ -492,7 +510,7 @@ export default function Dashboard() {
                 : ""}
             </p>
             <ul className="flex flex-col divide-y divide-line">
-              {(archive.walking || []).map((row) => (
+              {walkStarted.map((row) => (
                 <li
                   key={row.handle}
                   className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5 text-xs"
@@ -505,6 +523,20 @@ export default function Dashboard() {
                   {row.quarantined && <Badge tone={TONE.warn}>quarantined</Badge>}
                 </li>
               ))}
+              {walkWaiting.length > 0 && (
+                // One line for the queue, not a row per account repeating
+                // "0 pages · not started".
+                <li className="py-1.5 text-xs">
+                  <span className="text-fg-muted">
+                    <strong className="font-mono tabular text-fg">{walkQueued}</strong> still
+                    queued
+                  </span>
+                  <span className="mt-0.5 block font-mono text-fg-dim">
+                    {walkWaiting.slice(0, 6).map((row) => `@${row.handle}`).join(" ")}
+                    {walkQueued > 6 ? ` +${walkQueued - 6} more` : ""}
+                  </span>
+                </li>
+              )}
               {!(archive.walking || []).length && (
                 <li className="py-1.5 text-xs text-fg-dim">
                   {archive.depth_limited

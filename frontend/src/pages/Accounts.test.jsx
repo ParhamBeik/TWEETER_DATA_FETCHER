@@ -61,7 +61,20 @@ describe("Accounts roster", () => {
     render(<Accounts />);
     expect(await screen.findByRole("button", { name: "@elonmusk" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "@jack" })).toBeInTheDocument();
-    expect(screen.getByText("Scroll horizontally to see more account columns.")).toHaveClass("lg:hidden");
+    // Phones stack each row into a card; every cell must name its own column.
+    const table = screen.getByRole("table");
+    expect(table).toHaveClass("stack-table");
+    expect(table.querySelectorAll('td[data-label="Status"]')).toHaveLength(2);
+  });
+
+  it("opens a timeline beside the roster and closes it again", async () => {
+    const user = userEvent.setup();
+    routeApi({ accounts: [account("elonmusk")] });
+    render(<Accounts />);
+    await user.click(await screen.findByRole("button", { name: "@elonmusk" }));
+    expect(await screen.findByRole("region", { name: "Timeline for @elonmusk" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close timeline" }));
+    expect(screen.queryByRole("region", { name: "Timeline for @elonmusk" })).toBeNull();
   });
 
   // Regression: the empty state rendered before the roster request resolved, so
@@ -343,6 +356,7 @@ it("disables collection while keeping account configuration available", async ()
   authState.ingestionEnabled = false;
   routeApi({ accounts: [account("jack")] });
   render(<Accounts />);
-  expect(await screen.findByRole("button", { name: "Fetch @jack" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Disable @jack" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "Disable @jack" })).toBeEnabled();
+  // Paused, a fetch the server would refuse is not offered at all.
+  expect(screen.queryByRole("button", { name: "Fetch @jack" })).toBeNull();
 });

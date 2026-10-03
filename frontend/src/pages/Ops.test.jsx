@@ -419,6 +419,10 @@ it("shows paused collection without requiring an X session", async () => {
   routeApi({ health: session({ configured: false }) });
   render(<Ops />);
   expect(await screen.findByText("Not required while paused")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Run live poll" })).toBeDisabled();
+  // Paused, the run buttons are replaced by the reason, not left greyed out.
+  expect(screen.queryByRole("button", { name: "Run live poll" })).toBeNull();
+  expect(screen.getByText("Manual runs are off while collection is paused.")).toBeInTheDocument();
+  // The session editor is still reachable, behind a disclosure.
+  expect(screen.getByRole("form", { name: "Replace X session" })).toBeInTheDocument();
   expect(screen.queryByText("No active session")).not.toBeInTheDocument();
 });

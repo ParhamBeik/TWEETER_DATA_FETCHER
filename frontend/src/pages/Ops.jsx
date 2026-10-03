@@ -183,6 +183,36 @@ export default function Ops() {
   const hasCookie = (name) => Boolean(session?.cookie_names?.includes(name));
   const hasBearer = Boolean(session?.header_names?.includes("authorization"));
 
+  const sessionForm = (
+    <form
+      className="flex flex-col gap-2"
+      aria-label="Replace X session"
+      onSubmit={saveSession}
+    >
+      <label className="eyebrow" htmlFor="session-json">
+        Replace session
+      </label>
+      <Textarea
+        id="session-json"
+        rows={6}
+        aria-label="X session JSON"
+        placeholder={
+          '{"cookies":{"auth_token":"...","ct0":"..."},"headers":{"authorization":"Bearer ..."}}'
+        }
+        value={sessionJson}
+        onChange={(e) => setSessionJson(e.target.value)}
+      />
+      <Button
+        type="submit"
+        variant="primary"
+        className="self-start"
+        disabled={!sessionJson.trim()}
+      >
+        Update session
+      </Button>
+    </form>
+  );
+
   return (
     <section className="flex flex-col gap-5">
       <PageHead
@@ -236,47 +266,36 @@ export default function Ops() {
               </p>
             )}
             {session?.last_auth_required_at && (
-              <p className="text-xs text-warn">
+              <p className={ingestionEnabled ? "text-xs text-warn" : "text-xs text-fg-dim"}>
                 Last auth-required run: {absoluteTime(session.last_auth_required_at)}
               </p>
             )}
           </div>
-          <form
-            className="flex flex-col gap-2"
-            aria-label="Replace X session"
-            onSubmit={saveSession}
-          >
-            <label className="eyebrow" htmlFor="session-json">
-              Replace session
-            </label>
-            <Textarea
-              id="session-json"
-              rows={6}
-              aria-label="X session JSON"
-              placeholder={
-                '{"cookies":{"auth_token":"...","ct0":"..."},"headers":{"authorization":"Bearer ..."}}'
-              }
-              value={sessionJson}
-              onChange={(e) => setSessionJson(e.target.value)}
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              className="self-start"
-              disabled={!sessionJson.trim()}
-            >
-              Update session
-            </Button>
-          </form>
+          {/* Paused, the session is optional, so its editor waits behind a
+              disclosure instead of leading the page with a JSON box. */}
+          {ingestionEnabled ? (
+            sessionForm
+          ) : (
+            <details>
+              <summary className="cursor-pointer list-none text-sm text-fg-muted hover:text-fg">
+                Replace session…
+              </summary>
+              <div className="mt-3">{sessionForm}</div>
+            </details>
+          )}
         </PanelBody>
       </Panel>
 
       <div className="flex flex-wrap items-center gap-2">
-        {SUBSYSTEMS.map((row) => (
-          <Button key={row.value} disabled={!ingestionEnabled} onClick={() => trigger(row.value)}>
-            Run {row.label.toLowerCase()}
-          </Button>
-        ))}
+        {ingestionEnabled ? (
+          SUBSYSTEMS.map((row) => (
+            <Button key={row.value} onClick={() => trigger(row.value)}>
+              Run {row.label.toLowerCase()}
+            </Button>
+          ))
+        ) : (
+          <p className="text-xs text-fg-muted">Manual runs are off while collection is paused.</p>
+        )}
         <Select
           aria-label="Filter by subsystem"
           className="ml-auto w-auto"
@@ -352,8 +371,9 @@ export default function Ops() {
                     </button>
                     {/* Only where it can help: re-running the subsystem is the
                         repair for a run that failed or could not prove it
-                        finished, and noise on the ones that succeeded. */}
-                    {(run.status === "failed" || run.status === "partial") && (
+                        finished, and noise on the ones that succeeded. Paused,
+                        the server refuses every run, so it is not offered. */}
+                    {ingestionEnabled && (run.status === "failed" || run.status === "partial") && (
                       <Button
                         size="sm"
                         variant="quiet"

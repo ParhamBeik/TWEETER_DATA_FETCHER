@@ -13,6 +13,10 @@ vi.mock("@/lib/api", async () => {
   return { ...actual, api: vi.fn() };
 });
 
+vi.mock("@/context/auth", () => ({
+  useAuth: () => ({ ingestionEnabled: false }),
+}));
+
 vi.mock("@/hooks/useMediaQuery", () => ({
   useMediaQuery: () => true,
 }));
@@ -61,9 +65,28 @@ describe("Feed initial render", () => {
     expect(screen.getByText("second post")).toBeInTheDocument();
   });
 
-  it("shows an empty state when nothing matches", async () => {
+  it("offers to widen the window when today's view is empty", async () => {
+    const user = userEvent.setup();
     renderFeed();
-    expect(await screen.findByText("No posts match these filters")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing in this view")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show all time" }));
+    await waitFor(() => expect(lastFeedPath()).toBe("/feed/"));
+  });
+
+  it("offers to clear filters that hide everything", async () => {
+    const user = userEvent.setup();
+    renderFeed("/feed?window=&types=Reply&has_media=1");
+    await user.click(await screen.findByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(lastFeedPath()).toBe("/feed/"));
+  });
+
+  // Regression: an empty archive was reported as "No posts match these
+  // filters", sending readers to widen filters that could never fill.
+  it("says the archive is empty when nothing narrows the view", async () => {
+    renderFeed("/feed?window=");
+    expect(await screen.findByText("The archive is empty")).toBeInTheDocument();
+    expect(screen.getByText(/Collection is paused/)).toBeInTheDocument();
   });
 
   it("names the filters landmark", async () => {
@@ -81,7 +104,7 @@ describe("Feed initial render", () => {
     api.mockRejectedValue(new Error("Service unavailable"));
     renderFeed();
     await screen.findByText("Service unavailable");
-    expect(screen.queryByText("No posts match these filters")).toBeNull();
+    expect(screen.queryByText("Nothing in this view")).toBeNull();
   });
 });
 

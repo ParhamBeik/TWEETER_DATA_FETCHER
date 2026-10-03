@@ -261,7 +261,9 @@ export default function SearchWorkspace() {
         </Panel>
 
         {!selected ? (
-          <Empty title="Choose a search">
+          // Stacked under the list on phones, the prompt only repeats what the
+          // list already invites; it earns its space beside the rail.
+          <Empty className="max-lg:hidden" title="Choose a search">
             Select a saved search to review its results and next scheduled run.
           </Empty>
         ) : (

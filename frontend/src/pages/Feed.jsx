@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Archive, ArrowUp, ChevronDown, Download, Image, X } from "lucide-react";
 import { api, authorizedFetch } from "@/lib/api";
 import { AccountPicker, useAccounts } from "@/components/filters";
+import { useAuth } from "@/context/auth";
 import { Segmented, ToggleChips } from "@/ui/controls";
 import InfiniteSentinel from "@/components/InfiniteSentinel";
 import TweetCard from "@/components/TweetCard";
@@ -94,7 +95,17 @@ function filterSummary(filters) {
   const sort = SORTS.find((option) => option.value === filters.sort)?.label || "Latest";
   const window =
     WINDOWS.find((option) => option.value === filters.window)?.label || "All time";
-  return `${sort} · ${window}`;
+  // The collapsed bar is all a phone shows, so a hidden filter must be counted
+  // here or an empty page looks inexplicable.
+  const extra = [
+    filters.q,
+    filters.types.length,
+    filters.accounts.length,
+    filters.tier,
+    filters.has_media,
+    filters.include_untracked,
+  ].filter(Boolean).length;
+  return `${sort} · ${window}${extra ? ` · +${extra} filter${extra === 1 ? "" : "s"}` : ""}`;
 }
 
 const RAIL_CLASS =
@@ -116,6 +127,14 @@ export default function Feed() {
   const [exporting, setExporting] = useState("");
   const [notice, setNotice] = useState("");
   const desktopRail = useMediaQuery("(min-width: 1024px)");
+  const { ingestionEnabled } = useAuth();
+  // An empty page means two different things: the filters hide everything, or
+  // there is nothing to hide. Blaming the filters on an empty archive sent
+  // readers widening a window that could never fill.
+  const narrowedByWindow = filters.window !== "";
+  const narrowedByFilters = Boolean(
+    filters.q || filters.types.length || filters.accounts.length || filters.tier || filters.has_media,
+  );
 
   // Monotonic id for the active query. A page-append that is still in flight when
   // the user re-filters belongs to the previous query, so its rows must be
@@ -463,9 +482,38 @@ export default function Feed() {
             )}
 
             {!loading && !tweets.length && !error ? (
-              <Empty title="No posts match these filters">
-                Widen the time window, or clear the account and type filters.
-              </Empty>
+              narrowedByWindow || narrowedByFilters ? (
+                <Empty
+                  title="Nothing in this view"
+                  action={
+                    <div className="flex flex-wrap gap-2">
+                      {narrowedByWindow && (
+                        <Button size="sm" variant="primary" onClick={() => update({ window: "" })}>
+                          Show all time
+                        </Button>
+                      )}
+                      {narrowedByFilters && (
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            update({ q: "", types: [], accounts: [], tier: "", has_media: false })
+                          }
+                        >
+                          Clear filters
+                        </Button>
+                      )}
+                    </div>
+                  }
+                >
+                  No tracked posts match the current window and filters.
+                </Empty>
+              ) : (
+                <Empty title="The archive is empty">
+                  {ingestionEnabled
+                    ? "Posts appear here once the collector fetches a tracked account."
+                    : "Collection is paused, so nothing new will arrive. Restored posts appear here."}
+                </Empty>
+              )
             ) : (
               <div className="rounded-sm bg-paper">
                 {tweets.map((t) => (

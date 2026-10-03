@@ -170,6 +170,46 @@
     border-left: 2px solid var(--color-line-strong);
     padding-left: 0.75rem;
   }
+
+  /* Below lg a data table becomes one card per row: each cell carries its own
+     column name (data-label), so nothing hides behind a sideways scroll.
+     One DOM for both layouts keeps every control's label unique. */
+  @media (width < 64rem) {
+    .stack-table,
+    .stack-table tbody {
+      display: block;
+    }
+    .stack-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .stack-table tr {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+      gap: 0.75rem 1rem;
+      padding-block: 0.875rem;
+    }
+    .stack-table td {
+      display: block;
+      padding: 0;
+    }
+    .stack-table td[data-label]::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 0.25rem;
+      font-family: var(--font-mono);
+      font-size: var(--text-2xs);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-fg-dim);
+    }
+    .stack-table td[data-wide] {
+      grid-column: 1 / -1;
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

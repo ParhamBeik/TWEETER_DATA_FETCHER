@@ -13,7 +13,7 @@ vi.mock("@/lib/api", async () => {
   return { ...actual, api: vi.fn() };
 });
 
-const authState = { isStaff: true, authed: true };
+const authState = { isStaff: true, authed: true, ingestionEnabled: true };
 vi.mock("@/context/auth", async () => {
   const actual = await vi.importActual("@/context/auth");
   return { ...actual, useAuth: () => authState };
@@ -120,6 +120,7 @@ function mockEndpoints({ flow = ingestion(), state = pipeline() } = {}) {
 beforeEach(() => {
   api.mockReset();
   authState.isStaff = true;
+  authState.ingestionEnabled = true;
   mockEndpoints();
 });
 
@@ -187,6 +188,23 @@ describe("Dashboard stat tiles", () => {
     expect(await screen.findByText("64/64")).toBeInTheDocument();
     expect(screen.getAllByText(/19 complete · 45 at X limit/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/of the backfill is finished/)).not.toBeInTheDocument();
+  });
+
+  // Regression: the API sends 12 walking rows, and the panel counted "12 not
+  // started" for a 60-account queue.
+  it("counts the backfill queue from totals, not from the capped list", async () => {
+    const waiting = Array.from({ length: 12 }, (_, i) => ({
+      handle: `acct${i}`, priority: 7, pages: 0, stalled_ticks: 0, outcome: "not_started", quarantined: false,
+    }));
+    mockEndpoints({
+      state: pipeline({
+        archive: { complete: 4, depth_limited: 0, tracked: 64, stalled: 0, walking: waiting },
+      }),
+    });
+    renderPulse();
+    expect(await screen.findByText("60")).toBeInTheDocument();
+    expect(screen.getByText(/still\s+queued/)).toBeInTheDocument();
+    expect(screen.getByText(/\+54 more/)).toBeInTheDocument();
   });
 
   it("derives the run success rate from the window's run outcomes", async () => {
@@ -270,6 +288,16 @@ describe("Dashboard pipeline panel", () => {
     // reporting "+51 posts" while the chart beside it showed zero for it.
     expect(await screen.findByText("+42 new")).toBeInTheDocument();
     expect(screen.getByText("next in 10m 0s")).toBeInTheDocument();
+  });
+
+  // Regression: paused, beat schedules nothing, yet the panel counted down to
+  // runs that were never going to happen.
+  it("says paused instead of counting down when collection is off", async () => {
+    authState.ingestionEnabled = false;
+    renderPulse();
+    expect(await screen.findByText("+42 new")).toBeInTheDocument();
+    expect(screen.queryByText("next in 10m 0s")).toBeNull();
+    expect(screen.getAllByText("paused").length).toBeGreaterThan(0);
   });
 
   it("marks a subsystem that is running right now", async () => {

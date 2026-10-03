@@ -39,6 +39,15 @@ export default function Accounts() {
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [rosterQuery, setRosterQuery] = useState("");
   const activeHandle = useRef(null);
+  const timelineRef = useRef(null);
+
+  // Below xl the timeline stacks under a 64-row roster, so opening one has to
+  // bring it into view or the click looks like it did nothing.
+  useEffect(() => {
+    if (!selected || window.matchMedia?.("(min-width: 1280px)").matches) return;
+    // Instant, not smooth: the jump can cross the whole roster.
+    timelineRef.current?.scrollIntoView?.({ block: "start" });
+  }, [selected]);
   // Search responses can finish out of order. Keep the roster tied to the
   // latest query rather than letting an older request repaint it.
   const rosterRequestSeq = useRef(0);
@@ -207,7 +216,15 @@ export default function Accounts() {
         </Panel>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+      {/* The timeline column opens only once a handle is picked: a standing
+          "Pick an account" placeholder took a third of the width and pushed
+          the roster's compare and action columns behind a scroll. */}
+      <div
+        className={cn(
+          "grid gap-5",
+          selected && "xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]",
+        )}
+      >
         <Panel className="min-w-0">
           {/* The roster is the 64 accounts being collected, not the 2,409
               authors the parser has ever seen. Searching reaches the rest,
@@ -237,13 +254,8 @@ export default function Accounts() {
               )}
             </div>
           </div>
-          {accounts.length > 0 && (
-            <p className="px-4 pb-2 text-xs text-fg-muted lg:hidden">
-              Scroll horizontally to see more account columns.
-            </p>
-          )}
-          <PanelBody className="overflow-x-auto">
-            <table className="w-full min-w-[46rem]">
+          <PanelBody className="lg:overflow-x-auto">
+            <table className="stack-table w-full lg:min-w-[46rem]">
               <caption className="sr-only">Tracked accounts, tiers and collection health</caption>
               <thead>
                 <tr className="border-b border-line">
@@ -267,7 +279,7 @@ export default function Accounts() {
                       selected === a.handle && "bg-ink-700",
                     )}
                   >
-                    <td className={TD}>
+                    <td className={TD} data-wide>
                       <button
                         type="button"
                         className="font-mono text-sm hover:text-accent hover:underline"
@@ -279,11 +291,11 @@ export default function Accounts() {
                         <div className="text-fg-dim">{a.display_name}</div>
                       )}
                     </td>
-                    <td className={TD}>
+                    <td className={TD} data-label="Tier">
                       {isStaff ? (
                         <Select
                           aria-label={`Tier for @${a.handle}`}
-                          className="w-24"
+                          className="w-24 max-lg:w-full"
                           value={a.priority}
                           onChange={(e) => patch(a.handle, { priority: Number(e.target.value) })}
                         >
@@ -297,11 +309,11 @@ export default function Accounts() {
                         <span>P{a.priority}</span>
                       )}
                     </td>
-                    <td className={cn(TD, "font-mono tabular")}>
+                    <td className={cn(TD, "font-mono tabular")} data-label="Polled every">
                       {duration(a.poll_interval_seconds)}
                     </td>
-                    <td className={cn(TD, "text-fg-muted")}>{formatWhen(a.last_checked_at)}</td>
-                    <td className={TD}>
+                    <td className={cn(TD, "text-fg-muted")} data-label="Last checked">{formatWhen(a.last_checked_at)}</td>
+                    <td className={TD} data-label="Status">
                       {a.quarantined ? (
                         <Badge tone={TONE.danger}>quarantined</Badge>
                       ) : a.tracking ? (
@@ -314,11 +326,11 @@ export default function Accounts() {
                       )}
                       {a.last_status && <div className="mt-1 text-fg-dim">{a.last_status}</div>}
                     </td>
-                    <td className={cn(TD, "font-mono tabular")}>{compact(a.recent_tweet_count)}</td>
-                    <td className={cn(TD, "font-mono tabular")}>
+                    <td className={cn(TD, "font-mono tabular")} data-label="Posts">{compact(a.recent_tweet_count)}</td>
+                    <td className={cn(TD, "font-mono tabular")} data-label="Engagement">
                       {compact(Math.round(analytics[a.handle]?.average_engagement || 0))}
                     </td>
-                    <td className={TD}>
+                    <td className={TD} data-label="Compare">
                       <input
                         aria-label={`Compare @${a.handle}`}
                         type="checkbox"
@@ -327,18 +339,19 @@ export default function Accounts() {
                         onChange={() => toggleCompare(a.handle)}
                       />
                     </td>
-                    <td className={cn(TD, "whitespace-nowrap")}>
+                    <td className={cn(TD, "whitespace-nowrap max-lg:-ml-2.5")} data-wide>
                       {isStaff && (
                         <>
-                          <Button
-                            size="sm"
-                            variant="quiet"
-                            aria-label={`Fetch @${a.handle}`}
-                            disabled={!ingestionEnabled}
-                            onClick={() => fetchNow(a.handle)}
-                          >
-                            Fetch
-                          </Button>
+                          {ingestionEnabled && (
+                            <Button
+                              size="sm"
+                              variant="quiet"
+                              aria-label={`Fetch @${a.handle}`}
+                              onClick={() => fetchNow(a.handle)}
+                            >
+                              Fetch
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="quiet"
@@ -384,10 +397,28 @@ export default function Accounts() {
           </PanelBody>
         </Panel>
 
-        <div className="min-w-0">
-          {selected ? (
-            <section aria-label={`Timeline for @${selected}`}>
-              <p className="eyebrow mb-2">Timeline · @{selected}</p>
+        {selected && (
+          <div className="min-w-0">
+            <section
+              ref={timelineRef}
+              aria-label={`Timeline for @${selected}`}
+              className="scroll-mt-4 max-xl:min-h-svh"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="eyebrow">Timeline · @{selected}</p>
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  aria-label="Close timeline"
+                  onClick={() => {
+                    // Drop any page still in flight for the closed handle.
+                    activeHandle.current = null;
+                    setSelected(null);
+                  }}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </Button>
+              </div>
               {loading && tweets.length === 0 && (
                 <p className="sr-only" role="status">
                   Loading timeline
@@ -409,12 +440,8 @@ export default function Accounts() {
                 </Empty>
               )}
             </section>
-          ) : (
-            <Empty title="Pick an account">
-              Select a handle to read what the collector has captured from it.
-            </Empty>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );
