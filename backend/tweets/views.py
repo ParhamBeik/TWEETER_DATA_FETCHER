@@ -242,7 +242,7 @@ class AccountViewSet(viewsets.ModelViewSet):
         # actually start an engine subprocess for an account nobody tracks.
         account = self.get_object()
         require_ingestion()
-        fetch_account_live.delay(account.handle)
+        fetch_account_live.delay(account.handle, force=True)
         fetch_account_historical.delay(account.handle)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
@@ -381,7 +381,7 @@ class SearchViewSet(viewsets.ModelViewSet):
         # query you just wrote should start collecting while you are still
         # looking at it. The recurring schedule takes over from there.
         if settings.INGESTION_ENABLED:
-            result = run_search.delay(search.id)
+            result = run_search.delay(search.id, force=True)
             Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
 
     def perform_destroy(self, instance):
@@ -440,7 +440,7 @@ class SearchViewSet(viewsets.ModelViewSet):
     def refresh(self, request, pk=None):
         search = self.get_object()
         require_ingestion()
-        result = run_search.delay(search.id)
+        result = run_search.delay(search.id, force=True)
         Search.objects.filter(id=search.id).update(queued_task_id=str(result.id or ""))
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 

@@ -134,6 +134,32 @@ class LivePipelineTests(unittest.TestCase):
         self.assertEqual(report["summary"]["failed"], 0)
 
     @patch("engine.live.get_priority_policy")
+    def test_force_polls_an_account_inside_its_interval(self, policy_mock):
+        """A staff "fetch now" must not be skipped as not due."""
+        policy_mock.return_value = {"priority": 7, "live_window_hours": 3}
+        monitor = LiveMonitor.__new__(LiveMonitor)
+        monitor.accounts = ["jack"]
+        monitor.should_fetch_account = lambda username: False
+        monitor.account_map = {}
+        monitor.priority_policies = {}
+        monitor.console = MagicMock()
+        monitor.fetcher = MagicMock()
+        monitor.api_manager = _api_manager_with_budget({"UserTweets": {"limit": 50, "remaining": 50, "reset": 0}})
+        monitor.live_storage = LiveStorageManager(
+            Path(self.temp_dir), data_root_override=Path(self.temp_dir) / "data"
+        )
+        monitor._get_live_user_id = MagicMock(side_effect=RuntimeError("stop here"))
+
+        scheduled = monitor.run_cycle()
+        self.assertEqual(scheduled["summary"]["skipped"], 1)
+        monitor._get_live_user_id.assert_not_called()
+
+        forced = monitor.run_cycle(force=True)
+        self.assertEqual(forced["summary"]["skipped"], 0)
+        self.assertEqual(forced["summary"]["eligible"], 1)
+        monitor._get_live_user_id.assert_called_once()
+
+    @patch("engine.live.get_priority_policy")
     def test_three_resolution_failures_quarantine_target(self, policy_mock):
         policy_mock.return_value = {"priority": 7, "live_window_hours": 3}
         monitor = LiveMonitor.__new__(LiveMonitor)

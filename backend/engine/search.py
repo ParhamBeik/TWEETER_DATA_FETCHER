@@ -14,6 +14,7 @@ Flags:
     --search-config <path>     searches.json to use (else canonical config/)
     --only <name>              limit to named search(es) (repeatable)
     --once                     run a single poll cycle then exit
+    --force                    run the selected searches even if not yet due
     --check-interval <sec>     seconds between cycles in continuous mode (default 60)
     --validation-run-id <id>   isolate output under data/validation/<id>/
 """
@@ -1260,6 +1261,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--search-config")
     parser.add_argument("--only", action="append", help="Limit to search name/slug; can be repeated.")
     parser.add_argument("--once", action="store_true", help="Run one cycle instead of continuous mode.")
+    parser.add_argument("--force", action="store_true", help="With --once, ignore the due check.")
     parser.add_argument("--check-interval", type=int, default=60)
     return parser.parse_args()
 
@@ -1272,7 +1274,7 @@ def main() -> None:
     )
     only = set(args.only or []) or None
     if args.once:
-        reports = monitor.run_cycle(only_names=only)
+        reports = monitor.run_cycle(only_names=only, force_run=args.force)
         monitor._print_cycle_summary(reports, only)
     else:
         monitor.run_continuous(only_names=only, check_interval=args.check_interval)

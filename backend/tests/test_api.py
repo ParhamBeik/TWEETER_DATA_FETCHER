@@ -183,7 +183,7 @@ def test_create_search_enqueues_and_subscribes(client_user):
     assert resp.status_code == 201
     search = Search.objects.get(raw_query="openai")
     assert search.slug
-    delay.assert_called_once_with(search.id)
+    delay.assert_called_once_with(search.id, force=True)
 
 
 @pytest.mark.django_db
@@ -479,7 +479,7 @@ def test_account_unquarantine_and_fetch(client_user):
         queued = client.post("/api/accounts/jack/fetch/")
     assert queued.status_code == 202
     hist.assert_called_once_with("jack")
-    live.assert_called_once_with("jack")
+    live.assert_called_once_with("jack", force=True)
 
 
 @pytest.mark.django_db

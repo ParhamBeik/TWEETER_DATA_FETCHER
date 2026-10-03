@@ -460,7 +460,7 @@ class LiveMonitor:
             self.live_storage.update_scheduler_state({"next_account": self.accounts[next_index]})
         return admitted, deferred
 
-    def run_cycle(self, only_accounts: Optional[List[str]] = None) -> Dict[str, Any]:
+    def run_cycle(self, only_accounts: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
         selected = only_accounts or self.accounts
         self.console.banner(f"Cycle started: {len(selected)} account(s)")
         self.fetcher.recorder.emit("cycle_start", accounts=selected)
@@ -488,7 +488,9 @@ class LiveMonitor:
                     "endpoints": {},
                 }
                 continue
-            if not self.should_fetch_account(username):
+            # force is an operator's "fetch now": the poll interval is the
+            # schedule's business, not theirs. Quarantine above still holds.
+            if not force and not self.should_fetch_account(username):
                 report["summary"]["skipped"] += 1
                 continue
             report["summary"]["eligible"] += 1
@@ -630,6 +632,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config")
     parser.add_argument("--account", action="append", dest="accounts", help="Limit to one account; can be repeated.")
     parser.add_argument("--once", action="store_true", help="Run one cycle instead of continuous mode.")
+    parser.add_argument("--force", action="store_true", help="With --once, ignore the poll interval.")
     parser.add_argument("--check-interval", type=int, default=60)
     return parser.parse_args()
 
@@ -638,7 +641,7 @@ def main() -> None:
     args = parse_args()
     monitor = LiveMonitor(config_path=args.config)
     if args.once:
-        monitor.run_cycle(only_accounts=args.accounts)
+        monitor.run_cycle(only_accounts=args.accounts, force=args.force)
     else:
         monitor.run_continuous(only_accounts=args.accounts, check_interval=args.check_interval)
 

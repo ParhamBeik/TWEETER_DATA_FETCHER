@@ -194,14 +194,17 @@ def fetch_account_historical(handle: str) -> int:
 
 
 @shared_task(name="fetching.tasks.fetch_account_live")
-def fetch_account_live(handle: str) -> int:
+def fetch_account_live(handle: str, force: bool = False) -> int:
+    # force: a staff "fetch now" polls even inside the account's interval;
+    # without it the engine skipped the account and the run was a no-op.
     if not settings.INGESTION_ENABLED:
         return 0
     with _cycle_lock(f"fetch_account_live:{handle}") as acquired:
         if not acquired:
             logger.warning("fetch_account_live(%s): already running, skipped", handle)
             return 0
-        return _run_and_ingest(LIVE_MODULE, ["--once", "--account", handle], "live", handle)
+        args = ["--once", "--account", handle] + (["--force"] if force else [])
+        return _run_and_ingest(LIVE_MODULE, args, "live", handle)
 
 
 @shared_task(name="fetching.tasks.poll_live_all")
@@ -323,8 +326,13 @@ def backfill_historical_all() -> int:
 
 
 @shared_task(name="fetching.tasks.run_search")
-def run_search(search_id: int) -> int:
-    """Run one saved search, alone, with the whole cycle budget to itself."""
+def run_search(search_id: int, force: bool = False) -> int:
+    """Run one saved search, alone, with the whole cycle budget to itself.
+
+    force is for staff-triggered runs ("Run now", a just-created search): the
+    engine otherwise skips a search inside its interval, records the run as
+    partial, and the stamped last_run_at pushes the next scheduled run back.
+    """
     if not settings.INGESTION_ENABLED:
         return 0
     search = Search.objects.filter(id=search_id).first()
@@ -346,7 +354,7 @@ def run_search(search_id: int) -> int:
             return 0
         return _run_cycle(
             SEARCH_MODULE,
-            ["--once", "--only", search.slug],
+            ["--once", "--only", search.slug] + (["--force"] if force else []),
             "search",
             target=f"{search.slug}:{search.product}",
             searches=[search],

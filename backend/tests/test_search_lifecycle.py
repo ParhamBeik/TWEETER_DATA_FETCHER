@@ -384,3 +384,31 @@ def test_a_search_deleted_mid_run_does_not_fail_the_run_or_leave_pages(tmp_path)
     assert endpoint_state_key(search) not in KeyValueState.objects.get(
         name="search:search_state.json"
     ).data
+
+
+@pytest.mark.django_db
+def test_run_now_forces_the_engine_past_the_due_check(settings):
+    """Run now inside the interval used to be a no-op recorded as partial."""
+    from fetching import tasks
+
+    settings.INGESTION_ENABLED = True
+    search = _search()
+    with patch.object(tasks, "_run_cycle", return_value=0) as run_cycle:
+        tasks.run_search(search.id, force=True)
+        tasks.run_search(search.id)
+    forced, scheduled = (call.args[1] for call in run_cycle.call_args_list)
+    assert forced == ["--once", "--only", search.slug, "--force"]
+    assert scheduled == ["--once", "--only", search.slug]
+
+
+@pytest.mark.django_db
+def test_refresh_endpoint_queues_a_forced_run(settings):
+    settings.INGESTION_ENABLED = True
+    search = _search()
+    client = APIClient()
+    client.force_authenticate(User.objects.create_user("st", password="x", is_staff=True))
+    with patch("fetching.tasks.run_search.delay") as delay:
+        delay.return_value.id = "t1"
+        response = client.post(f"/api/searches/{search.id}/refresh/")
+    assert response.status_code == 202
+    delay.assert_called_once_with(search.id, force=True)
