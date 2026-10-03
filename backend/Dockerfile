@@ -25,7 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY backend/requirements.txt /app/requirements.txt
 # The Iran VPS cannot reach files.pythonhosted.org; it sets PIP_INDEX_URL in
-# .env to a mirror. Everywhere else this stays the official index.
+# .env to a mirror. Everywhere else this stays the official index. A build arg
+# is recorded in the image history, so the URL must not carry credentials.
 ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN pip install --index-url "$PIP_INDEX_URL" -r /app/requirements.txt
 
