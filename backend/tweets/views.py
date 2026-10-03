@@ -69,8 +69,15 @@ def require_ingestion():
         raise error
 
 
-def _normalize_handle(raw: str) -> str:
-    return (raw or "").strip().lstrip("@").lower()
+def _normalize_handle(raw) -> str:
+    return raw.strip().lstrip("@").lower() if isinstance(raw, str) else ""
+
+
+def _display_name(raw, fallback: str = "") -> str:
+    # Clipped to the column: Postgres rejects an over-long value with a DataError
+    # (a 500) where SQLite silently stores it.
+    value = raw if isinstance(raw, str) else ""
+    return (value or fallback)[: TwitterUser._meta.get_field("display_name").max_length]
 
 
 class FeedView(ListAPIView):
@@ -183,11 +190,13 @@ class AccountViewSet(viewsets.ModelViewSet):
         handle = _normalize_handle(data.get("handle") or "")
         if not handle:
             return Response({"detail": "handle required"}, status=400)
+        if len(handle) > TwitterUser._meta.get_field("handle").max_length:
+            return Response({"detail": "handle too long"}, status=400)
         priority = clamp_priority(data.get("priority", 7))
         account, _created = TwitterUser.objects.update_or_create(
             handle=handle,
             defaults={
-                "display_name": data.get("display_name") or handle,
+                "display_name": _display_name(data.get("display_name"), handle),
                 "tracking": True,
                 "priority": priority,
                 "quarantined": False,
@@ -214,7 +223,7 @@ class AccountViewSet(viewsets.ModelViewSet):
             account.priority = clamp_priority(data.get("priority"))
             fields.append("priority")
         if "display_name" in data:
-            account.display_name = str(data.get("display_name") or "")
+            account.display_name = _display_name(data.get("display_name"))
             fields.append("display_name")
         if data.get("quarantined") is False:
             account.quarantined = False
@@ -292,7 +301,7 @@ class XSessionView(APIView):
         # Accepts a whole exported config.json (api_cookies/api_auth) or the
         # session shape (cookies/headers); session-bound config keys are kept,
         # everything else falls back to the seed template.
-        payload = normalize_session_source(request.data)
+        payload = normalize_session_source(body_mapping(request))
         try:
             cookies, headers = validate_session_payload(payload)
         except ValueError as exc:

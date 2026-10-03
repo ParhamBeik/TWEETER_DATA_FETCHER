@@ -43,10 +43,15 @@ def normalize_session_source(data) -> dict:
     if "cookies" in data or "headers" in data:
         return data
     cookies = data.get("api_cookies")
-    headers = dict(data.get("api_headers") or {})
+    raw_headers = data.get("api_headers")
+    headers = dict(raw_headers) if isinstance(raw_headers, dict) else {}
     if cookies is None and not headers:
         return data
-    bearer = str((data.get("api_auth") or {}).get("bearer_token") or "").strip()
+    if cookies is not None and not isinstance(cookies, dict):
+        # Left for validate_session_payload to reject with a 400.
+        return {**data, "cookies": cookies, "headers": headers}
+    auth = data.get("api_auth")
+    bearer = str((auth if isinstance(auth, dict) else {}).get("bearer_token") or "").strip()
     if bearer and not any(key.lower() == "authorization" for key in headers):
         headers["authorization"] = bearer if bearer.lower().startswith("bearer ") else f"Bearer {bearer}"
     csrf = str((cookies or {}).get("ct0") or "").strip()

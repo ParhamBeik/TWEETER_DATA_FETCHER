@@ -71,7 +71,10 @@ class RegisterView(APIView):
         data = body_mapping(request)
         username = str(data.get("username") or "").strip()
         email = str(data.get("email") or "").strip()
-        password = data.get("password") or ""
+        # Only a string is a password; a JSON list or number would reach the
+        # validators and hashers, which raise instead of rejecting it.
+        password = data.get("password")
+        password = password if isinstance(password, str) else ""
 
         errors: dict[str, list[str]] = {}
         if not username:
@@ -141,7 +144,12 @@ class LoginView(APIView):
         raw_username = str(data.get("username") or "").strip()
         matched_user = User.objects.filter(username__iexact=raw_username).first()
         username = matched_user.username if matched_user is not None else raw_username
-        user = authenticate(username=username, password=data.get("password") or "")
+        password = data.get("password")
+        user = (
+            authenticate(username=username, password=password)
+            if isinstance(password, str) and password
+            else None
+        )
         if user is None or not user.is_active:
             # One message for both "no such user" and "wrong password", so the
             # endpoint cannot be used to enumerate accounts.
