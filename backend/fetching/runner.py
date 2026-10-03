@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Iterable
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from tweets.models import EndpointState, FetchRun, KeyValueState, RawPage, XSession
@@ -129,14 +130,21 @@ def _write_config(root: Path, searches: list | None = None) -> Path:
     return config_dir / "config.json"
 
 
+# What _restore_state handed the subprocess, kept beside (not inside) the data
+# tree so the engine never sees it. _persist_state diffs against it.
+_STATE_BASELINE = "_state_baseline.json"
+
+
 def _restore_state(root: Path, subsystem: str) -> None:
     """Seed the scratch state dir from Postgres so watermarks/cursors persist."""
     sub = "historical_live" if subsystem in ("historical", "live") else subsystem
     state_dir = root / "data" / sub / "state"
     state_dir.mkdir(parents=True, exist_ok=True)
+    baseline: dict[str, object] = {}
     sync = KeyValueState.objects.filter(namespace="sync_state", name=sub).first()
     if sync:
         (state_dir / "sync_state.json").write_text(json.dumps(sync.data), encoding="utf-8")
+        baseline["sync_state.json"] = sync.data
     prefix = f"{sub}:"
     for row in KeyValueState.objects.filter(namespace="request_state"):
         if row.name.startswith(prefix):
@@ -146,6 +154,8 @@ def _restore_state(root: Path, subsystem: str) -> None:
         else:
             continue
         (state_dir / filename).write_text(json.dumps(row.data), encoding="utf-8")
+        baseline[filename] = row.data
+    (root / _STATE_BASELINE).write_text(json.dumps(baseline), encoding="utf-8")
 
 
 def _request_state_name(subsystem: str, filename: str) -> str:
@@ -153,27 +163,80 @@ def _request_state_name(subsystem: str, filename: str) -> str:
     return f"{sub}:{filename}"
 
 
+_ABSENT = object()
+
+
+def _merge_state(base, ours, theirs):
+    """Three-way merge of one state blob, key by key.
+
+    `base` is what this run loaded, `ours` what it finished with, `theirs` what
+    Postgres holds now. Live and historical run at the same time on the same
+    `historical_live` blobs, so writing `ours` whole let the last run to finish
+    roll back the other's work -- the archive walk's backfill cursor, or an
+    operator's cleared quarantine. Only what this run changed is applied; a key
+    both runs changed goes to this run, the last writer, as before.
+    """
+    if not (isinstance(base, dict) and isinstance(ours, dict) and isinstance(theirs, dict)):
+        return ours
+    merged = dict(theirs)
+    for key in base.keys() | ours.keys():
+        before = base.get(key, _ABSENT)
+        after = ours.get(key, _ABSENT)
+        if after == before:
+            continue
+        if after is _ABSENT:
+            # Removed by this run (e.g. a pruned seen-tweet). Keep it only if the
+            # other side has since changed it.
+            if merged.get(key, _ABSENT) == before:
+                merged.pop(key, None)
+            continue
+        current = merged.get(key, _ABSENT)
+        if isinstance(after, dict) and isinstance(current, dict):
+            merged[key] = _merge_state(before if isinstance(before, dict) else {}, after, current)
+        else:
+            merged[key] = after
+    return merged
+
+
+def _merge_into_row(namespace: str, name: str, base, ours) -> object:
+    """Apply this run's changes to one KeyValueState row under a row lock."""
+    with transaction.atomic():
+        row = (
+            KeyValueState.objects.select_for_update()
+            .filter(namespace=namespace, name=name)
+            .first()
+        )
+        if row is None:
+            # Nothing concurrent to preserve (first run, or state restored from a
+            # legacy unprefixed row): this run's view is the whole truth.
+            KeyValueState.objects.create(namespace=namespace, name=name, data=ours)
+            return ours
+        merged = _merge_state(base, ours, row.data)
+        if merged != row.data:
+            row.data = merged
+            row.save(update_fields=["data", "updated_at"])
+        return merged
+
+
 def _persist_state(root: Path, subsystem: str) -> None:
     sub = "historical_live" if subsystem in ("historical", "live") else subsystem
     state_dir = root / "data" / sub / "state"
-    sync_file = state_dir / "sync_state.json"
-    if sync_file.exists():
-        data = _read_json(sync_file)
-        if isinstance(data, dict):
-            KeyValueState.objects.update_or_create(
-                namespace="sync_state", name=sub, defaults={"data": data},
-            )
-    for f in state_dir.glob("*.json"):
-        if f.name == "sync_state.json":
-            continue
+    baseline = _read_json(root / _STATE_BASELINE, {})
+    if not isinstance(baseline, dict):
+        baseline = {}
+    for f in sorted(state_dir.glob("*.json")):
         data = _read_json(f)
         if not isinstance(data, dict):
             continue
-        KeyValueState.objects.update_or_create(
-            namespace="request_state",
-            name=_request_state_name(subsystem, f.name),
-            defaults={"data": data},
-        )
+        if f.name == "sync_state.json":
+            namespace, name = "sync_state", sub
+        else:
+            namespace, name = "request_state", _request_state_name(subsystem, f.name)
+        merged = _merge_into_row(namespace, name, baseline.get(f.name, {}), data)
+        if merged != data:
+            # _persist_endpoint_states mirrors these files after this, so they
+            # must carry the merged state, not this run's stale copy.
+            f.write_text(json.dumps(merged), encoding="utf-8")
 
 
 def _read_json(path: Path, default=None):

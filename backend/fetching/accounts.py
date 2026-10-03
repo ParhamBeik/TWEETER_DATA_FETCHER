@@ -6,6 +6,7 @@ from itertools import pairwise
 from typing import Any
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Count, Max
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -181,13 +182,15 @@ def sync_quarantine_from_live_state() -> int:
     return updated
 
 
+@transaction.atomic
 def clear_live_quarantine(handle: str) -> None:
     key = handle.lower().lstrip("@")
+    # Locked like runner._persist_state's merge, so a run finishing at the same
+    # moment cannot interleave its read-merge-write with this one.
+    rows = KeyValueState.objects.select_for_update()
     row = (
-        KeyValueState.objects.filter(
-            namespace="request_state", name="historical_live:live_state.json"
-        ).first()
-        or KeyValueState.objects.filter(namespace="request_state", name="live_state.json").first()
+        rows.filter(namespace="request_state", name="historical_live:live_state.json").first()
+        or rows.filter(namespace="request_state", name="live_state.json").first()
     )
     if row is None or not isinstance(row.data, dict):
         return
