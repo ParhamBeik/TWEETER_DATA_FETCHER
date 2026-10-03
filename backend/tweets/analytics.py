@@ -250,6 +250,13 @@ class PipelineView(APIView):
                 "tracked": progress["tracked"],
                 "stalled": len(stalled),
                 "walking": progress["walking"][:12],
+                # Counted before the cut above: the list is sorted most-advanced
+                # first, so on a large roster the not-yet-started tail is
+                # exactly what the 12 rows leave out.
+                "queued": sum(
+                    1 for row in progress["walking"]
+                    if not row["pages"] and row["outcome"] == "not_started"
+                ),
             },
             # Accounts every poll reports as healthy that have stopped producing
             # anything. Without this the console showed 41 days of green for an

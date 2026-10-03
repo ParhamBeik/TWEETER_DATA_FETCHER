@@ -127,6 +127,32 @@ def test_pipeline_reports_quota_cadence_and_backfill(client, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_pipeline_counts_the_whole_backfill_queue_not_the_listed_rows(client, monkeypatch):
+    from tweets.models import EndpointState
+
+    monkeypatch.setattr(
+        "tweets.analytics.queue_health",
+        lambda: {"available": True, "depths": {}, "unexpected_default": 0},
+    )
+    for index in range(20):
+        user = TwitterUser.objects.create(handle=f"started{index}", tracking=True)
+        EndpointState.objects.create(
+            endpoint="UserTweets",
+            account=user.handle,
+            data={"backfill_pages_done": 5, "backfill_last_outcome": "budget_exhausted"},
+        )
+    for index in range(40):
+        TwitterUser.objects.create(handle=f"waiting{index}", tracking=True)
+
+    archive = client.get("/api/stats/pipeline/").data["archive"]
+
+    assert archive["tracked"] == 60
+    assert len(archive["walking"]) == 12
+    assert all(row["pages"] for row in archive["walking"])
+    assert archive["queued"] == 40
+
+
+@pytest.mark.django_db
 def test_analytics_accept_the_shared_window_and_account_filters(client):
     TwitterUser.objects.create(handle="jack", tracking=True)
     query = "range=7d&bucket=day&account=jack&account=elon"

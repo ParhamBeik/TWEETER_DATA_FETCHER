@@ -135,12 +135,10 @@ export default function Dashboard() {
   const walkWaiting = (archive.walking || []).filter(
     (row) => !(row.pages > 0) && row.outcome === "not_started",
   );
-  // The API sends at most 12 walking rows, so the queue is counted from the
-  // totals rather than from the list it happens to include.
-  const walkQueued = Math.max(
-    (archive.tracked || 0) - (archive.complete || 0) - (archive.depth_limited || 0) - walkStarted.length,
-    walkWaiting.length,
-  );
+  // The API sends at most 12 walking rows, most-advanced first, so the queued
+  // tail is exactly what gets cut: count it from the API, not from the list.
+  const walkQueued = Math.max(archive.queued ?? 0, walkWaiting.length);
+  const walkNamed = walkWaiting.slice(0, 6);
   const archivePercent = archive.tracked
     ? Math.round((totalWalked / archive.tracked) * 100)
     : 0;
@@ -523,7 +521,7 @@ export default function Dashboard() {
                   {row.quarantined && <Badge tone={TONE.warn}>quarantined</Badge>}
                 </li>
               ))}
-              {walkWaiting.length > 0 && (
+              {walkQueued > 0 && (
                 // One line for the queue, not a row per account repeating
                 // "0 pages · not started".
                 <li className="py-1.5 text-xs">
@@ -531,10 +529,12 @@ export default function Dashboard() {
                     <strong className="font-mono tabular text-fg">{walkQueued}</strong> still
                     queued
                   </span>
-                  <span className="mt-0.5 block font-mono text-fg-dim">
-                    {walkWaiting.slice(0, 6).map((row) => `@${row.handle}`).join(" ")}
-                    {walkQueued > 6 ? ` +${walkQueued - 6} more` : ""}
-                  </span>
+                  {walkNamed.length > 0 && (
+                    <span className="mt-0.5 block font-mono text-fg-dim">
+                      {walkNamed.map((row) => `@${row.handle}`).join(" ")}
+                      {walkQueued > walkNamed.length ? ` +${walkQueued - walkNamed.length} more` : ""}
+                    </span>
+                  )}
                 </li>
               )}
               {!(archive.walking || []).length && (

@@ -192,19 +192,52 @@ describe("Dashboard stat tiles", () => {
 
   // Regression: the API sends 12 walking rows, and the panel counted "12 not
   // started" for a 60-account queue.
-  it("counts the backfill queue from totals, not from the capped list", async () => {
+  it("counts the backfill queue from the API, not from the capped list", async () => {
     const waiting = Array.from({ length: 12 }, (_, i) => ({
       handle: `acct${i}`, priority: 7, pages: 0, stalled_ticks: 0, outcome: "not_started", quarantined: false,
     }));
     mockEndpoints({
       state: pipeline({
-        archive: { complete: 4, depth_limited: 0, tracked: 64, stalled: 0, walking: waiting },
+        archive: { complete: 4, depth_limited: 0, tracked: 64, stalled: 0, queued: 60, walking: waiting },
       }),
     });
     renderPulse();
     expect(await screen.findByText("60")).toBeInTheDocument();
     expect(screen.getByText(/still\s+queued/)).toBeInTheDocument();
     expect(screen.getByText(/\+54 more/)).toBeInTheDocument();
+  });
+
+  // Regression: the 12 rows are most-advanced first, so "+N more" must count
+  // the names actually shown, not assume six.
+  const walkRow = (handle, pages, outcome) => ({
+    handle, priority: 7, pages, stalled_ticks: 0, outcome, quarantined: false,
+  });
+
+  it("counts the unnamed rest of the queue from the names shown", async () => {
+    const started = Array.from({ length: 9 }, (_, i) => walkRow(`s${i}`, 5, "budget_exhausted"));
+    const waiting = ["w0", "w1", "w2"].map((h) => walkRow(h, 0, "not_started"));
+    mockEndpoints({
+      state: pipeline({
+        archive: { complete: 0, depth_limited: 0, tracked: 64, stalled: 0, queued: 52, walking: [...started, ...waiting] },
+      }),
+    });
+    renderPulse();
+    const names = await screen.findByText(/@w0 @w1 @w2 \+49 more/);
+    expect(names.parentElement).toHaveTextContent(/^52 still queued/);
+  });
+
+  // Regression: with 20 accounts started and 40 waiting, all 12 listed rows had
+  // started and the queue line vanished.
+  it("shows the queue when every listed row has already started", async () => {
+    const started = Array.from({ length: 12 }, (_, i) => walkRow(`s${i}`, 5, "budget_exhausted"));
+    mockEndpoints({
+      state: pipeline({
+        archive: { complete: 0, depth_limited: 0, tracked: 60, stalled: 0, queued: 40, walking: started },
+      }),
+    });
+    renderPulse();
+    const line = await screen.findByText(/still\s+queued/);
+    expect(line.parentElement).toHaveTextContent(/^40 still queued$/);
   });
 
   it("derives the run success rate from the window's run outcomes", async () => {
