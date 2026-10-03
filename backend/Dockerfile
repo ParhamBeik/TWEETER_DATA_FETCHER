@@ -24,7 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /app/requirements.txt
-RUN pip install -r /app/requirements.txt
+# The Iran VPS cannot reach files.pythonhosted.org; it sets PIP_INDEX_URL in
+# .env to a mirror. Everywhere else this stays the official index.
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --index-url "$PIP_INDEX_URL" -r /app/requirements.txt
 
 # Chromium for auth refresh and the deep-search hybrid pages.
 ARG INSTALL_BROWSER=1
