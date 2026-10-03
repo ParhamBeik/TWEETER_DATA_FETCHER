@@ -25,7 +25,7 @@ backend/
   tests/       one suite covering both the engine and the API
 frontend/      React + Vite SPA (Tailwind tokens in src/index.css,
                primitives in src/ui/)
-scripts/       deploy and backup
+scripts/       deploy, rollback, cache checks
 ```
 
 ## Documentation map
@@ -227,35 +227,18 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ### Backups
 
-`scripts/backup_pg.sh` writes a gzipped `pg_dump` and keeps the last 14. It
-refuses to accept a dump that does not end with pg_dump's own completion marker,
-and rotates only after a good one is on disk — a failed dump used to leave a
-20-byte gzip that `gunzip -t` calls valid, and fourteen bad nights in a row would
-have deleted every backup that still restored.
+No backup tooling ships in this repo: `scripts/backup_pg.sh` and
+`scripts/verify_backup.sh` were removed with the storage baseline. Until a
+host-side backup is configured and a restore has been tested, there are no
+backups, however green the deploy looks. See `docs/production-recovery.md`.
 
-**It is not scheduled by anything in this repo.** Wire it into cron on the host,
-the way the other services on the same box already are:
-
-```cron
-0 1 * * * cd /opt/apps/twitter-project && ./scripts/backup_pg.sh >> /var/log/twitter-backup.log 2>&1
-```
-
-Until that line exists there are no backups, however green the deploy looks.
-
-Check a dump without restoring it:
-
-```bash
-./scripts/verify_backup.sh                   # newest file in backups/
-./scripts/verify_backup.sh backups/foo.sql.gz
-```
-
-Restore into a new, disposable database first. Check expected rows before
-planning a cutover; a live-database restore overwrites data:
+Restore any dump into a new, disposable database first; a live-database restore
+overwrites data:
 
 ```bash
 set -o pipefail
 docker compose exec -T postgres createdb -U postgres twitter_saas_restore_check
-gunzip -c backups/twitter_saas_YYYYMMDDThhmmssZ.sql.gz \
+gunzip -c path/to/dump.sql.gz \
   | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres twitter_saas_restore_check
 ```
 
