@@ -28,6 +28,14 @@ frontend/      React + Vite SPA (Tailwind tokens in src/index.css,
 scripts/       deploy and backup
 ```
 
+## Documentation map
+
+- `README.md` — setup, local operation, API, scheduling, tests, and deployment.
+- `ARCHITECTURE.md` — dependency boundaries and the end-to-end data path.
+- `AGENTS.md` — generated agent contract; do not edit it by hand.
+- `docs/production-recovery.md` — deployment and recovery gates for a future host. Its
+  host observations are dated snapshots, not proof of current runtime state.
+
 ## Run it
 
 ```bash
@@ -208,8 +216,10 @@ the evidence and the gates for any future host. A successful older deploy job
 is not proof that the current VPS has this application or its data.
 
 `scripts/deploy_vps.sh` remains available for an explicitly approved future
-host. It builds, restarts, and polls the API until it answers. A host wrapper
-must update the checkout first; repository CI does not invoke either script.
+host. It builds images in parallel, restarts the stack with the mode's Compose files,
+waits for health checks, checks the frontend, rejects messages on the legacy
+Celery queue, and runs a recent fetch report. A host wrapper must update the
+checkout first; repository CI does not invoke either script.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -259,3 +269,9 @@ python3 scripts/check_frontend_cache.py https://your-console-host
 
 This checks shell revalidation, the built JavaScript cache header, and missing
 asset/media/static/export responses. Run it after changing the nginx cache rules.
+
+### Script map
+
+- `scripts/deploy_vps.sh` — build and health-gated production restart.
+- `scripts/rollback_vps.sh` — switch all services to one retained image tag.
+- `scripts/check_frontend_cache.py` — nginx cache contract check.

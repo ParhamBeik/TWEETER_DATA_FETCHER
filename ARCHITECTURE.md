@@ -1,7 +1,23 @@
 # Architecture
 
-Where things live and which way dependencies point. For how to run it, see the
-README; for the conventions an agent must not break, see AGENTS.md.
+Where things live and which way dependencies point. For setup and operations,
+see the README. For non-negotiable repository conventions, see AGENTS.md.
+
+## Directory map
+
+| Directory | Responsibility |
+| --- | --- |
+| `backend/config/` | Django settings, URLs, Celery app, middleware |
+| `backend/tweets/` | Durable models, API, auth, feed, analytics, migrations |
+| `backend/fetching/` | Celery tasks, scheduling, subprocess runner, ingest, exports |
+| `backend/engine/` | Django-free X transport, pagination, pipelines, parsing, scratch storage |
+| `backend/tests/` | Backend, engine, API, and operational contract tests |
+| `frontend/src/` | React routes, pages, shared components, UI primitives, API client |
+| `scripts/` | Deployment, rollback, and cache checks |
+| `docs/` | Recovery and deployment gates for a future host |
+
+The root Compose files define the runtime: PostgreSQL, Redis, Django, four
+single-concurrency Celery workers, beat, and nginx.
 
 ## The shape of it
 
