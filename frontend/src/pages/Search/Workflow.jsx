@@ -162,7 +162,7 @@ export default function Workflow({ search, onRunNow, ingestionEnabled }) {
           actions={
             <button
               type="button"
-              disabled={!ingestionEnabled}
+              disabled={ingestionEnabled === false}
               onClick={onRunNow}
               className="rounded-sm border border-line px-2.5 py-1 text-xs text-fg-muted hover:border-line-strong hover:text-fg"
             >

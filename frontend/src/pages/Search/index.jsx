@@ -161,7 +161,7 @@ export default function SearchWorkspace() {
     try {
       const created = await api("/searches/", { method: "POST", body });
       await loadSearches();
-      setNotice(ingestionEnabled ? `"${created.name}" created and queued to run now.` : `"${created.name}" saved; collection paused.`);
+      setNotice(ingestionEnabled !== false ? `"${created.name}" created and queued to run now.` : `"${created.name}" saved; collection paused.`);
       navigate(`/search/${created.id}`);
     } finally {
       setSaving(false);
@@ -275,7 +275,7 @@ export default function SearchWorkspace() {
                 actions={
                   isStaff && (
                     <>
-                      <Button size="sm" disabled={!ingestionEnabled} onClick={() => act("refresh", "Run queued.")}>
+                      <Button size="sm" disabled={ingestionEnabled === false} onClick={() => act("refresh", "Run queued.")}>
                         <RefreshCw className="size-3.5" aria-hidden="true" />
                         Run now
                       </Button>
@@ -322,7 +322,7 @@ export default function SearchWorkspace() {
               <TabPanel value="results" className="pt-4">
                 {results.length === 0 && !loading ? (
                   <Empty title="Nothing stored yet">
-                    {ingestionEnabled ? "This query has not returned any results. If it has never run, the first run may still be queued." : "Collection is paused. This query is saved for later."}
+                    {ingestionEnabled !== false ? "This query has not returned any results. If it has never run, the first run may still be queued." : "Collection is paused. This query is saved for later."}
                   </Empty>
                 ) : (
                   <div className="mx-auto flex max-w-2xl flex-col rounded-sm bg-paper">

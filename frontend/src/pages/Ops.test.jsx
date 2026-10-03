@@ -414,6 +414,18 @@ describe("polling resilience", () => {
   });
 });
 
+it("keeps the normal run controls while collection state is unknown", async () => {
+  // null = /auth/config/ still loading or failed. Unknown is not paused: the
+  // server refuses runs itself when collection is off.
+  authState.ingestionEnabled = null;
+  routeApi();
+  render(<Ops />);
+  expect(await screen.findByText("Configured")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Run live poll" })).toBeInTheDocument();
+  expect(screen.queryByText("Manual runs are off while collection is paused.")).toBeNull();
+  expect(screen.queryByText("Not required while paused")).toBeNull();
+});
+
 it("shows paused collection without requiring an X session", async () => {
   authState.ingestionEnabled = false;
   routeApi({ health: session({ configured: false }) });

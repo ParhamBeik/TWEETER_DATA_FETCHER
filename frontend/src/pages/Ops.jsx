@@ -53,6 +53,8 @@ function Fact({ term, value, ok }) {
 
 export default function Ops() {
   const { ingestionEnabled } = useAuth();
+  // Only an explicit false is paused; unknown (null) keeps the normal controls.
+  const collecting = ingestionEnabled !== false;
   const [runs, setRuns] = useState([]);
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
@@ -218,7 +220,7 @@ export default function Ops() {
       <PageHead
         label="Ops"
         title="Collector controls and run history"
-        lede={ingestionEnabled ? "One X session serves every collector here. When it lapses, every fetch stops — which is why it is the first thing on this page." : "Collection is paused. No X session is required to use saved data."}
+        lede={collecting ? "One X session serves every collector here. When it lapses, every fetch stops — which is why it is the first thing on this page." : "Collection is paused. No X session is required to use saved data."}
       />
 
       <Panel>
@@ -226,7 +228,7 @@ export default function Ops() {
           label="Credentials"
           title="X session"
           actions={
-            !ingestionEnabled ? (
+            !collecting ? (
               <Status tone={TONE.idle}>Not required while paused</Status>
             ) : session?.configured ? (
               <Status tone={TONE.ok}>Configured</Status>
@@ -240,7 +242,7 @@ export default function Ops() {
             {/* Only the credential-critical names are called out. Listing all ~57
                 cookie names was a wall of text that hid whether auth actually
                 works. */}
-            {ingestionEnabled && <dl>
+            {collecting && <dl>
               {REQUIRED_COOKIES.map((name) => (
                 <Fact
                   key={name}
@@ -266,14 +268,14 @@ export default function Ops() {
               </p>
             )}
             {session?.last_auth_required_at && (
-              <p className={ingestionEnabled ? "text-xs text-warn" : "text-xs text-fg-dim"}>
+              <p className={collecting ? "text-xs text-warn" : "text-xs text-fg-dim"}>
                 Last auth-required run: {absoluteTime(session.last_auth_required_at)}
               </p>
             )}
           </div>
           {/* Paused, the session is optional, so its editor waits behind a
               disclosure instead of leading the page with a JSON box. */}
-          {ingestionEnabled ? (
+          {collecting ? (
             sessionForm
           ) : (
             <details>
@@ -287,7 +289,7 @@ export default function Ops() {
       </Panel>
 
       <div className="flex flex-wrap items-center gap-2">
-        {ingestionEnabled ? (
+        {collecting ? (
           SUBSYSTEMS.map((row) => (
             <Button key={row.value} onClick={() => trigger(row.value)}>
               Run {row.label.toLowerCase()}
@@ -373,7 +375,7 @@ export default function Ops() {
                         repair for a run that failed or could not prove it
                         finished, and noise on the ones that succeeded. Paused,
                         the server refuses every run, so it is not offered. */}
-                    {ingestionEnabled && (run.status === "failed" || run.status === "partial") && (
+                    {collecting && (run.status === "failed" || run.status === "partial") && (
                       <Button
                         size="sm"
                         variant="quiet"

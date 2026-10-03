@@ -412,7 +412,7 @@ export default function Dashboard() {
                     </strong>
                     {row.running > 0 ? (
                       <Status tone={TONE.active}>fetching now</Status>
-                    ) : !ingestionEnabled ? (
+                    ) : ingestionEnabled === false ? (
                       // Paused, beat schedules nothing: a countdown here
                       // promised a run that was never going to happen.
                       <span className="font-mono text-xs text-fg-dim">paused</span>

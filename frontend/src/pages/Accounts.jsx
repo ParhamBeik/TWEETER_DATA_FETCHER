@@ -92,7 +92,7 @@ export default function Accounts() {
         body: { handle: handle.replace(/^@/, ""), priority: Number(priority) },
       });
       setHandle("");
-      setStatus(ingestionEnabled ? "Account tracked; initial fetch queued." : "Account saved; collection paused.");
+      setStatus(ingestionEnabled !== false ? "Account tracked; initial fetch queued." : "Account saved; collection paused.");
       loadAccounts();
     } catch (e) {
       setError(e.message);
@@ -348,7 +348,7 @@ export default function Accounts() {
                     <td className={cn(TD, "whitespace-nowrap max-lg:-ml-2.5")} data-wide>
                       {isStaff && (
                         <>
-                          {ingestionEnabled && (
+                          {ingestionEnabled !== false && (
                             <Button
                               size="sm"
                               variant="quiet"
@@ -443,7 +443,7 @@ export default function Accounts() {
               </div>
               {!loading && tweets.length === 0 && (
                 <Empty title="Nothing collected yet">
-                  {ingestionEnabled ? "The first fetch for this account may still be running." : "Collection is paused; no tweets have been collected for this account."}
+                  {ingestionEnabled !== false ? "The first fetch for this account may still be running." : "Collection is paused; no tweets have been collected for this account."}
                 </Empty>
               )}
             </section>

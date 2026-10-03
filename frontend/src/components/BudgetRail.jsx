@@ -110,7 +110,7 @@ export default function BudgetRail() {
       .catch(() => setReachable(false));
   }, RAIL_POLL_MS);
 
-  if (!ingestionEnabled) return (
+  if (ingestionEnabled === false) return (
     <div role="status" className="border-b border-line bg-ink-850 px-4 py-2 text-sm text-fg-muted">
       Collection paused — saved data and configuration remain available.
     </div>

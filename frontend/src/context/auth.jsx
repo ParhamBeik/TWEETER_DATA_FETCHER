@@ -11,12 +11,15 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [ingestionEnabled, setIngestionEnabled] = useState(false);
+  // null = unknown (still loading, or /auth/config/ failed). Consumers treat
+  // only an explicit false as "collection paused"; unknown renders the normal
+  // controls, and the server still refuses runs when collection is off.
+  const [ingestionEnabled, setIngestionEnabled] = useState(null);
   useEffect(() => {
     let cancelled = false;
     api("/auth/config/")
       .then((config) => { if (!cancelled) setIngestionEnabled(config.ingestion_enabled === true); })
-      .catch(() => { if (!cancelled) setIngestionEnabled(false); });
+      .catch(() => { if (!cancelled) setIngestionEnabled(null); });
     return () => { cancelled = true; };
   }, []);
   // Undecided until the stored refresh token has been tried. Without this a

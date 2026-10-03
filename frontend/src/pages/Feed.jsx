@@ -509,7 +509,7 @@ export default function Feed() {
                 </Empty>
               ) : (
                 <Empty title="The archive is empty">
-                  {ingestionEnabled
+                  {ingestionEnabled !== false
                     ? "Posts appear here once the collector fetches a tracked account."
                     : "Collection is paused, so nothing new will arrive. Restored posts appear here."}
                 </Empty>
