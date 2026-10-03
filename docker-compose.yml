@@ -7,9 +7,6 @@
 # derived from the directory name would orphan twitter-saas_pgdata (the live
 # database) the moment this file moved.
 #
-# Backups are not scheduled here. `scripts/backup_pg.sh` is a host cron job;
-# adding a compose service that writes dumps would make `docker compose up`
-# start taking live snapshots, which this file must not do.
 name: twitter-saas
 
 x-logging: &logging
