@@ -32,6 +32,7 @@ from .accounts import (
     sync_quarantine_from_live_state,
 )
 from .ingest import ingest_search_hits, ingest_tweets
+from .searches import discard_run_of_deleted_search
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,16 @@ def _run_cycle(
     failed = False
     try:
         if subsystem == "search":
+            # A search deleted while its subprocess ran is gone from the table
+            # but not from what the runner just persisted. Attaching the run to
+            # it is a foreign-key error, and ingesting would recreate its hits.
+            live_ids = set(
+                Search.objects.filter(pk__in=[s.pk for s in searches or []]).values_list("pk", flat=True)
+            )
+            for search in searches or []:
+                if search.pk not in live_ids:
+                    discard_run_of_deleted_search(search)
+            searches = [s for s in searches or [] if s.pk in live_ids]
             # One search per run since dispatch_due_searches took over, but the
             # signature still accepts a list for repoll_searches. Attributing the
             # run to a single search is what makes "this phrase's history" a

@@ -94,6 +94,7 @@ def test_teardown_removes_every_trace_of_the_search():
         "hits": 2,
         "search_tweets": 2,
         "endpoint_state": 1,
+        "schedule_state": 0,
         "fetch_runs": 1,
         "raw_pages": 1,
     }
@@ -318,3 +319,68 @@ def test_django_admin_delete_triggers_teardown(rf):
     assert not Search.objects.filter(slug="admin_del").exists()
     assert not EndpointState.objects.filter(account=endpoint_state_key(search)).exists()
     assert not RawPage.objects.filter(account=raw_page_key(search)).exists()
+
+
+@pytest.mark.django_db
+def test_teardown_drops_the_search_from_the_schedule_state_blob():
+    """The runner restores `search:search_state.json`, not EndpointState.
+
+    Left there, a new search reusing the slug inherited `last_checked_at` (its
+    first run skipped as not due) and `newest_seen_at` (paging stopped at the
+    old query's watermark).
+    """
+    search = _search()
+    other = _search(slug="silver")
+    KeyValueState.objects.create(
+        namespace="request_state",
+        name="search:search_state.json",
+        data={
+            endpoint_state_key(search): {"last_checked_at": "2099-01-01T00:00:00Z"},
+            endpoint_state_key(other): {"last_checked_at": "2099-01-01T00:00:00Z"},
+        },
+    )
+
+    with patch("config.celery.app.control.revoke"):
+        counts = teardown_search(search)
+
+    assert counts["schedule_state"] == 1
+    data = KeyValueState.objects.get(name="search:search_state.json").data
+    assert endpoint_state_key(search) not in data
+    assert endpoint_state_key(other) in data
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_search_deleted_mid_run_does_not_fail_the_run_or_leave_pages(tmp_path):
+    """The subprocess outlives teardown; its persisted leftovers must not."""
+    from fetching import runner, tasks
+
+    search = _search()
+
+    def run_fetcher(module, args, subsystem, searches=None, **kwargs):
+        run = FetchRun.objects.create(run_id="r1", subsystem="search", target="gold:Latest")
+        with patch("config.celery.app.control.revoke"):
+            teardown_search(Search.objects.get(pk=search.pk))
+        # What run_fetcher persists after the subprocess exits.
+        RawPage.objects.create(
+            endpoint="SearchTimeline", account=raw_page_key(search), batch="b",
+            page_number=1, payload={}, fetch_run=run,
+        )
+        KeyValueState.objects.create(
+            namespace="request_state",
+            name="search:search_state.json",
+            data={endpoint_state_key(search): {"last_checked_at": "2099-01-01T00:00:00Z"}},
+        )
+        run.status = "completed"
+        run.save()
+        return runner.FetcherRunResult(root=tmp_path, run=run)
+
+    with patch.object(runner, "run_fetcher", run_fetcher), patch.object(
+        runner, "iter_search_tweets", lambda *a, **k: iter([])
+    ):
+        tasks._run_cycle("engine.search", [], "search", searches=[search])
+
+    assert FetchRun.objects.get(run_id="r1").status == "completed"
+    assert not RawPage.objects.filter(account=raw_page_key(search)).exists()
+    assert endpoint_state_key(search) not in KeyValueState.objects.get(
+        name="search:search_state.json"
+    ).data

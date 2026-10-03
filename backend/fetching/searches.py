@@ -18,7 +18,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from tweets.models import EndpointState, FetchRun, RawPage, Search, SearchTweet
+from tweets.models import EndpointState, FetchRun, KeyValueState, RawPage, Search, SearchTweet
 
 from .runner import normalize_slug
 
@@ -156,6 +156,7 @@ def teardown_search(search: Search) -> dict[str, int]:
         counts["endpoint_state"] = EndpointState.objects.filter(
             account=label, endpoint=SEARCH_ENDPOINT
         ).delete()[0]
+        counts["schedule_state"] = _forget_schedule_state(label)
         counts["fetch_runs"] = FetchRun.objects.filter(search=search).delete()[0]
         raw_key = raw_page_key(search)
         search.delete()
@@ -166,6 +167,45 @@ def teardown_search(search: Search) -> dict[str, int]:
     counts["raw_pages"] = _delete_raw_pages(raw_key)
     logger.info("teardown_search(%s): %s", label, counts)
     return counts
+
+
+# The blob the runner restores into every search subprocess. EndpointState is
+# only a mirror written after each run; this is what the engine actually reads
+# `last_checked_at` and `newest_seen_at` from.
+SEARCH_STATE_NAME = "search:search_state.json"
+
+
+def _forget_schedule_state(label: str) -> int:
+    """Drop one search's entry from the shared search state blob.
+
+    Left behind, a new search that reuses the slug inherits the old query's
+    `last_checked_at` (its first run is skipped as not due) and its
+    `newest_seen_at` (paging stops at the old query's watermark).
+    """
+    with transaction.atomic():
+        row = (
+            KeyValueState.objects.select_for_update()
+            .filter(namespace="request_state", name=SEARCH_STATE_NAME)
+            .first()
+        )
+        if row is None or not isinstance(row.data, dict) or label not in row.data:
+            return 0
+        row.data.pop(label)
+        row.save(update_fields=["data", "updated_at"])
+        return 1
+
+
+def discard_run_of_deleted_search(search: Search) -> None:
+    """Clean up after a run whose search was torn down while it was in flight.
+
+    The subprocess outlives teardown, and the runner persists its raw pages and
+    state blob after it exits -- so both have to be removed again here.
+    """
+    _forget_schedule_state(endpoint_state_key(search))
+    EndpointState.objects.filter(
+        account=endpoint_state_key(search), endpoint=SEARCH_ENDPOINT
+    ).delete()
+    _delete_raw_pages(raw_page_key(search))
 
 
 def _delete_raw_pages(account: str) -> int:
