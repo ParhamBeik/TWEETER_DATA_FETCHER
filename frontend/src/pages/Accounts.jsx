@@ -39,6 +39,9 @@ export default function Accounts() {
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [rosterQuery, setRosterQuery] = useState("");
   const activeHandle = useRef(null);
+  // The roster button that opened the timeline, so closing it hands keyboard
+  // focus back instead of dropping it on <body> when the panel unmounts.
+  const timelineOpener = useRef(null);
   const timelineRef = useRef(null);
 
   // Below xl the timeline stacks under a 64-row roster, so opening one has to
@@ -283,7 +286,10 @@ export default function Accounts() {
                       <button
                         type="button"
                         className="font-mono text-sm hover:text-accent hover:underline"
-                        onClick={() => openTimeline(a.handle)}
+                        onClick={(event) => {
+                          timelineOpener.current = event.currentTarget;
+                          openTimeline(a.handle);
+                        }}
                       >
                         @{a.handle}
                       </button>
@@ -414,6 +420,7 @@ export default function Accounts() {
                     // Drop any page still in flight for the closed handle.
                     activeHandle.current = null;
                     setSelected(null);
+                    timelineOpener.current?.focus();
                   }}
                 >
                   <X className="size-3.5" aria-hidden="true" />

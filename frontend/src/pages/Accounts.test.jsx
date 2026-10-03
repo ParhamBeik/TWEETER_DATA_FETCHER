@@ -74,6 +74,8 @@ describe("Accounts roster", () => {
     await user.click(await screen.findByRole("button", { name: "@elonmusk" }));
     expect(await screen.findByRole("region", { name: "Timeline for @elonmusk" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close timeline" }));
+    // Focus returns to the handle that opened it, not to <body>.
+    expect(screen.getByRole("button", { name: "@elonmusk" })).toHaveFocus();
     expect(screen.queryByRole("region", { name: "Timeline for @elonmusk" })).toBeNull();
   });
 

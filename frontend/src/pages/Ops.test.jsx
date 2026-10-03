@@ -422,7 +422,12 @@ it("shows paused collection without requiring an X session", async () => {
   // Paused, the run buttons are replaced by the reason, not left greyed out.
   expect(screen.queryByRole("button", { name: "Run live poll" })).toBeNull();
   expect(screen.getByText("Manual runs are off while collection is paused.")).toBeInTheDocument();
-  // The session editor is still reachable, behind a disclosure.
-  expect(screen.getByRole("form", { name: "Replace X session" })).toBeInTheDocument();
+  // The session editor is still reachable, behind a disclosure. jsdom does not
+  // hide a closed <details>, so assert the disclosure state, not just presence.
+  const form = screen.getByRole("form", { name: "Replace X session" });
+  const disclosure = form.closest("details");
+  expect(disclosure).not.toHaveAttribute("open");
+  await userEvent.setup().click(screen.getByText("Replace session…"));
+  expect(disclosure).toHaveAttribute("open");
   expect(screen.queryByText("No active session")).not.toBeInTheDocument();
 });
