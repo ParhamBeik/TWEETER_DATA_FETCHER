@@ -9,6 +9,7 @@ from typing import Callable, Optional
 from celery import current_task, shared_task
 from django.conf import settings
 from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from tweets.models import (
@@ -133,24 +134,32 @@ def _run_cycle(
             # A search deleted while its subprocess ran is gone from the table
             # but not from what the runner just persisted. Attaching the run to
             # it is a foreign-key error, and ingesting would recreate its hits.
-            live_ids = set(
-                Search.objects.filter(pk__in=[s.pk for s in searches or []]).values_list("pk", flat=True)
-            )
-            for search in searches or []:
-                if search.pk not in live_ids:
-                    discard_run_of_deleted_search(search)
-            searches = [s for s in searches or [] if s.pk in live_ids]
             # One search per run since dispatch_due_searches took over, but the
             # signature still accepts a list for repoll_searches. Attributing the
             # run to a single search is what makes "this phrase's history" a
             # relation rather than a parse of `target`.
-            if len(searches or []) == 1:
-                FetchRun.objects.filter(pk=result.run.pk).update(search=searches[0])
+            attach = len(searches or []) == 1
             for search in searches or []:
-                ingested = ingest_search_hits(
-                    search,
-                    runner.iter_search_tweets(result.root, search.slug, search.product),
-                )
+                try:
+                    # Atomic per search, so a teardown that lands mid-ingest
+                    # rolls back this search's partial insert with the FK error.
+                    with transaction.atomic():
+                        if not Search.objects.filter(pk=search.pk).exists():
+                            raise IntegrityError("search deleted during the run")
+                        if attach:
+                            FetchRun.objects.filter(pk=result.run.pk).update(search=search)
+                        ingested = ingest_search_hits(
+                            search,
+                            runner.iter_search_tweets(result.root, search.slug, search.product),
+                        )
+                except IntegrityError:
+                    # Deleted while its subprocess ran: attaching the run or its
+                    # hits is a foreign-key error, and what the runner persisted
+                    # after exit outlived the teardown.
+                    if Search.objects.filter(pk=search.pk).exists():
+                        raise
+                    discard_run_of_deleted_search(search, result.run)
+                    continue
                 count += ingested
                 new_count += ingested.new
                 # Stamped on every attempt, not only a completed one. This is what
@@ -158,8 +167,9 @@ def _run_cycle(
                 # partial run would re-queue that search on every dispatcher tick
                 # and spend a browser bootstrap every few minutes on the one query
                 # least able to finish. A partial run waits its normal interval.
-                search.last_run_at = timezone.now()
-                search.save(update_fields=["last_run_at"])
+                # A queryset update, so a teardown landing right here is a no-op
+                # rather than save()'s "did not affect any rows" error.
+                Search.objects.filter(pk=search.pk).update(last_run_at=timezone.now())
         else:
             count = ingest_tweets(
                 runner.iter_processed_tweets(result.root, subsystem), subsystem

@@ -195,17 +195,21 @@ def _forget_schedule_state(label: str) -> int:
         return 1
 
 
-def discard_run_of_deleted_search(search: Search) -> None:
+def discard_run_of_deleted_search(search: Search, run: FetchRun) -> None:
     """Clean up after a run whose search was torn down while it was in flight.
 
     The subprocess outlives teardown, and the runner persists its raw pages and
-    state blob after it exits -- so both have to be removed again here.
+    state blob after it exits -- so both have to be removed again here. Only
+    this run's pages go, and the state only if nothing has taken the slug since:
+    a search recreated under the same name shares both keys and may be running.
     """
+    RawPage.objects.filter(fetch_run=run).delete()
+    if Search.objects.filter(slug=search.slug, product=search.product).exists():
+        return
     _forget_schedule_state(endpoint_state_key(search))
     EndpointState.objects.filter(
         account=endpoint_state_key(search), endpoint=SEARCH_ENDPOINT
     ).delete()
-    _delete_raw_pages(raw_page_key(search))
 
 
 def _delete_raw_pages(account: str) -> int:

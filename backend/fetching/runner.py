@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Iterable
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from tweets.models import EndpointState, FetchRun, KeyValueState, RawPage, XSession
@@ -166,7 +166,7 @@ def _request_state_name(subsystem: str, filename: str) -> str:
 _ABSENT = object()
 
 
-def _merge_state(base, ours, theirs):
+def _merge_state(base, ours, theirs, depth: int = 0):
     """Three-way merge of one state blob, key by key.
 
     `base` is what this run loaded, `ours` what it finished with, `theirs` what
@@ -175,6 +175,11 @@ def _merge_state(base, ours, theirs):
     roll back the other's work -- the archive walk's backfill cursor, or an
     operator's cleared quarantine. Only what this run changed is applied; a key
     both runs changed goes to this run, the last writer, as before.
+
+    `depth` is how many levels below this one are merged field by field; below
+    that a changed value is replaced whole. Some records only mean something as
+    a unit -- a rate limit's `remaining` belongs to its `reset` -- and splicing
+    fields from two runs builds one that neither observed.
     """
     if not (isinstance(base, dict) and isinstance(ours, dict) and isinstance(theirs, dict)):
         return ours
@@ -191,14 +196,23 @@ def _merge_state(base, ours, theirs):
                 merged.pop(key, None)
             continue
         current = merged.get(key, _ABSENT)
-        if isinstance(after, dict) and isinstance(current, dict):
-            merged[key] = _merge_state(before if isinstance(before, dict) else {}, after, current)
+        if depth > 0 and isinstance(after, dict) and isinstance(current, dict):
+            merged[key] = _merge_state(
+                before if isinstance(before, dict) else {}, after, current, depth - 1
+            )
         else:
             merged[key] = after
     return merged
 
 
-def _merge_into_row(namespace: str, name: str, base, ours) -> object:
+# sync_state is {account: {endpoint: {field: ...}}}: live and historical own
+# different fields of the same endpoint record (watermark vs backfill cursor),
+# so it merges down to fields. Request-state files (rate limits, endpoint
+# health, live_state, search_state) are {key: record}; a record is replaced whole.
+_MERGE_DEPTH = {"sync_state.json": 2}
+
+
+def _merge_into_row(namespace: str, name: str, base, ours, depth: int = 0) -> object:
     """Apply this run's changes to one KeyValueState row under a row lock."""
     with transaction.atomic():
         row = (
@@ -208,10 +222,15 @@ def _merge_into_row(namespace: str, name: str, base, ours) -> object:
         )
         if row is None:
             # Nothing concurrent to preserve (first run, or state restored from a
-            # legacy unprefixed row): this run's view is the whole truth.
-            KeyValueState.objects.create(namespace=namespace, name=name, data=ours)
-            return ours
-        merged = _merge_state(base, ours, row.data)
+            # legacy unprefixed row): this run's view is the whole truth -- unless
+            # a concurrent run creates the row first, in which case merge into it.
+            try:
+                with transaction.atomic():
+                    KeyValueState.objects.create(namespace=namespace, name=name, data=ours)
+                return ours
+            except IntegrityError:
+                row = KeyValueState.objects.select_for_update().get(namespace=namespace, name=name)
+        merged = _merge_state(base, ours, row.data, depth)
         if merged != row.data:
             row.data = merged
             row.save(update_fields=["data", "updated_at"])
@@ -232,7 +251,9 @@ def _persist_state(root: Path, subsystem: str) -> None:
             namespace, name = "sync_state", sub
         else:
             namespace, name = "request_state", _request_state_name(subsystem, f.name)
-        merged = _merge_into_row(namespace, name, baseline.get(f.name, {}), data)
+        merged = _merge_into_row(
+            namespace, name, baseline.get(f.name, {}), data, _MERGE_DEPTH.get(f.name, 0)
+        )
         if merged != data:
             # _persist_endpoint_states mirrors these files after this, so they
             # must carry the merged state, not this run's stale copy.

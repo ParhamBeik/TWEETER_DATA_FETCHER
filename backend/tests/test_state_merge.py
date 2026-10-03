@@ -70,7 +70,7 @@ def test_merge_applies_only_this_runs_changes():
     ours = {"a": 2, "b": {"x": 2, "y": 1}, "kept": 1, "new": 1}  # dropped "gone"
     theirs = {"a": 1, "b": {"x": 1, "y": 9}, "gone": 1, "kept": 5, "theirs": 1}
 
-    assert runner._merge_state(base, ours, theirs) == {
+    assert runner._merge_state(base, ours, theirs, depth=1) == {
         "a": 2,                    # ours changed it
         "b": {"x": 2, "y": 9},     # nested: each side's change survives
         "kept": 5,                 # only theirs changed it
@@ -94,3 +94,55 @@ def test_first_persist_without_a_row_writes_the_runs_state(tmp_path):
     (_state_dir(tmp_path) / "live_state.json").write_text(json.dumps({"bob": {"x": 1}}))
     runner._persist_state(tmp_path, "live")
     assert KeyValueState.objects.get(name="historical_live:live_state.json").data == {"bob": {"x": 1}}
+
+
+def test_merge_replaces_a_request_state_record_whole():
+    """A rate limit's remaining belongs to its reset; never splice them."""
+    base = {"UserTweets": {"remaining": 50, "reset": 1, "limit": 150}}
+    ours = {"UserTweets": {"remaining": 0, "reset": 1, "limit": 150}}       # live, window 1
+    theirs = {"UserTweets": {"remaining": 140, "reset": 2, "limit": 150}}   # historical, window 2
+    assert runner._merge_state(base, ours, theirs) == ours
+
+
+@pytest.mark.django_db
+def test_persist_merges_sync_state_to_fields_but_rate_limits_by_record(tmp_path):
+    KeyValueState.objects.create(
+        namespace="request_state", name="historical_live:rate_limits.json",
+        data={"UserTweets": {"remaining": 50, "reset": 1}},
+    )
+    runner._restore_state(tmp_path, "live")
+    KeyValueState.objects.filter(name="historical_live:rate_limits.json").update(
+        data={"UserTweets": {"remaining": 140, "reset": 2}}
+    )
+    _edit(tmp_path, "rate_limits.json", lambda d: d["UserTweets"].update(remaining=0))
+    runner._persist_state(tmp_path, "live")
+    assert KeyValueState.objects.get(name="historical_live:rate_limits.json").data == {
+        "UserTweets": {"remaining": 0, "reset": 1}
+    }
+
+
+@pytest.mark.django_db
+def test_persist_merges_into_a_row_another_run_created_meanwhile(tmp_path):
+    """No row at lookup, one by insert: merge into it, don't fail on the key."""
+    from unittest.mock import MagicMock, patch
+
+    runner._restore_state(tmp_path, "live")
+    (_state_dir(tmp_path) / "endpoint_health.json").write_text(json.dumps({"UserTweets": "healthy"}))
+    # The other run's insert, committed between our locked lookup and our create.
+    KeyValueState.objects.create(
+        namespace="request_state", name="historical_live:endpoint_health.json",
+        data={"Other": "suspect"},
+    )
+    real = KeyValueState.objects.select_for_update
+    missed = MagicMock()
+    missed.filter.return_value.first.return_value = None
+    lookups = iter([missed])
+
+    def select_for_update():
+        return next(lookups, None) or real()
+
+    with patch.object(KeyValueState.objects, "select_for_update", side_effect=select_for_update):
+        runner._persist_state(tmp_path, "live")
+    assert KeyValueState.objects.get(name="historical_live:endpoint_health.json").data == {
+        "Other": "suspect", "UserTweets": "healthy",
+    }

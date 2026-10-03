@@ -412,3 +412,30 @@ def test_refresh_endpoint_queues_a_forced_run(settings):
         response = client.post(f"/api/searches/{search.id}/refresh/")
     assert response.status_code == 202
     delay.assert_called_once_with(search.id, force=True)
+
+
+@pytest.mark.django_db
+def test_discarding_a_deleted_searchs_run_spares_a_recreated_one(tmp_path):
+    """Same name, same slug: the old run's cleanup must not wipe the new search."""
+    from fetching.searches import discard_run_of_deleted_search
+
+    old = _search()
+    old_run = FetchRun.objects.create(run_id="old", subsystem="search")
+    with patch("config.celery.app.control.revoke"):
+        teardown_search(old)
+    new = _search()
+    new_run = FetchRun.objects.create(run_id="new", subsystem="search", search=new)
+    for run, batch in ((old_run, "a"), (new_run, "b")):
+        RawPage.objects.create(
+            endpoint="SearchTimeline", account=raw_page_key(new), batch=batch,
+            page_number=1, payload={}, fetch_run=run,
+        )
+    KeyValueState.objects.create(
+        namespace="request_state", name="search:search_state.json",
+        data={endpoint_state_key(new): {"last_checked_at": "2026-10-03T00:00:00Z"}},
+    )
+
+    discard_run_of_deleted_search(old, old_run)
+
+    assert list(RawPage.objects.values_list("fetch_run__run_id", flat=True)) == ["new"]
+    assert endpoint_state_key(new) in KeyValueState.objects.get(name="search:search_state.json").data
