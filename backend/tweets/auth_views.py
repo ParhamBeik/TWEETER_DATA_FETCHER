@@ -56,6 +56,9 @@ def user_payload(user) -> dict:
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    # Token endpoints use credentials in the body, not a Django admin cookie.
+    # SessionAuthentication would otherwise require CSRF from the JWT-only SPA.
+    authentication_classes = []
     # Where ALLOW_REGISTRATION is on, this endpoint mints accounts for anyone who
     # finds the URL. The anon throttle alone is a per-minute budget shared with
     # every other unauthenticated request, so signup gets its own hourly ceiling.
@@ -127,6 +130,7 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     # The one endpoint where an unlimited number of attempts is a real attack.
     # Rate limiting rather than account lockout: a lockout is a denial of
     # service anyone can inflict on you by failing on purpose with your username.
@@ -161,6 +165,7 @@ class RefreshView(TokenRefreshView):
     """
 
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         try:
@@ -171,6 +176,7 @@ class RefreshView(TokenRefreshView):
 
 class LogoutView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
         raw = body_mapping(request).get("refresh") or ""

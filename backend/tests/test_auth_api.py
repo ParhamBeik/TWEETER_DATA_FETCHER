@@ -349,3 +349,51 @@ def test_a_rejected_sign_in_does_not_record_last_login():
 
     user.refresh_from_db()
     assert user.last_login is None
+
+
+@pytest.mark.django_db
+def test_token_round_trip_ignores_another_users_admin_session():
+    """Admin cookies must neither demand CSRF nor choose the JWT identity."""
+    admin = User.objects.create_user("admin", password=GOOD_PASSWORD, is_staff=True)
+    reader = User.objects.create_user("reader", password=GOOD_PASSWORD)
+    client = APIClient(enforce_csrf_checks=True)
+    client.force_login(admin)
+
+    login = client.post(
+        "/api/auth/login/", {"username": reader.username, "password": GOOD_PASSWORD}, format="json"
+    )
+    assert login.status_code == 200, login.data
+    assert login.data["user"]["username"] == reader.username
+    assert login.data["user"]["is_staff"] is False
+
+    rotated = client.post("/api/auth/refresh/", {"refresh": login.data["refresh"]}, format="json")
+    assert rotated.status_code == 200, rotated.data
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {rotated.data['access']}")
+    assert client.get("/api/auth/me/").data["username"] == reader.username
+    assert client.get("/api/session/").status_code == 403
+    assert client.post(
+        "/api/auth/refresh/", {"refresh": login.data["refresh"]}, format="json"
+    ).status_code == 401
+
+    assert client.post(
+        "/api/auth/logout/", {"refresh": rotated.data["refresh"]}, format="json"
+    ).status_code == 204
+    assert client.post(
+        "/api/auth/refresh/", {"refresh": rotated.data["refresh"]}, format="json"
+    ).status_code == 401
+    # JWT logout revokes only the supplied token; the admin session remains usable.
+    client.credentials()
+    assert client.get("/api/auth/me/").data["username"] == admin.username
+
+
+@pytest.mark.django_db
+def test_signup_with_admin_cookie_still_creates_a_non_staff_user():
+    admin = User.objects.create_user("admin", password=GOOD_PASSWORD, is_staff=True)
+    client = APIClient(enforce_csrf_checks=True)
+    client.force_login(admin)
+
+    response = register(client)
+
+    assert response.status_code == 201, response.data
+    assert response.data["user"]["username"] == "carol"
+    assert response.data["user"]["is_staff"] is False
