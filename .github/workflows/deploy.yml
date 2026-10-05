@@ -46,10 +46,12 @@ jobs:
       matrix:
         include:
           - name: web
+            context: .
             file: backend/Dockerfile
             # Archive mode is the deployment default and never starts Chromium.
             build-args: INSTALL_BROWSER=0
           - name: frontend
+            context: .
             file: frontend/Dockerfile
             build-args: ""
     steps:
@@ -81,7 +83,7 @@ jobs:
       - if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           build-args: ${{ matrix.build-args }}
           push: true
