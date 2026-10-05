@@ -216,8 +216,10 @@ Open a PR; CI runs on it. Merging to `main` deploys the archive stack to the VPS
 2. GitHub builds the `web` and `frontend` images and pushes them to
    `ghcr.io/parhambeik/tweeter_data_fetcher-*:<sha>`. They are built there because
    the VPS cannot reach `files.pythonhosted.org`.
-3. The VPS's self-hosted runner (user `deploy`, label `vps`) checks out `<sha>` in
-   `/opt/apps/twitter-project` and runs `scripts/deploy_vps.sh` with `IMAGE_TAG=<sha>`.
+3. The VPS's self-hosted runner (user `gh-runner`, label `vps`, no Docker access) runs
+   `sudo app-release twitter <sha>`. That root-owned wrapper refuses a SHA not on
+   `main`, checks it out in `/opt/apps/twitter-project`, and runs
+   `scripts/deploy_vps.sh` with `IMAGE_TAG=<sha>`.
    The script pulls and retags the images, restarts with the mode's Compose files,
    waits for health checks, checks the frontend, rejects messages on the legacy
    Celery queue, and runs a recent fetch report.

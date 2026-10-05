@@ -97,25 +97,21 @@ jobs:
     runs-on: [self-hosted, vps]
     environment: production
     env:
-      APP_DIR: /opt/apps/twitter-project
+      APP: twitter
       TAG: ${{ needs.build.outputs.tag }}
       PUBLIC_URL: https://twitter.parhambm.ir
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
       # Recorded before anything changes: after the fact it would be the broken version.
       - name: Record the version currently serving
         id: record
-        run: echo "previous=$(cat "$APP_DIR/.release" 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+        run: echo "previous=$(cat /opt/apps/twitter-project/.release 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
 
-      - name: Check out the release
-        run: |
-          git -C "$APP_DIR" fetch --quiet origin "$TAG"
-          git -C "$APP_DIR" checkout --quiet --force "$TAG"
-
+      # The runner user has no Docker access. Its one sudo right is this root-owned
+      # wrapper: refuse a SHA not on main, check it out, run scripts/deploy_vps.sh
+      # with IMAGE_TAG=<sha>, record it. Source: /usr/local/sbin/app-release.
       - name: Pull images and restart
-        run: IMAGE_TAG="$TAG" bash "$APP_DIR/scripts/deploy_vps.sh"
+        run: printf '%s\n' "$GHCR_TOKEN" | sudo -n /usr/local/sbin/app-release "$APP" "$TAG" "${{ github.actor }}"
 
       - name: Smoke-test through the public edge
         run: |
@@ -128,19 +124,11 @@ jobs:
           done
           echo "::error::$PUBLIC_URL did not answer after deploy"; exit 1
 
-      - name: Remember the release
-        run: echo "$TAG" > "$APP_DIR/.release"
-
       - name: Roll back to the previous release
         if: failure() && steps.record.outputs.previous != '' && steps.record.outputs.previous != env.TAG
         env:
           PREVIOUS: ${{ steps.record.outputs.previous }}
         run: |
           echo "::warning::deploy failed - redeploying $PREVIOUS"
-          git -C "$APP_DIR" checkout --quiet --force "$PREVIOUS"
-          IMAGE_TAG="$PREVIOUS" bash "$APP_DIR/scripts/deploy_vps.sh"
+          printf '%s\n' "$GHCR_TOKEN" | sudo -n /usr/local/sbin/app-release "$APP" "$PREVIOUS" "${{ github.actor }}"
           echo "::notice::rolled back to $PREVIOUS; this run stays red"
-
-      - name: Log out of GHCR
-        if: always()
-        run: docker logout ghcr.io || true
