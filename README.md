@@ -209,21 +209,29 @@ The topic *ranking* is deliberately pure and does run in the suite
 
 ## Deploying
 
-Pushes to `main` run backend and frontend CI only. No deployment job is wired
-to this repository while the old archive is unavailable and the replacement
-VPS cannot reach X. [Production recovery](docs/production-recovery.md) records
-the evidence and the gates for any future host. A successful older deploy job
-is not proof that the current VPS has this application or its data.
+Open a PR; CI runs on it. Merging to `main` deploys the archive stack to the VPS
+(`https://twitter.parhambm.ir`) through `.github/workflows/deploy.yml`:
 
-`scripts/deploy_vps.sh` remains available for an explicitly approved future
-host. It builds images in parallel, restarts the stack with the mode's Compose files,
-waits for health checks, checks the frontend, rejects messages on the legacy
-Celery queue, and runs a recent fetch report. A host wrapper must update the
-checkout first; repository CI does not invoke either script.
+1. CI passes on the push to `main`.
+2. GitHub builds the `web` and `frontend` images and pushes them to
+   `ghcr.io/parhambeik/tweeter_data_fetcher-*:<sha>`. They are built there because
+   the VPS cannot reach `files.pythonhosted.org`.
+3. The VPS's self-hosted runner (user `gh-runner`, label `vps`, no Docker access) runs
+   `sudo app-release twitter <sha>`. That root-owned wrapper refuses a SHA not on
+   `main`, checks it out in `/opt/apps/twitter-project`, and runs
+   `scripts/deploy_vps.sh` with `IMAGE_TAG=<sha>`.
+   The script pulls and retags the images, restarts with the mode's Compose files,
+   waits for health checks, checks the frontend, rejects messages on the legacy
+   Celery queue, and runs a recent fetch report.
+4. The job probes the public URL. On failure it redeploys the previous release
+   recorded in `/opt/apps/twitter-project/.release`.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
+Roll back by hand: Actions → Deploy → Run workflow, with the full SHA of an
+earlier `main` commit. The image already exists, so nothing is rebuilt.
+
+The VPS cannot reach X, so collection mode stays off; the build omits Chromium.
+Without `IMAGE_TAG`, `scripts/deploy_vps.sh` still builds on the host, which needs
+a working `PIP_INDEX_URL` mirror in `.env`.
 
 ### Backups
 

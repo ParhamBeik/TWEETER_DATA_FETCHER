@@ -62,9 +62,34 @@ if [ -f "$SHA_FILE" ]; then
   echo "preserved the running build as :$PREV_SHA"
 fi
 
-# Build independent images concurrently. Compose still preserves dependency
-# ordering when the stack is started below.
-COMPOSE_PARALLEL_LIMIT=1 "${COMPOSE[@]}" build "${SERVICES[@]}"
+# files.pythonhosted.org is unreachable from this (Iranian) host, so pip inside an
+# on-box build fails. .github/workflows/deploy.yml builds the images on GitHub and
+# passes IMAGE_TAG; they are pulled and retagged with the compose names, so every
+# step below and any later manual `compose up` runs that exact build. Pulling
+# happens before anything is stopped, so a failed pull leaves the site as it was.
+# Without IMAGE_TAG (a manual deploy) everything still builds here.
+if [ -n "${IMAGE_TAG:-}" ]; then
+  for name in web frontend; do
+    remote="ghcr.io/parhambeik/tweeter_data_fetcher-$name:$IMAGE_TAG"
+    # GHCR resets connections from Iran mid-layer; finished layers are kept.
+    for attempt in 1 2 3 4 5; do
+      docker pull -q "$remote" && break
+      [ "$attempt" = 5 ] && { echo "FATAL: could not pull $remote; nothing was stopped" >&2; exit 1; }
+      sleep $((attempt * 15))
+    done
+  done
+  for image in "${BUILT_IMAGES[@]}"; do
+    case "$image" in
+      *-frontend) source_name=frontend ;;
+      *) source_name=web ;;  # every Python service runs the web image
+    esac
+    docker tag "ghcr.io/parhambeik/tweeter_data_fetcher-$source_name:$IMAGE_TAG" "$image:latest"
+  done
+else
+  # Build independent images concurrently. Compose still preserves dependency
+  # ordering when the stack is started below.
+  COMPOSE_PARALLEL_LIMIT=1 "${COMPOSE[@]}" build "${SERVICES[@]}"
+fi
 
 # Prove the app actually came back before reporting success. A build that
 # succeeds and a container that boot-loops look identical to a bare `up -d`.
