@@ -1,0 +1,589 @@
+<title>TDF System Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a two-sided mind map (root centre, branches out, leaves at the edge),
+   an inspector that drills one node down top-to-bottom, then the flow, the
+   runtime and the open questions as plain reference sections. */
+:root {
+  --bg: #f3f6f7;
+  --surface: #ffffff;
+  --ink: #15212b;
+  --muted: #5a6a76;
+  --line: #d5dee3;
+  --z1: #0b7f7a;   /* Surface: console + API */
+  --z2: #b46a0a;   /* Engine room: scheduling, runner, engine */
+  --z3: #4453c9;   /* Data: ingest, database, analytics */
+  --z4: #b8364f;   /* Operations: deploy, strategy, guardrails */
+  --ok: #1d7a45;
+  --warn: #a35f00;
+  --bad: #b02a37;
+  --on-z: #ffffff;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151b; --surface: #16212a; --ink: #e3eaef; --muted: #93a3ae; --line: #2a3843;
+    --z1: #3cc2b9; --z2: #e7a03f; --z3: #8c98ff; --z4: #f07a90;
+    --ok: #5fcf8d; --warn: #f0b04a; --bad: #ff7d88; --on-z: #0e151b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151b; --surface: #16212a; --ink: #e3eaef; --muted: #93a3ae; --line: #2a3843;
+  --z1: #3cc2b9; --z2: #e7a03f; --z3: #8c98ff; --z4: #f07a90;
+  --ok: #5fcf8d; --warn: #f0b04a; --bad: #ff7d88; --on-z: #0e151b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1480px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 44px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(30px, 4.4vw, 46px); font-weight: 700; line-height: 1.05; }
+h2 { font-size: 24px; font-weight: 700; }
+h3 { font-size: 17px; font-weight: 700; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: color-mix(in srgb, var(--line) 55%, transparent); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); max-width: 68ch; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.status { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--warn); background: var(--surface); border-radius: 6px; }
+.status strong { color: var(--warn); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; }
+
+/* mind map + inspector */
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+.mapcard { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.maptools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.maptools .btns { display: flex; gap: 8px; }
+button { font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, .node:focus-visible { outline: 2px solid var(--z3); outline-offset: 2px; }
+.mapscroll { overflow-x: auto; }
+#map { display: block; width: 100%; min-width: 980px; height: auto; }
+.node { cursor: pointer; outline: none; }
+.node text { font-family: var(--font-body); }
+.leaf rect { fill: var(--surface); stroke: var(--line); }
+.leaf text { fill: var(--ink); font-size: 12.5px; }
+.leaf:hover rect, .leaf.sel rect { stroke-width: 2; }
+.branch text { fill: var(--on-z); font-size: 14px; font-weight: 600; }
+.root rect { fill: var(--ink); }
+.root text { fill: var(--bg); }
+.sel rect { stroke: var(--ink) !important; stroke-width: 2.5 !important; }
+.count { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.edge { fill: none; stroke-width: 1.6; opacity: 0.75; }
+
+.inspector { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 14px; max-height: calc(100vh - 24px); overflow-y: auto; min-width: 0; }
+.crumbs { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px; }
+.crumbs b { font-weight: 500; color: var(--ink); }
+.inspector .what { font-size: 15.5px; }
+.inspector ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.inspector li { font-size: 14px; }
+.files { display: flex; flex-wrap: wrap; gap: 6px; }
+.files code { font-size: 12px; }
+.ask { border-left: 3px solid var(--z4); padding: 8px 12px; background: color-mix(in srgb, var(--z4) 8%, transparent); border-radius: 0 5px 5px 0; font-size: 14px; }
+.ask .eyebrow { color: var(--z4); display: block; margin-bottom: 2px; }
+.kids { display: flex; flex-wrap: wrap; gap: 6px; }
+.kids button { font-size: 12.5px; }
+.close { display: none; }
+
+/* sections */
+section { display: grid; gap: 16px; }
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; counter-reset: step; }
+.flow li { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px 14px; display: grid; gap: 6px; align-content: start; counter-increment: step; position: relative; min-width: 0; }
+.flow li::before { content: counter(step); font-family: var(--font-mono); font-size: 12px; color: var(--surface); background: var(--zc, var(--muted)); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+.flow .where { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.flow p { font-size: 14px; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 13px; white-space: nowrap; }
+.pill { font-family: var(--font-mono); font-size: 11.5px; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.ok { color: var(--ok); } .pill.off { color: var(--muted); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+
+.budget { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: grid; gap: 12px; }
+.bar { display: flex; height: 30px; border-radius: 5px; overflow: hidden; font-family: var(--font-mono); font-size: 12px; }
+.bar div { display: grid; place-items: center; color: var(--on-z); white-space: nowrap; overflow: hidden; }
+.formula { font-family: var(--font-mono); font-size: 13.5px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 5px; overflow-x: auto; white-space: nowrap; }
+.tiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.tier { border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; font-size: 13px; display: grid; gap: 2px; }
+.tier b { font-family: var(--font-display); font-size: 15px; }
+.tier span { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.qs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.q { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.q h3 { font-size: 16px; }
+.q p { font-size: 14px; color: var(--muted); }
+.q p b { color: var(--ink); font-weight: 600; }
+.q .tag { justify-self: start; }
+.foot { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; max-width: 90ch; }
+
+@media (max-width: 1099px) {
+  .mapgrid { grid-template-columns: minmax(0, 1fr); }
+  .inspector { position: fixed; left: 0; right: 0; bottom: 0; top: auto; max-height: 58vh; border-radius: 12px 12px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -8px 30px rgba(0,0,0,0.18); z-index: 10; }
+  .inspector.hidden-mobile { display: none; }
+  .close { display: inline-block; justify-self: end; }
+}
+@media (max-width: 480px) {
+  .wrap { padding-inline: 16px; }
+  .qs { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .edge, .node rect { transition: opacity .2s, stroke-width .15s; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">TWEETER_DATA_FETCHER · main @ cc8f120 · read 2026-10-05</span>
+    <h1>TDF System Map</h1>
+    <p class="lede">Every part of the app on one map. Click any node: the inspector explains it top-down (where it sits, what it does, which files, what to question). Below the map: one tweet's journey, the containers, the shared X rate budget, and the questions worth asking.</p>
+    <div class="status">
+      <span><span class="dot" style="background:var(--warn)"></span><strong>VPS: archive mode</strong></span>
+      <span>Collection is paused (<code>INGESTION_ENABLED=0</code>). Collectors and beat are stopped. Stored data, analytics and exports still work.</span>
+      <span class="mono" style="color:var(--muted);font-size:12px">Source: docs/archive-mode.md (deploy of 2026-09-28). Not checked live; this session cannot reach the VPS.</span>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--z1)"></span>Surface: what users touch</span>
+      <span><span class="dot" style="background:var(--z2)"></span>Engine room: what fetches from X</span>
+      <span><span class="dot" style="background:var(--z3)"></span>Data: what is stored and computed</span>
+      <span><span class="dot" style="background:var(--z4)"></span>Operations: how it runs and stays safe</span>
+    </div>
+  </header>
+
+  <div class="mapgrid">
+    <div class="mapcard">
+      <div class="maptools">
+        <span class="eyebrow">Mind map · 11 branches</span>
+        <div class="btns">
+          <button id="expandAll" type="button">Expand all</button>
+          <button id="collapseAll" type="button">Collapse all</button>
+        </div>
+      </div>
+      <div class="mapscroll"><svg id="map" role="tree" aria-label="System mind map"></svg></div>
+    </div>
+    <aside class="inspector" id="inspector" aria-live="polite"></aside>
+  </div>
+
+  <section>
+    <div><span class="eyebrow">Sequence</span><h2>Life of one tweet</h2></div>
+    <p class="lede">One live poll, end to end. Archive walk and search follow the same path with a different engine module and queue.</p>
+    <ol class="flow" id="flow"></ol>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">Runtime</span><h2>Nine containers, one Compose project</h2></div>
+    <p class="lede">All Python services share one image (<code>backend/Dockerfile</code>) and differ only by command. Memory is the production ceiling from <code>docker-compose.prod.yml</code>.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Service</th><th>Job</th><th>Queue</th><th>Memory cap</th><th>On the VPS now</th></tr></thead>
+      <tbody id="svc"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">The core constraint</span><h2>One X rate budget, three collectors</h2></div>
+    <div class="budget">
+      <p>X allows <b>50 <code>UserTweets</code> requests per 15 minutes</b> for the single shared session. Live polling and the archive walk spend it together, so the archive walk always leaves a reserve for live. That reserve is computed every run from how many accounts are due (<code>fetching.accounts.archive_quota_floor</code>); it is not a setting.</p>
+      <div class="bar" role="img" aria-label="Rate window split between live reserve and archive walk">
+        <div style="flex:2;background:var(--z1)">live reserve</div>
+        <div style="flex:3;background:var(--z2)">archive walk (≤ 25 pages / tick)</div>
+      </div>
+      <p class="mono" style="font-size:12px;color:var(--muted)">Illustrative split. The real ratio moves every 5 minutes with the live due-set.</p>
+      <p>How far back each fetch reaches:</p>
+      <div class="formula">effective_cutoff = min(now − configured_window, floor(fetch_watermark))</div>
+      <p style="font-size:14px;color:var(--muted)">Historical floors the watermark to the start of the Tehran day, live to the hour. Watermarks advance only after a successful run, so a failed run is retried from the same point. Overlap is deduplicated on <code>author_id:tweet_id</code>.</p>
+      <p>Priority tiers (<code>engine/config.py</code>; new accounts start at tier 7). Each account's actual poll interval is its measured median posting gap, clamped into its tier's band and recomputed daily.</p>
+      <div class="tiers" id="tiers"></div>
+    </div>
+  </section>
+
+  <section>
+    <div><span class="eyebrow">Things you did not know to ask</span><h2>Questions worth asking about this system</h2></div>
+    <div class="qs" id="qs"></div>
+  </section>
+
+  <p class="foot">Built from the <code>main</code> branch at <code>cc8f120</code> (2026-10-03): README.md, ARCHITECTURE.md, AGENTS.md, docs/, compose files and the source under backend/ and frontend/src. Statements about the VPS come from the repo's dated docs (2026-09-24 inspection, 2026-09-28 archive deploy). Nothing here was observed on the server itself.</p>
+</div>
+
+<script>
+const Z = { s: "var(--z1)", e: "var(--z2)", d: "var(--z3)", o: "var(--z4)" };
+
+const ROOT = {
+  t: "Twitter Data Fetcher", z: "root",
+  w: "Collects tweets from X for a tracked set of accounts and saved searches, stores them in Postgres, and serves them through a React console.",
+  b: [
+    "<b>Two worlds, one process boundary.</b> The Django side (API, scheduling, database) and the X engine (pure Python, no Django) talk only through a subprocess: arguments and <code>TDF_*</code> env vars in, JSON files on a scratch disk out.",
+    "<b>Postgres is the only durable store.</b> The engine's scratch folder is deleted after every run; anything worth keeping is copied into Postgres first.",
+    "<b>Three collectors</b> share one X login and one rate budget: live poll (recent tweets), archive walk (going backwards), saved searches (the wider firehose).",
+    "<b>Request path:</b> browser → nginx (SPA + <code>/api</code> proxy) → gunicorn/Django → Postgres. <b>Fetch path:</b> Celery beat → Redis queue → worker → runner → engine subprocess → x.com.",
+    "Start with the four coloured zones in the legend, then open the branch you care about."
+  ],
+  f: ["README.md", "ARCHITECTURE.md", "AGENTS.md"],
+  c: [
+    { t: "Console (frontend)", z: "s", side: "r",
+      w: "React 19 + Vite single-page app. nginx serves it and proxies /api and /admin to Django, so the browser sees one origin.",
+      b: ["No state library and no data-fetching library: each page holds its own <code>useState</code> and polls with <code>usePoll</code>.", "Charts are Recharts; primitives (button, panel, dialog, tabs) are Radix + class-variance-authority in <code>src/ui/</code>.", "Design tokens (colour, type, spacing) live in <code>src/index.css</code> (Tailwind 4)."],
+      f: ["frontend/src/App.jsx", "frontend/src/index.css", "frontend/src/ui/"],
+      c: [
+        { t: "Feed  /feed", w: "The tracked-account stream: every tweet the live poll and archive walk stored.", b: ["Filters: account, tier, since/until/window, text query, post types, has media, include untracked.", "Sort: latest (cursor paging), top engagement or views (offset paging on a stored column).", "Polls for new arrivals and holds them behind a “new posts” pill.", "Export button queues a CSV/JSONL job."], f: ["frontend/src/pages/Feed.jsx", "frontend/src/components/TweetCard.jsx"] },
+        { t: "Search  /search", w: "Saved queries. Each one is its own recurring job with its own cadence, history and cursors.", b: ["QueryDialog creates or edits a query (product Top/Latest, depth, interval).", "Workflow panel shows schedule state, next due time and recent runs.", "Delete runs a full teardown: schedule, queued run, results, history, cursors, raw pages."], f: ["frontend/src/pages/Search/"] },
+        { t: "Dashboard  /dashboard", w: "Collector health at a glance: stat tiles, capture charts, pipeline panels.", b: ["Reads <code>/api/stats/overview/</code>, <code>/api/stats/pipeline/</code> and <code>/api/analytics/ingestion/</code>.", "Shows quota per endpoint, endpoint health, cadence and backfill progress."], f: ["frontend/src/pages/Dashboard.jsx"] },
+        { t: "Analyze  /analyze", w: "What changed: one filter bar driving velocity, topics, accounts and narratives.", b: ["Window <code>1h|24h|7d|30d|90d</code>, bucket hour/day/week, repeatable account filter.", "Topics can rank by surging (unusual vs previous window) or volume. Staff can hide a term permanently."], f: ["frontend/src/pages/Analyze.jsx"] },
+        { t: "Accounts  /accounts", w: "The roster: which X accounts are tracked and how often each is polled.", b: ["Track/untrack, set priority tier 1–7, clear quarantine, fetch one account now.", "Writes are staff-only; everyone else sees it read-only."], f: ["frontend/src/pages/Accounts.jsx"] },
+        { t: "Ops  /ops (staff)", w: "The operator's control room: run history, manual cycles and the X session.", b: ["Queue a global live / historical / search cycle.", "Replace the shared X session (cookies + headers), see its health without seeing secrets.", "Hidden from the nav for non-staff users."], f: ["frontend/src/pages/Ops.jsx"] },
+        { t: "Login and Signup", w: "Open signup. A new account can read everything but change nothing until made staff in /admin.", b: ["Client-side password rules mirror the server's and must never be stricter.", "Signed-out screens ask <code>/api/auth/config/</code> whether registration is allowed."], f: ["frontend/src/pages/Login.jsx", "frontend/src/pages/Signup.jsx"] },
+        { t: "Plumbing: api.js, auth", w: "How every page talks to the API.", b: ["<code>lib/api.js</code> is a <code>fetch</code> wrapper that attaches the JWT and refreshes it silently on expiry.", "<code>context/auth.jsx</code> holds the signed-in identity, including <code>is_staff</code>.", "<code>BudgetRail</code> shows the shared X budget on every page.", "Old routes redirect: /pulse → /dashboard, /cycles → /ops, /searches → /search."], f: ["frontend/src/lib/api.js", "frontend/src/context/auth.jsx", "frontend/src/components/BudgetRail.jsx"] }
+      ] },
+    { t: "API (Django + DRF)", z: "s", side: "r",
+      w: "The HTTP surface under /api/. Views parse the request, check permission, call the domain layer, serialise. They hold no SQL.",
+      b: ["Django 5.2 LTS + Django REST Framework, served by gunicorn with 2 workers.", "Layering is one-way: transport (views) → query/domain (feed, stats, windows, topics) → models. Nothing lower imports anything higher."],
+      f: ["backend/tweets/urls.py", "backend/tweets/views.py", "backend/tweets/analytics.py"],
+      c: [
+        { t: "Auth (JWT)", w: "Who you are. simplejwt issues a short access token and a refresh token.", b: ["Access lasts 30 minutes; refresh rotates and the spent one is blacklisted.", "Routes: <code>/auth/register|login|refresh|logout|me|config</code>."], f: ["backend/tweets/auth_views.py"] },
+        { t: "Staff gate", w: "What you may do. Default is “signed in”; anything that spends X quota or touches the shared session also needs staff.", b: ["<code>IsStaff</code> / <code>IsStaffOrReadOnly</code> in <code>permissions.py</code>.", "Grant staff in Django admin at /admin/."], f: ["backend/tweets/permissions.py"], q: "Signup is open in production (<code>ALLOW_REGISTRATION=1</code>). Is that still what you want now the console is not a demo?" },
+        { t: "Feed + exports", w: "The tweet stream and the CSV/JSONL extracts of it.", b: ["<code>GET /feed/</code>: query policy lives in <code>tweets/feed.py</code> so the exporter can reuse it.", "<code>POST /export/</code> returns at once; the file is built on the control worker and downloaded through Django (still access-checked). Expires after 24 h."], f: ["backend/tweets/feed.py", "backend/fetching/exports.py"] },
+        { t: "Accounts, runs, cycles", w: "Roster CRUD, run history, and manual triggers.", b: ["<code>/accounts/</code> viewset, <code>/accounts/{handle}/fetch/</code> (staff), <code>/accounts/{handle}/tweets/</code>.", "<code>/runs/</code> lists FetchRun rows; <code>/cycles/</code> queues a global cycle (staff)."] },
+        { t: "Searches", w: "Saved-query CRUD plus its results, runs and schedule.", b: ["<code>/searches/{id}/results|runs|schedule|refresh|pause</code>.", "DELETE always goes through <code>fetching.searches.teardown_search</code>, never a bare <code>.delete()</code>."], f: ["backend/fetching/searches.py"] },
+        { t: "X session", w: "<code>/session/</code>: read health, or replace the single shared X login. Staff both ways.", b: ["Accepts cookies + headers, or a whole exported engine <code>config.json</code>.", "Never returns the secrets themselves."], f: ["backend/fetching/session.py"] },
+        { t: "Analytics + stats", w: "Dashboard and Analyze data.", b: ["<code>/stats/overview</code>, <code>/stats/pipeline</code>, <code>/analytics/{ingestion,velocity,topics,accounts,narratives}</code>.", "Every window is clamped to 90 days."], f: ["backend/tweets/analytics.py", "backend/tweets/stats.py"] },
+        { t: "Request guards", w: "Rule: no request may ever answer 5xx, whatever JSON arrives.", b: ["Request bodies are read only through <code>tweets.params.body_mapping</code>.", "Middleware rejects NUL bytes at the edge (Postgres would raise on them).", "Per-scope throttles: anon 240/min, login 20/min, signup 30/h, analytics 30/min, exports 10/h (prod raises some).", "In archive mode, collection actions answer 409 <code>ingestion_disabled</code>.", "<code>tests/test_api_input_sweep.py</code> fires hostile values at every route."], f: ["backend/tweets/params.py", "backend/config/middleware.py"] }
+      ] },
+    { t: "Analytics domain", z: "d", side: "r",
+      w: "Pure query and ranking code behind the analytics endpoints. Knows nothing about HTTP.",
+      b: ["Raw SQL lives only in <code>stats.py</code>; request values never reach a SQL string (bound params or module constants only)."],
+      f: ["backend/tweets/stats.py", "backend/tweets/windows.py", "backend/tweets/topics.py"],
+      c: [
+        { t: "windows.py", w: "One answer to “which time range, which accounts” for analytics, feed, exports and fetch_report.", b: ["Parses <code>range</code>, <code>since/until</code>, <code>bucket</code>, <code>account=</code>; bucket is auto (hourly under 48 h)."] },
+        { t: "stats.py (the SQL)", w: "Overview, velocity, narratives, ingestion and pipeline queries.", b: ["Returns plain Python. Five raw cursor queries live here, none in the views."] },
+        { t: "topics.py ranking", w: "Ranks terms by how unusual they are, not how often they occur. Pure, no database.", b: ["Counts posts, not word occurrences; excludes retweets.", "Drops terms used by a single account or common enough to be filler.", "Tested directly in <code>tests/test_topics_scoring.py</code>."] },
+        { t: "textclean.py", w: "Readable text derived from what X served. <code>Tweet.text</code> stays verbatim; <code>text_clean</code> is for reading and search.", b: ["Unescapes HTML entities and similar X encoding artefacts."] },
+        { t: "SQLite blind spot", w: "The raw-SQL analytics paths return early on SQLite, so a local test run proves nothing about them.", b: ["CI runs the suite a second time on Postgres 16, where they execute.", "Locally: <code>TEST_POSTGRES_HOST=127.0.0.1 python -m pytest -q</code>."], q: "When you change an analytics query, did the Postgres run pass, or only SQLite?" }
+      ] },
+    { t: "Database (Postgres)", z: "d", side: "r",
+      w: "PostgreSQL 16, the only durable store. Volume <code>twitter-saas_pgdata</code>.",
+      b: ["The Compose project name <code>twitter-saas</code> is pinned because it decides the volume name. Changing it orphans the database."],
+      f: ["backend/tweets/models.py"],
+      c: [
+        { t: "TwitterUser", w: "Every account the system knows; <code>tracking=True</code> marks the roster.", b: ["Priority 1–7, poll interval, observed median posting gap.", "Quarantine flag + reason (after 3 failed user-ID lookups).", "<code>historical_backfilled_at</code>: archive walk finished."] },
+        { t: "Tweet", w: "The tracked-account archive. Kept forever. Feed and engagement analytics read only this.", b: ["Unique <code>dedup_key</code> = author:tweet id.", "Counts (likes, retweets, replies, quotes, bookmarks, views) + a generated <code>engagement</code> column.", "<code>source_subsystem</code> = which collector saw it first; never updated."] },
+        { t: "TweetMetric", w: "Engagement snapshots over time, one row each time counts change. Kept 90 days." },
+        { t: "Search · SearchTweet · SearchHit", w: "A saved query, its own copy of tweets, and the link with rank and first/last seen.", b: ["Search results never go into <code>Tweet</code>. 30-day TTL."] },
+        { t: "FetchRun", w: "One row per collector run: status, summary, failure ledger, log excerpt. Kept 90 days.", b: ["Status: running, completed, partial, failed, auth_required."] },
+        { t: "RawPage", w: "Raw GraphQL responses per run. Kept 3 days.", b: ["Once 91% of the database. 3 days is a temporary ceiling until a census shows which are worth keeping."] },
+        { t: "EndpointState · KeyValueState", w: "The engine's memory between runs: cursors, watermarks, seen-ledger, rate state, tx-id health.", b: ["Written back after every run by the runner."] },
+        { t: "MediaAsset · PendingMedia", w: "Downloaded photos/videos on the media volume, and the queue of ones still to fetch." },
+        { t: "ExportJob", w: "Async export jobs and their files. 24-hour TTL." },
+        { t: "XSession", w: "The one shared X login (cookies + headers + config overrides).", q: "This row is the single point of failure for all collection. Who refreshes it, and how do you find out it expired?" }
+      ] },
+    { t: "Ingest + media", z: "d", side: "r",
+      w: "The only code that turns engine output into rows.",
+      f: ["backend/fetching/ingest.py", "backend/fetching/media.py"],
+      c: [
+        { t: "Upsert + dedup", w: "Insert or update each tweet by <code>author_id:tweet_id</code>; authors upserted in a batch.", b: ["Returns an <code>IngestCount</code> (seen, new) shown on the run."] },
+        { t: "First-seen attribution", w: "<code>source_subsystem</code> is written on insert only.", b: ["Live re-sees backfilled tweets constantly; if it were mutable, the whole archive would be credited to “live” within two cycles."] },
+        { t: "Metric snapshots", w: "When counts change, a <code>TweetMetric</code> row is recorded for engagement-over-time charts." },
+        { t: "Metric gates", w: "Sanity checks on counts (for example, X had no view counts before Dec 2022). Violations are logged, not dropped.", f: ["backend/fetching/metric_gates.py"] },
+        { t: "Search ingest", w: "Search results go to <code>SearchTweet</code> + <code>SearchHit</code> for that one search, atomically.", b: ["A search deleted mid-run has its results discarded, not resurrected."] },
+        { t: "Media archive", w: "Photos and videos are downloaded to the media volume so posts keep their media if X deletes it.", b: ["<code>archive_media</code> takes 25 items every 2 minutes on the control worker.", "Feed URLs are rewritten to the local copy (X refuses video to other sites)."] }
+      ] },
+    { t: "Guardrails + tests", z: "o", side: "r",
+      w: "The written contract and the suite that enforces it.",
+      f: ["AGENTS.md", "ARCHITECTURE.md", "backend/tests/", ".github/workflows/ci.yml"],
+      c: [
+        { t: "Four architecture rules", w: "Engine imports no Django; no hidden function-local imports; task names are wire IDs; no request value in a SQL string." },
+        { t: "Test suites", w: "53 backend test files (engine + API, about 440 tests) and a Vitest component suite per page.", b: ["CI runs the backend twice: SQLite, then Postgres 16. No deploy job."] },
+        { t: "Pinned dependencies", w: "<code>requirements.txt</code> pins with <code>~=</code> (patch series only), so two builds of one commit ship the same versions." },
+        { t: "Operator toolbox", w: "Management commands in <code>backend/fetching/management/commands/</code>.", b: ["Setup: <code>seed_data</code>, <code>load_xsession</code>, <code>reset_users</code>.", "Diagnose: <code>fetch_report --since 24h</code>, <code>verify_handles</code>, <code>probe_timeline</code>.", "Repair: <code>reopen_false_depth_stops</code>, <code>reopen_shallow_archives</code>, <code>repair_retweet_metrics</code>, <code>backfill_tweet_payloads</code>, <code>purge_orphan_search_tweets</code>, <code>seed_media_queue</code>."] }
+      ] },
+
+    { t: "Deployment + VPS", z: "o", side: "l",
+      w: "Docker Compose on a VPS behind Caddy. Currently deployed in archive mode.",
+      f: ["docker-compose.yml", "docker-compose.prod.yml", "docker-compose.archive.yml", "scripts/deploy_vps.sh", "docs/archive-mode.md"],
+      c: [
+        { t: "Archive mode (now)", w: "Only postgres, redis, web, frontend and worker_control run. Collectors and beat are stopped.", b: ["The archive overlay forces <code>INGESTION_ENABLED=0</code> even if .env says otherwise.", "Archive images omit Chromium, so turning collection on needs a new build.", "Feed, analytics and exports work on stored data."] },
+        { t: "Why collection is paused", w: "X is unreachable from this VPS.", b: ["On 2026-09-24, x.com resolved to private 10.10.34.x addresses and timed out; TLS failed. The twimg media CDNs failed too.", "<code>HTTPS_PROXY</code> support exists in the backend but is unverified here."] },
+        { t: "Fresh database", w: "The 2026-09-28 deploy started with an empty database by choice. No old tweets or checkpoints were recovered." },
+        { t: "No backups", w: "No backup tooling ships in the repo and the host backup cron is disabled.", q: "If the VPS disk fails tomorrow, what do you lose? Today: everything since 2026-09-28." },
+        { t: "Deploy script", w: "Pull-based. A wrapper on the VPS (<code>/opt/apps/deploy_twitter.sh</code>) resets to origin/main, then runs <code>scripts/deploy_vps.sh</code>.", b: ["Builds, restarts with the right overlays, waits for health checks, keeps 5 tagged images.", "Fails if anything sits on the legacy <code>celery</code> queue.", "Never run a bare <code>docker compose up</code> on this host."] },
+        { t: "Rollback", w: "<code>scripts/rollback_vps.sh &lt;tag&gt;</code> swaps images only. It never reverses migrations or restores data." },
+        { t: "Edge + TLS", w: "Caddy terminates HTTPS and proxies to the frontend container on the <code>vps-edge</code> network. Nothing else is published.", b: ["nginx serves the SPA and media, proxies <code>/api/</code> and <code>/admin/</code> to gunicorn."] },
+        { t: "Capacity", w: "The prod overlay was written for a dedicated ~16 GB host; this one is shared, 7.8 GiB, ~1.8 GiB free on 2026-09-24.", b: ["worker_search alone is capped at 3 GB because of Chromium."] },
+        { t: "CI", w: "GitHub Actions on every push: backend suite (SQLite + Postgres 16) and frontend tests. No deploy step." }
+      ] },
+    { t: "Collection strategy", z: "o", side: "l",
+      w: "The rules that decide who gets fetched, how deep, and when. All driven by one rate budget.",
+      f: ["backend/fetching/accounts.py", "backend/engine/config.py"],
+      c: [
+        { t: "One shared budget", w: "<code>UserTweets</code>: 50 requests per 15 minutes for the one X session. Live and archive split it." },
+        { t: "Priority tiers 1–7", w: "Each tier has a poll-interval band and window. The real interval comes from the account's measured posting rate.", b: ["Recomputed daily by <code>recompute_poll_intervals</code>."] },
+        { t: "Live reserve", w: "<code>archive_quota_floor</code> sizes how much the archive walk must leave for live, from the live due-set on every run. Not a setting." },
+        { t: "Watermarks", w: "How far back a fetch reaches: <code>min(now − window, floor(watermark))</code>.", b: ["Advance only on a successful endpoint completion."] },
+        { t: "Two cursors", w: "Live writes <code>last_cursor</code>; the archive walk keeps its own <code>backfill_cursor</code>. Never mix them: they sit at different depths." },
+        { t: "Quarantine", w: "Three consecutive user-ID failures park an account. Clearing it must clear both the Postgres row and the live state blob." },
+        { t: "Depth + silence", w: "When the walk stops, it records why (end of timeline vs X's serving depth). Depth stops are re-probed every 30 days.", b: ["Silent accounts (no posts for 12× their usual gap, min 6 h) are flagged."], f: ["backend/engine/probe.py"] },
+        { t: "Search cadence", w: "Each saved search has its own <code>interval_seconds</code> (default 30 min). A repoll stops when it reaches tweets the last run stored." }
+      ] },
+    { t: "Scheduling (Celery)", z: "e", side: "l",
+      w: "Celery beat sends timed jobs to Redis queues; four single-task workers drain them.",
+      b: ["Celery is a job queue: beat is its clock, Redis holds jobs until a worker takes one."],
+      f: ["backend/config/celery.py", "backend/fetching/tasks.py"],
+      c: [
+        { t: "Beat: 10 periodic tasks", w: "Registers nothing when <code>INGESTION_ENABLED=0</code>, which is why nothing fires in archive mode." },
+        { t: "Four queues, four workers", w: "live, historical, search, control. Each worker runs one task at a time.", b: ["Why separate: a rate-limit sleep in one collector (often 10–15 min) must not block the others.", "The scheduler sits on control so it is never stuck behind the work it queued."] },
+        { t: "Live poll  · 5 min", w: "<code>poll_live_all</code>: fetch every account that is due, at most 3 pages each." },
+        { t: "Archive walk  · 5 min", w: "<code>backfill_historical_all</code>: one account per tick, up to 25 pages, resumed from its cursor." },
+        { t: "Search dispatch  · 5 min", w: "<code>dispatch_due_searches</code>: queues one <code>run_search</code> task per due search." },
+        { t: "Maintenance", w: "Media download (2 min), poll-interval recompute (daily), purges (daily; exports hourly), export jobs." },
+        { t: "Wire names", w: "Task <code>name=</code> strings are written into queued jobs. Renaming one strands messages already in Redis." },
+        { t: "Locks", w: "<code>_cycle_lock</code> and <code>_claim_search</code> stop the same cycle or search running twice." }
+      ] },
+    { t: "Runner", z: "e", side: "l",
+      w: "The bridge across the process boundary. Prepares a scratch folder, runs the engine as a subprocess, copies results into Postgres, deletes the folder.",
+      f: ["backend/fetching/runner.py", "backend/fetching/redaction.py"],
+      c: [
+        { t: "Scratch folder", w: "A fresh temp dir per run (<code>TDF_PROJECT_ROOT</code>). Config, accounts and session are written into it; it is deleted afterwards." },
+        { t: "State round-trip", w: "Restores <code>KeyValueState</code>/<code>EndpointState</code> into files before the run, writes them back after.", b: ["A three-way merge resolves races between workers sharing the same state."] },
+        { t: "Session write-back", w: "Fresh tx-ids or cookies the engine picked up are saved back, changed fields only." },
+        { t: "Subprocess + timeout", w: "<code>python -m engine.&lt;pipeline&gt;</code>; killed with its process group after 30 min." },
+        { t: "Redaction", w: "Every log line from the subprocess passes through one choke point that strips cookies, bearer and CSRF tokens." },
+        { t: "FetchRun record", w: "Status, summary, failure ledger, first/last log lines. Exit 0 with no report counts as partial." },
+        { t: "Raw pages", w: "Raw GraphQL pages are copied into <code>RawPage</code> for debugging (3-day life)." },
+        { t: "Paused guard", w: "Refuses to start a fetch when ingestion is disabled." }
+      ] },
+    { t: "X engine", z: "e", side: "l",
+      w: "A self-contained library that talks to X's private GraphQL API. Imports no Django; can run from a shell.",
+      b: ["Configured only by <code>TDF_*</code> env vars and files the runner writes."],
+      f: ["backend/engine/"],
+      c: [
+        { t: "client.py: transport", w: "<code>APIManager</code> sends authenticated GraphQL GETs and reads rate-limit headers.", b: ["<code>RequestStateStore</code> tracks tx-id / query-id health and endpoint health."] },
+        { t: "Status policy", w: "400 stop (contract broke) · 401/403 pause for new credentials · 404 classify · 5xx bounded retry · 429 sleep until reset." },
+        { t: "timeline.py: pagination", w: "Follows bottom cursors only. Every loop has a stop condition that does not rely on X withholding a cursor." },
+        { t: "live.py", w: "Shallow poll of recent tweets per due account. Keeps a 30-day “already seen” ledger." },
+        { t: "historical.py", w: "The archive walk: backwards through an account's timeline from its own cursor.", q: "Its docstring still describes seven set folders and <code>UserTweetsAndReplies</code> on by default, which AGENTS.md says must not come back. Is the code or the docstring out of date?" },
+        { t: "search.py", w: "<code>SearchTimeline</code>: page 1 over HTTP, deeper pages by scrolling a real Chromium (Playwright).", b: ["Cursor 404s mid-pagination fail fast instead of retrying for minutes."] },
+        { t: "processing.py", w: "Parses tweets out of GraphQL responses and holds the request contracts (features, variables).", b: ["Dates are Asia/Tehran local so day/hour boundaries match the rolling window."] },
+        { t: "storage.py", w: "Writes raw pages, the one processed set (<code>4_union</code>), reports and state to the scratch disk." },
+        { t: "auth.py + browser.py", w: "Playwright refreshes the session by browsing x.com and capturing fresh transaction ids and query ids. Proxy-aware." },
+        { t: "observability.py", w: "Console output, file logs, <code>events.jsonl</code>, <code>http_summary.json</code> with the failure ledger." },
+        { t: "probe.py", w: "Read-only diagnostic: pages one account to check whether X really stops serving at that depth." }
+      ] }
+  ]
+};
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("map");
+const insp = document.getElementById("inspector");
+let selected = ROOT;
+const expanded = new Set();
+
+// Parent links and ids, once.
+(function index(node, parent, path) {
+  node.parent = parent; node.id = path;
+  (node.c || []).forEach((k, i) => { if (!k.z) k.z = node.z; index(k, node, path + "." + i); });
+})(ROOT, null, "r");
+ROOT.c.forEach(b => expanded.add(b.id));
+
+const zc = z => Z[z] || "var(--ink)";
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const plain = s => s.replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
+function draw() {
+  svg.textContent = "";
+  const W = 1240, rootX = W / 2, rowH = 30, gap = 16, top = 24;
+  const sides = { r: ROOT.c.filter(b => b.side === "r"), l: ROOT.c.filter(b => b.side === "l") };
+  const heightOf = list => list.reduce((h, b) => h + (expanded.has(b.id) ? b.c.length : 1) * rowH + gap, -gap);
+  const H = Math.max(heightOf(sides.r), heightOf(sides.l)) + top * 2;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const edges = el("g", {}, svg);
+  const nodes = el("g", {}, svg);
+  const rootY = H / 2;
+
+  // Root
+  const rg = el("g", { class: "node root" + (selected === ROOT ? " sel" : ""), tabindex: 0, role: "treeitem" }, nodes);
+  const rr = el("rect", { x: rootX - 92, y: rootY - 34, width: 184, height: 68, rx: 10 }, rg);
+  const t1 = el("text", { x: rootX, y: rootY - 4, "text-anchor": "middle", "font-size": 22, "font-weight": 700, style: "font-family:var(--font-display)" }, rg);
+  t1.textContent = "TDF";
+  const t2 = el("text", { x: rootX, y: rootY + 18, "text-anchor": "middle", "font-size": 12 }, rg);
+  t2.textContent = "Twitter Data Fetcher";
+  bind(rg, ROOT);
+
+  for (const side of ["r", "l"]) {
+    const dir = side === "r" ? 1 : -1;
+    const list = sides[side];
+    let y = top + (H - top * 2 - heightOf(list)) / 2;
+    for (const b of list) {
+      const open = expanded.has(b.id);
+      const n = open ? b.c.length : 1;
+      const blockH = n * rowH;
+      const by = y + blockH / 2;
+      const color = zc(b.z);
+      const bx0 = rootX + dir * 132;
+      // Branch pill
+      const g = el("g", { class: "node branch" + (selected === b ? " sel" : ""), tabindex: 0, role: "treeitem", "aria-expanded": open }, nodes);
+      const rect = el("rect", { y: by - 15, height: 30, rx: 15, fill: color }, g);
+      const tx = el("text", { y: by + 5, "text-anchor": side === "r" ? "start" : "end" }, g);
+      tx.textContent = b.t;
+      const tw = tx.getComputedTextLength();
+      const pw = tw + 28;
+      const px = side === "r" ? bx0 : bx0 - pw;
+      rect.setAttribute("x", px); rect.setAttribute("width", pw);
+      tx.setAttribute("x", side === "r" ? px + 14 : px + pw - 14);
+      bind(g, b);
+      // Toggle
+      const tgx = side === "r" ? px + pw + 14 : px - 14;
+      const tg = el("g", { class: "node", tabindex: 0, role: "button", "aria-label": (open ? "Collapse " : "Expand ") + b.t }, nodes);
+      el("circle", { cx: tgx, cy: by, r: 9, fill: "var(--surface)", stroke: color, "stroke-width": 1.5 }, tg);
+      const tt = el("text", { x: tgx, y: by + 4.5, "text-anchor": "middle", "font-size": 14, fill: color, "font-weight": 700 }, tg);
+      tt.textContent = open ? "−" : "+";
+      const toggle = () => { open ? expanded.delete(b.id) : expanded.add(b.id); draw(); };
+      tg.addEventListener("click", toggle);
+      tg.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+      // Root -> branch edge
+      const rx0 = rootX + dir * 92;
+      el("path", { class: "edge", stroke: color, d: `M${rx0},${rootY} C${rx0 + dir * 24},${rootY} ${bx0 - dir * 18},${by} ${bx0},${by}` }, edges);
+
+      if (open) {
+        const lx = rootX + dir * 372;
+        b.c.forEach((leaf, i) => {
+          const ly = y + i * rowH + rowH / 2;
+          const lg = el("g", { class: "node leaf" + (selected === leaf ? " sel" : ""), tabindex: 0, role: "treeitem" }, nodes);
+          const lr = el("rect", { y: ly - 11.5, height: 23, rx: 4 }, lg);
+          const ltx = el("text", { y: ly + 4.3, "text-anchor": side === "r" ? "start" : "end" }, lg);
+          ltx.textContent = plain(leaf.t);
+          const lw = ltx.getComputedTextLength() + 18;
+          const lpx = side === "r" ? lx : lx - lw;
+          lr.setAttribute("x", lpx); lr.setAttribute("width", lw);
+          lr.setAttribute("style", `stroke:${color}`);
+          ltx.setAttribute("x", side === "r" ? lpx + 9 : lpx + lw - 9);
+          if (leaf.q) { el("circle", { cx: side === "r" ? lpx + lw + 8 : lpx - 8, cy: ly, r: 3.5, fill: "var(--z4)" }, lg); }
+          bind(lg, leaf);
+          const ex = tgx + dir * 9;
+          el("path", { class: "edge", stroke: color, d: `M${ex},${by} C${ex + dir * 40},${by} ${lx - dir * 40},${ly} ${lx},${ly}` }, edges);
+        });
+      } else {
+        const c = el("text", { class: "count", x: tgx + dir * 16, y: by + 4, "text-anchor": side === "r" ? "start" : "end" }, nodes);
+        c.textContent = b.c.length + " parts";
+      }
+      y += blockH + gap;
+    }
+  }
+}
+
+function bind(g, node) {
+  const go = () => select(node);
+  g.addEventListener("click", go);
+  g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+}
+
+function select(node, fromMap = true) {
+  selected = node;
+  if (node.c && node !== ROOT) expanded.add(node.id);
+  draw();
+  render();
+  insp.classList.remove("hidden-mobile");
+}
+
+function render() {
+  const n = selected;
+  const chain = [];
+  for (let p = n; p; p = p.parent) chain.unshift(p);
+  const color = zc(n.z);
+  const crumbs = chain.map((p, i) => i === chain.length - 1 ? `<b>${p.t}</b>` : `<span>${plain(p.t)} →</span>`).join(" ");
+  const kids = n.c ? `<div><span class="eyebrow">Drill down</span><div class="kids">${n.c.map((k, i) => `<button type="button" data-k="${i}">${plain(k.t)}</button>`).join("")}</div></div>` : "";
+  const parent = n.parent ? `<button type="button" id="up">↑ ${plain(n.parent.t)}</button>` : "";
+  insp.innerHTML = `
+    <button type="button" class="close" id="closeInsp">Close</button>
+    <div class="crumbs">${crumbs}</div>
+    <h2 style="color:${n === ROOT ? "var(--ink)" : color}">${n.t}</h2>
+    <p class="what">${n.w}</p>
+    ${n.b ? `<ul>${n.b.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+    ${n.f ? `<div><span class="eyebrow">Files</span><div class="files">${n.f.map(x => `<code>${x}</code>`).join("")}</div></div>` : ""}
+    ${n.q ? `<div class="ask"><span class="eyebrow">Question this</span>${n.q}</div>` : ""}
+    ${kids}
+    ${parent ? `<div>${parent}</div>` : ""}`;
+  insp.querySelectorAll("[data-k]").forEach(btn => btn.addEventListener("click", () => select(n.c[+btn.dataset.k])));
+  const up = insp.querySelector("#up");
+  if (up) up.addEventListener("click", () => select(n.parent));
+  insp.querySelector("#closeInsp").addEventListener("click", () => insp.classList.add("hidden-mobile"));
+}
+
+document.getElementById("expandAll").addEventListener("click", () => { ROOT.c.forEach(b => expanded.add(b.id)); draw(); });
+document.getElementById("collapseAll").addEventListener("click", () => { expanded.clear(); draw(); });
+
+// On phones the inspector is a drawer; start it closed so the map is visible.
+if (window.matchMedia("(max-width: 1099px)").matches) insp.classList.add("hidden-mobile");
+
+// Fonts change text widths; redraw once they are in.
+draw(); render();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+
+/* ---------- Life of one tweet ---------- */
+const FLOW = [
+  ["e", "Beat fires", "celery beat → Redis", "Every 5 min beat puts <code>poll_live_all</code> on the <code>live</code> queue."],
+  ["e", "Worker claims it", "worker_live · tasks.py", "Takes the cycle lock and works out which accounts are due from their tier cadence."],
+  ["e", "Runner prepares", "runner.run_fetcher", "Creates a scratch folder, writes config, accounts and the X session, restores cursors and watermarks from Postgres."],
+  ["e", "Engine fetches", "python -m engine.live", "Sends <code>UserTweets</code> GraphQL GETs to x.com, ≤ 3 pages per account, sleeping on 429."],
+  ["e", "Engine writes", "scratch disk", "Raw pages, the <code>4_union</code> processed set, a run report and updated state files."],
+  ["e", "Runner persists", "runner.py · redaction.py", "Merges state back into Postgres, stores raw pages, writes the FetchRun record. Logs are redacted."],
+  ["d", "Ingest upserts", "ingest.py", "Inserts or updates each tweet by author:tweet id, snapshots changed metrics, queues media."],
+  ["d", "Cleanup + media", "worker_control", "Scratch folder deleted. Within minutes the control worker downloads photos/videos to the media volume."],
+  ["s", "You see it", "/api/feed/ → Feed", "The console polls, shows a “new posts” pill, and the tweet lands in the feed and analytics."]
+];
+document.getElementById("flow").innerHTML = FLOW.map(([z, t, where, p]) =>
+  `<li style="--zc:${zc(z)}"><h3>${t}</h3><span class="where">${where}</span><p>${p}</p></li>`).join("");
+
+/* ---------- Containers ---------- */
+const SVC = [
+  ["postgres", "The database. Only durable store.", "–", "1 GB (archive 512 MB)", "ok"],
+  ["redis", "Celery broker and Django cache.", "–", "256 MB (archive 128 MB)", "ok"],
+  ["web", "gunicorn + Django: API and /admin. Runs migrations on boot.", "–", "512 MB", "ok"],
+  ["frontend", "nginx: SPA, media files, proxy to web. Only service on the edge network.", "–", "128 MB", "ok"],
+  ["worker_control", "Search dispatch, purges, exports, media downloads.", "control", "256 MB", "ok-paused"],
+  ["worker_live", "Live poll of tracked accounts.", "live", "768 MB", "off"],
+  ["worker_historical", "Archive walk, HTTP only.", "historical", "512 MB", "off"],
+  ["worker_search", "Saved searches; drives Chromium for deep pages.", "search", "3 GB", "off"],
+  ["beat", "The clock that schedules everything above.", "–", "256 MB", "off"]
+];
+const STATE = { ok: ['ok', 'running'], "ok-paused": ['warn', 'running, fetch tasks no-op'], off: ['off', 'stopped'] };
+document.getElementById("svc").innerHTML = SVC.map(([s, job, q, mem, st]) =>
+  `<tr><td><code>${s}</code></td><td>${job}</td><td class="num">${q}</td><td class="num">${mem}</td><td><span class="pill ${STATE[st][0]}">${STATE[st][1]}</span></td></tr>`).join("");
+
+/* ---------- Tiers ---------- */
+const TIERS = [[1, "15 min – 1 h", 24, 7], [2, "30 min – 2 h", 20, 6], [3, "30 min – 3 h", 16, 5], [4, "1 h – 4 h", 12, 4], [5, "1 h – 6 h", 9, 3], [6, "1.5 h – 8 h", 6, 2], [7, "2 h – 12 h", 3, 2]];
+document.getElementById("tiers").innerHTML = TIERS.map(([p, band, lw, hw]) =>
+  `<div class="tier"><b>Tier ${p}</b><span>poll ${band}</span><span>live window ${lw} h</span><span>history ${hw} d</span></div>`).join("");
+
+/* ---------- Questions ---------- */
+const QS = [
+  ["bad", "Blocker", "Is anything being collected right now?", "<b>No.</b> The VPS runs archive mode: live, historical, search workers and beat are stopped. The console shows only what is already stored."],
+  ["bad", "Blocker", "Why can't collection just be switched on?", "X and its media CDNs are unreachable from this VPS (private-range DNS, TLS failures). It also needs a Chromium build and roughly 3 GB for <code>worker_search</code> on a shared 7.8 GiB host."],
+  ["bad", "Risk", "What happens if the server's disk fails?", "<b>Everything is lost.</b> No backup tooling is in the repo and the host backup cron is disabled."],
+  ["warn", "Risk", "Where did the old archive go?", "Not recovered. The 2026-09-28 deploy started with a fresh database by choice. Old tweets and collection checkpoints are gone unless a dump turns up."],
+  ["warn", "Risk", "Whose X account does this run on?", "One shared <code>XSession</code> row serves every user. If it expires or is locked, every collector stops and runs end as <code>auth_required</code>."],
+  ["warn", "Policy", "Who can create an account?", "Anyone. Signup is open in production. New users are read-only and throttled; staff is granted by hand in /admin."],
+  ["warn", "Data quality", "Is the archive actually complete?", "The walk stops where X stops serving. Once 61 accounts were parked at “X's serving depth” with no proof; <code>probe.py</code> and <code>reopen_false_depth_stops</code> exist to check that."],
+  ["off", "Design", "Why two tweet tables?", "<code>Tweet</code> is the permanent tracked-account archive. <code>SearchTweet</code> is a 30-day view of the wider firehose. Mixing them would put search noise into the feed and analytics."],
+  ["off", "Design", "Why is everything in Tehran time?", "The engine counts days and hours in Asia/Tehran, so watermarks and windows align to local midnight and local hours."],
+  ["off", "Testing", "Do green tests mean analytics work?", "Not locally. The raw-SQL analytics paths skip on SQLite. Only the Postgres run in CI (or a local Postgres run) exercises them."],
+  ["off", "Open", "Why do raw pages expire after only 3 days?", "They were 91% of the database. 3 days is a temporary ceiling until <code>raw_page_census</code> logs show which ones are worth keeping."],
+  ["off", "Drift", "Do the docs match the code everywhere?", "Mostly. One known gap: the <code>engine/historical.py</code> docstring still describes seven set folders and <code>UserTweetsAndReplies</code> on by default, which AGENTS.md forbids."]
+];
+document.getElementById("qs").innerHTML = QS.map(([cls, tag, h, p]) =>
+  `<div class="q"><span class="pill tag ${cls}">${tag}</span><h3>${h}</h3><p>${p}</p></div>`).join("");
+</script>
